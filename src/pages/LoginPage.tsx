@@ -44,9 +44,10 @@ export default function LoginPage() {
 
       if (error) throw error
 
-      // Check if returnTo exists and is valid, then redirect accordingly
+      // Get returnTo from search params and redirect accordingly
+      const returnTo = searchParams.get('returnTo')
       if (returnTo && isValidDomioSubdomain(returnTo)) {
-        window.location.href = returnTo
+        window.location.assign(returnTo)
       } else {
         navigate('/dashboard')
       }
