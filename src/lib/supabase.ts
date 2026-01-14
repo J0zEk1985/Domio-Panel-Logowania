@@ -39,10 +39,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     // @ts-ignore - cookieOptions is needed for shared domain cookies but may not be in type definitions
     cookieOptions: {
       domain: '.domio.com.pl',
-      path: '/',
       sameSite: 'lax',
-      secure: true,
-      maxAge: 31536000, // 1 year
+      path: '/',
     },
   },
   global: {

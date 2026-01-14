@@ -47,7 +47,8 @@ export default function LoginPage() {
       // Get returnTo from search params and redirect accordingly
       const returnTo = searchParams.get('returnTo')
       if (returnTo && isValidDomioSubdomain(returnTo)) {
-        window.location.assign(returnTo)
+        // Use replace to force full page reload and proper cookie loading in the other subdomain
+        window.location.replace(returnTo)
       } else {
         navigate('/dashboard')
       }
