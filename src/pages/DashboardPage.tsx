@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { UserAppAccess } from '../types/database'
+import { Application } from '../types/database'
 
 export default function DashboardPage() {
-  const [apps, setApps] = useState<UserAppAccess[]>([])
+  const [apps, setApps] = useState<Application[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
@@ -29,44 +29,16 @@ export default function DashboardPage() {
           return
         }
 
-        // Fetch user's accessible applications
-        // Note: This assumes a user_app_access view exists in the database
-        // If the view doesn't exist, you'll need to create it or use a different query
-        // For now, I'll use a query that joins the necessary tables
+        // Fetch applications from public.applications table
         const { data: appsData, error: appsError } = await supabase
-          .from('user_app_access')
+          .from('applications')
           .select('*')
-          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .order('name', { ascending: true })
 
-        if (appsError) {
-          // If the view doesn't exist, try alternative query structure
-          console.error('Error fetching apps:', appsError)
-          
-          // Fallback: Query applications directly (this is a simplified version)
-          // In production, you should use the user_app_access view
-          const { data: allApps, error: allAppsError } = await supabase
-            .from('applications')
-            .select('*')
-            .eq('is_active', true)
+        if (appsError) throw appsError
 
-          if (allAppsError) throw allAppsError
-
-          // Transform to match UserAppAccess interface (simplified)
-          setApps(
-            (allApps || []).map((app) => ({
-              user_id: user.id,
-              app_id: app.id,
-              app_name: app.name,
-              app_domain_url: app.domain_url,
-              app_api_url: app.api_url,
-              org_id: '',
-              org_name: '',
-              subscription_status: 'active',
-            }))
-          )
-        } else {
-          setApps(appsData || [])
-        }
+        setApps(appsData || [])
       } catch (err) {
         console.error('Error loading apps:', err)
         setError(err instanceof Error ? err.message : 'Wystąpił błąd podczas ładowania aplikacji')
@@ -78,11 +50,11 @@ export default function DashboardPage() {
     loadUserApps()
   }, [navigate, searchParams])
 
-  const handleAppClick = (app: UserAppAccess) => {
-    if (app.app_domain_url) {
-      window.location.href = app.app_domain_url
-    } else if (app.app_api_url) {
-      window.location.href = app.app_api_url
+  const handleAppClick = (app: Application) => {
+    if (app.domain_url) {
+      window.location.href = app.domain_url
+    } else if (app.api_url) {
+      window.location.href = app.api_url
     }
   }
 
@@ -128,16 +100,15 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {apps.map((app) => (
               <div
-                key={app.app_id}
+                key={app.id}
                 onClick={() => handleAppClick(app)}
                 className="bg-white rounded-lg shadow-md p-6 cursor-pointer hover:shadow-lg transition-shadow"
               >
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">{app.app_name}</h2>
-                {app.org_name && (
-                  <p className="text-sm text-gray-500 mb-4">Organizacja: {app.org_name}</p>
-                )}
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Status: {app.subscription_status}</span>
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">{app.name}</h2>
+                <div className="flex items-center justify-between mt-4">
+                  <span className="text-sm text-gray-600">
+                    {app.is_free ? 'Darmowa' : 'Płatna'}
+                  </span>
                   <svg
                     className="w-5 h-5 text-gray-400"
                     fill="none"

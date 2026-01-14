@@ -1,6 +1,26 @@
 import { useState, FormEvent } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+
+// Helper function to validate if URL is a valid *.domio.com.pl subdomain
+const isValidDomioSubdomain = (url: string): boolean => {
+  try {
+    const urlObj = new URL(url)
+    const hostname = urlObj.hostname
+    // Check if hostname ends with .domio.com.pl or is exactly domio.com.pl
+    return hostname === 'domio.com.pl' || hostname.endsWith('.domio.com.pl')
+  } catch {
+    return false
+  }
+}
+
+// Helper function to get redirect URL after login
+const getRedirectUrl = (returnTo: string | null): string => {
+  if (returnTo && isValidDomioSubdomain(returnTo)) {
+    return returnTo
+  }
+  return '/dashboard'
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -8,6 +28,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const returnTo = searchParams.get('returnTo')
 
   const handleEmailLogin = async (e: FormEvent) => {
     e.preventDefault()
@@ -22,7 +44,12 @@ export default function LoginPage() {
 
       if (error) throw error
 
-      navigate('/dashboard')
+      const redirectUrl = getRedirectUrl(returnTo)
+      if (redirectUrl.startsWith('http')) {
+        window.location.href = redirectUrl
+      } else {
+        navigate(redirectUrl)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Wystąpił błąd podczas logowania')
     } finally {
@@ -35,10 +62,15 @@ export default function LoginPage() {
     setError(null)
 
     try {
+      const redirectUrl = getRedirectUrl(returnTo)
+      const finalRedirectTo = redirectUrl.startsWith('http')
+        ? redirectUrl
+        : `${window.location.origin}${redirectUrl}`
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/dashboard`,
+          redirectTo: finalRedirectTo,
         },
       })
 
@@ -54,10 +86,15 @@ export default function LoginPage() {
     setError(null)
 
     try {
+      const redirectUrl = getRedirectUrl(returnTo)
+      const finalRedirectTo = redirectUrl.startsWith('http')
+        ? redirectUrl
+        : `${window.location.origin}${redirectUrl}`
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
         options: {
-          redirectTo: `${window.location.origin}/dashboard`,
+          redirectTo: finalRedirectTo,
         },
       })
 
