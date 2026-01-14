@@ -14,14 +14,6 @@ const isValidDomioSubdomain = (url: string): boolean => {
   }
 }
 
-// Helper function to get redirect URL after login
-const getRedirectUrl = (returnTo: string | null): string => {
-  if (returnTo && isValidDomioSubdomain(returnTo)) {
-    return returnTo
-  }
-  return '/dashboard'
-}
-
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

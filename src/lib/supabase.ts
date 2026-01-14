@@ -36,6 +36,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
     storage: typeof window !== 'undefined' ? cookieStorage : undefined,
     flowType: 'pkce',
+    // @ts-ignore - cookieOptions is needed for shared domain cookies but may not be in type definitions
     cookieOptions: {
       domain: '.domio.com.pl',
       path: '/',
