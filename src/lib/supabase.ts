@@ -36,6 +36,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
     storage: typeof window !== 'undefined' ? cookieStorage : undefined,
     flowType: 'pkce',
+    cookieOptions: {
+      domain: '.domio.com.pl',
+      path: '/',
+      sameSite: 'lax',
+      secure: true,
+      maxAge: 31536000, // 1 year
+    },
   },
   global: {
     headers: {
