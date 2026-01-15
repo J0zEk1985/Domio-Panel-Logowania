@@ -31,6 +31,22 @@ export default function LoginPage() {
     }
   }, [searchParams])
 
+  // Check if user is already logged in and redirect accordingly
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        const returnToParam = searchParams.get('returnTo')
+        if (returnToParam && isValidDomioSubdomain(returnToParam)) {
+          window.location.replace(returnToParam)
+        } else {
+          navigate('/dashboard')
+        }
+      }
+    }
+    checkSession()
+  }, [searchParams, navigate])
+
   const handleEmailLogin = async (e: FormEvent) => {
     e.preventDefault()
     setLoading(true)
