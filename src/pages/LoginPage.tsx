@@ -31,19 +31,64 @@ export default function LoginPage() {
     }
   }, [searchParams])
 
-  // Check if user is already logged in and redirect accordingly
+  // CRITICAL: Check if user is already logged in and redirect accordingly
+  // This is the gatekeeper - if user has session and came from Cleaning, redirect back immediately
   useEffect(() => {
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        const returnToParam = searchParams.get('returnTo')
-        if (returnToParam && isValidDomioSubdomain(returnToParam)) {
-          window.location.replace(returnToParam)
+      console.log('[SSO DEBUG] LoginPage: Sprawdzanie sesji przy wejściu na stronę logowania...')
+      
+      try {
+        // First, try to get session from cookies
+        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        console.log('[SSO DEBUG] LoginPage: Wynik getSession:', {
+          hasSession: !!session,
+          userId: session?.user?.id,
+          error: error?.message,
+        })
+        
+        // If no session, try to refresh (forces reading from cookie)
+        if (!session) {
+          console.log('[SSO DEBUG] LoginPage: Sesja pusta, próba odświeżenia z ciastek...')
+          const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
+          
+          if (refreshError) {
+            console.log('[SSO DEBUG] LoginPage: Błąd odświeżania sesji:', refreshError.message)
+          }
+          
+          if (refreshedSession) {
+            console.log('[SSO DEBUG] LoginPage: Sesja odświeżona z ciastek:', refreshedSession.user?.id)
+            
+            // User has session - check returnTo and redirect
+            const returnToParam = searchParams.get('returnTo')
+            if (returnToParam && isValidDomioSubdomain(returnToParam)) {
+              console.log('[SSO DEBUG] LoginPage: Przekierowanie do returnTo:', returnToParam)
+              window.location.replace(returnToParam)
+              return
+            } else {
+              console.log('[SSO DEBUG] LoginPage: Przekierowanie do dashboard (brak returnTo)')
+              navigate('/dashboard')
+              return
+            }
+          }
         } else {
-          navigate('/dashboard')
+          // Session found - check returnTo and redirect immediately
+          const returnToParam = searchParams.get('returnTo')
+          if (returnToParam && isValidDomioSubdomain(returnToParam)) {
+            console.log('[SSO DEBUG] LoginPage: Użytkownik ma sesję, przekierowanie do returnTo:', returnToParam)
+            window.location.replace(returnToParam)
+            return
+          } else {
+            console.log('[SSO DEBUG] LoginPage: Użytkownik ma sesję, przekierowanie do dashboard')
+            navigate('/dashboard')
+            return
+          }
         }
+      } catch (error) {
+        console.error('[SSO DEBUG] LoginPage: Błąd podczas sprawdzania sesji:', error)
       }
     }
+    
     checkSession()
   }, [searchParams, navigate])
 
