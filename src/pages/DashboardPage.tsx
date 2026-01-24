@@ -24,10 +24,10 @@ export default function DashboardPage() {
 
         console.log('[SSO DEBUG] User verified:', user.id)
 
-        // Check if return_to parameter exists
-        const returnTo = searchParams.get('return_to')
+        // Check if returnTo parameter exists (must match LoginPage.tsx which uses 'returnTo')
+        const returnTo = searchParams.get('returnTo')
         if (returnTo) {
-          console.log('[SSO DEBUG] Redirecting to return_to:', returnTo)
+          console.log('[SSO DEBUG] Redirecting to returnTo:', returnTo)
           window.location.href = returnTo
           return
         }
