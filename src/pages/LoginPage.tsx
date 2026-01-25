@@ -119,8 +119,13 @@ export default function LoginPage() {
       } else {
         navigate('/dashboard')
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Wystąpił błąd podczas logowania')
+    } catch (err: unknown) {
+      // Handle rate limit error (429)
+      if (err && typeof err === 'object' && 'status' in err && err.status === 429) {
+        setError('Zbyt wiele nieudanych prób. Twoje konto zostało tymczasowo zablokowane ze względów bezpieczeństwa. Spróbuj ponownie za 15 minut.')
+      } else {
+        setError(err instanceof Error ? err.message : 'Wystąpił błąd podczas logowania')
+      }
     } finally {
       setLoading(false)
     }
@@ -208,6 +213,14 @@ export default function LoginPage() {
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
+              <div className="mt-2 text-right">
+                <Link
+                  to={returnTo ? `/forgot-password?returnTo=${encodeURIComponent(returnTo)}` : '/forgot-password'}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  Zapomniałeś hasła?
+                </Link>
+              </div>
             </div>
 
             {error && (

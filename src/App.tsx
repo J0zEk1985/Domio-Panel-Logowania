@@ -6,6 +6,8 @@ import SignupPage from './pages/SignupPage'
 import DashboardPage from './pages/DashboardPage'
 import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 
 function App() {
   const [session, setSession] = useState<unknown>(null)
@@ -87,6 +89,14 @@ function App() {
       <Route
         path="/signup"
         element={session ? <Navigate to="/dashboard" replace /> : <SignupPage />}
+      />
+      <Route
+        path="/forgot-password"
+        element={<ForgotPasswordPage />}
+      />
+      <Route
+        path="/reset-password"
+        element={<ResetPasswordPage />}
       />
       <Route
         path="/dashboard"
