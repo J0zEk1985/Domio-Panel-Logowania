@@ -73,36 +73,7 @@ Deno.serve(async (req) => {
 
     console.log(`[create-worker] Creating worker account for: ${technicalEmail}`)
 
-    // Check if user with this email already exists
-    const { data: existingUser, error: checkError } = await supabaseAdmin.auth.admin.listUsers()
-    
-    if (checkError) {
-      console.error('[create-worker] Error checking existing users:', checkError)
-      return new Response(
-        JSON.stringify({ error: 'Failed to check existing users' }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
-    }
-
-    const userExists = existingUser?.users?.some(
-      (user) => user.email === technicalEmail
-    )
-
-    if (userExists) {
-      console.error(`[create-worker] User with email ${technicalEmail} already exists`)
-      return new Response(
-        JSON.stringify({ error: `User with slug "${body.slug}" already exists` }),
-        {
-          status: 409,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
-    }
-
-    // Create auth user
+    // Attempt to create auth user (idempotent approach)
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: technicalEmail,
       password: body.pin,
@@ -114,22 +85,76 @@ Deno.serve(async (req) => {
       },
     })
 
-    if (authError || !authUser?.user) {
-      console.error('[create-worker] Error creating auth user:', authError)
+    let userId: string
+    let isNewUser = false // Track if we just created the user (for cleanup on error)
+
+    // Handle existing user case (idempotent behavior)
+    if (authError) {
+      const errorMessage = authError.message?.toLowerCase() || ''
+      
+      // Check if user already exists (common error messages)
+      if (
+        errorMessage.includes('already registered') ||
+        errorMessage.includes('user already exists') ||
+        errorMessage.includes('already exists')
+      ) {
+        console.log(`[create-worker] User ${technicalEmail} already exists, fetching ID from profiles`)
+        
+        // Fetch existing user ID from profiles table
+        const { data: existingProfile, error: profileFetchError } = await supabaseAdmin
+          .from('profiles')
+          .select('id')
+          .eq('email', technicalEmail)
+          .single()
+
+        if (profileFetchError || !existingProfile?.id) {
+          console.error('[create-worker] Error fetching existing profile:', profileFetchError)
+          return new Response(
+            JSON.stringify({ 
+              error: 'User exists but profile not found',
+              details: profileFetchError?.message || 'Profile lookup failed'
+            }),
+            {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            }
+          )
+        }
+
+        userId = existingProfile.id
+        isNewUser = false // User already existed
+        console.log(`[create-worker] Found existing user ID: ${userId}`)
+      } else {
+        // Other error - not related to existing user
+        console.error('[create-worker] Error creating auth user:', authError)
+        return new Response(
+          JSON.stringify({ 
+            error: 'Failed to create user account',
+            details: authError.message 
+          }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        )
+      }
+    } else if (!authUser?.user) {
+      console.error('[create-worker] Auth user creation returned no user data')
       return new Response(
         JSON.stringify({ 
           error: 'Failed to create user account',
-          details: authError?.message 
+          details: 'No user data returned'
         }),
         {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
+    } else {
+      userId = authUser.user.id
+      isNewUser = true // User was just created
+      console.log(`[create-worker] Auth user created successfully: ${userId}`)
     }
-
-    const userId = authUser.user.id
-    console.log(`[create-worker] Auth user created successfully: ${userId}`)
 
     // Upsert profile in Hub database
     const { error: profileError } = await supabaseAdmin
@@ -155,9 +180,11 @@ Deno.serve(async (req) => {
     if (profileError) {
       console.error('[create-worker] Error upserting profile:', profileError)
       
-      // Attempt to clean up auth user if profile creation fails
-      await supabaseAdmin.auth.admin.deleteUser(userId)
-      console.log(`[create-worker] Cleaned up auth user ${userId} due to profile creation failure`)
+      // Only attempt to clean up auth user if we just created it (idempotent behavior)
+      if (isNewUser) {
+        await supabaseAdmin.auth.admin.deleteUser(userId)
+        console.log(`[create-worker] Cleaned up auth user ${userId} due to profile creation failure`)
+      }
 
       return new Response(
         JSON.stringify({ 
