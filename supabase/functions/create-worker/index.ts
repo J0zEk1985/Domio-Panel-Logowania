@@ -23,8 +23,15 @@ interface CreateWorkerRequest {
 }
 
 Deno.serve(async (req) => {
+  // CRITICAL: Logowanie na samym początku funkcji - sprawdza, czy zapytanie dotarło do serwera
+  console.log('[create-worker] ===== REQUEST RECEIVED =====')
+  console.log('[create-worker] Method:', req.method)
+  console.log('[create-worker] URL:', req.url)
+  console.log('[create-worker] Headers:', Object.fromEntries(req.headers.entries()))
+  
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
+    console.log('[create-worker] CORS preflight request - returning OK')
     return new Response('ok', { headers: corsHeaders })
   }
 
@@ -33,16 +40,32 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      console.error('[create-worker] Missing environment variables')
+    // CRITICAL: Szczegółowa walidacja Service Role Key
+    if (!supabaseUrl) {
+      console.error('[create-worker] Missing SUPABASE_URL environment variable')
       return new Response(
-        JSON.stringify({ error: 'Server configuration error' }),
+        JSON.stringify({ error: 'Missing SUPABASE_URL' }),
         {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
     }
+
+    if (!serviceRoleKey) {
+      console.error('[create-worker] Missing SUPABASE_SERVICE_ROLE_KEY environment variable')
+      return new Response(
+        JSON.stringify({ error: 'Missing Service Role Key' }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    console.log('[create-worker] Environment variables loaded successfully')
+    console.log('[create-worker] Supabase URL:', supabaseUrl)
+    console.log('[create-worker] Service Role Key present:', serviceRoleKey ? 'YES' : 'NO')
 
     // Create admin client with service role key
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
@@ -53,11 +76,36 @@ Deno.serve(async (req) => {
     })
 
     // Parse request body
-    const body: CreateWorkerRequest = await req.json()
+    let body: CreateWorkerRequest
+    try {
+      body = await req.json()
+      console.log('[create-worker] Request body parsed successfully:', {
+        slug: body.slug,
+        firstName: body.firstName,
+        lastName: body.lastName,
+        orgId: body.orgId,
+        pin: '***' // Nie logujemy PIN-u ze względów bezpieczeństwa
+      })
+    } catch (parseError) {
+      console.error('[create-worker] Error parsing request body:', parseError)
+      return new Response(
+        JSON.stringify({ error: 'Invalid request body', details: parseError instanceof Error ? parseError.message : 'Unknown error' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
 
     // Validate required fields
     if (!body.slug || !body.pin || !body.firstName || !body.lastName || !body.orgId) {
-      console.error('[create-worker] Missing required fields:', body)
+      console.error('[create-worker] Missing required fields:', {
+        hasSlug: !!body.slug,
+        hasPin: !!body.pin,
+        hasFirstName: !!body.firstName,
+        hasLastName: !!body.lastName,
+        hasOrgId: !!body.orgId
+      })
       return new Response(
         JSON.stringify({ error: 'Missing required fields: slug, pin, firstName, lastName, orgId' }),
         {
@@ -72,6 +120,7 @@ Deno.serve(async (req) => {
     const fullName = `${body.firstName} ${body.lastName}`
 
     console.log(`[create-worker] Creating worker account for: ${technicalEmail}`)
+    console.log(`[create-worker] Full name: ${fullName}`)
 
     // Attempt to create auth user (idempotent approach)
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -157,13 +206,17 @@ Deno.serve(async (req) => {
     }
 
     // Upsert profile in Hub database
+    // CRITICAL: accepted_terms_at w formacie ISO String dla spójności z VPS
+    const acceptedTermsAt = new Date().toISOString()
+    console.log(`[create-worker] Upserting profile with accepted_terms_at: ${acceptedTermsAt}`)
+    
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .upsert({
         id: userId,
         full_name: fullName,
         email: technicalEmail,
-        accepted_terms_at: new Date().toISOString(),
+        accepted_terms_at: acceptedTermsAt,
         terms_version: '1.0',
         account_type: 'simplified',
         is_first_login: true,
@@ -199,14 +252,19 @@ Deno.serve(async (req) => {
     }
 
     console.log(`[create-worker] Profile created successfully for user: ${userId}`)
+    console.log(`[create-worker] ===== SUCCESS - RETURNING RESPONSE =====`)
 
     // Return success response
+    const response = {
+      userId,
+      email: technicalEmail,
+      message: 'Worker account created successfully',
+    }
+    
+    console.log('[create-worker] Response data:', { userId, email: technicalEmail })
+    
     return new Response(
-      JSON.stringify({
-        userId,
-        email: technicalEmail,
-        message: 'Worker account created successfully',
-      }),
+      JSON.stringify(response),
       {
         status: 201,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -214,7 +272,11 @@ Deno.serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('[create-worker] Unexpected error:', error)
+    console.error('[create-worker] ===== UNEXPECTED ERROR =====')
+    console.error('[create-worker] Error type:', error instanceof Error ? error.constructor.name : typeof error)
+    console.error('[create-worker] Error message:', error instanceof Error ? error.message : String(error))
+    console.error('[create-worker] Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+    
     return new Response(
       JSON.stringify({ 
         error: 'Internal server error',
