@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
-import StaffLoginPage from './pages/StaffLoginPage'
 import DashboardPage from './pages/DashboardPage'
 import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
@@ -88,10 +87,6 @@ function App() {
       <Route
         path="/signup"
         element={session ? <Navigate to="/dashboard" replace /> : <SignupPage />}
-      />
-      <Route
-        path="/staff-login"
-        element={session ? <Navigate to="/dashboard" replace /> : <StaffLoginPage />}
       />
       <Route
         path="/dashboard"

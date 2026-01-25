@@ -98,8 +98,14 @@ export default function LoginPage() {
     setError(null)
 
     try {
+      // If input doesn't contain @, treat it as staff identifier and append @staff.domio.com.pl
+      let emailToUse = email.trim()
+      if (!emailToUse.includes('@')) {
+        emailToUse = `${emailToUse}@staff.domio.com.pl`
+      }
+
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: emailToUse,
         password,
       })
 
@@ -176,14 +182,14 @@ export default function LoginPage() {
           <form onSubmit={handleEmailLogin} className="space-y-6">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email
+                Email lub Identyfikator
               </label>
               <input
                 id="email"
-                type="email"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="nazwa@przykład.pl"
+                placeholder="nazwa@przykład.pl lub identyfikator"
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
