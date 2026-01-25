@@ -174,22 +174,50 @@ Deno.serve(async (req) => {
         }
 
         if (!existingProfile?.id) {
-          console.error('[create-worker] User exists but profile not found in database')
-          return new Response(
-            JSON.stringify({ 
-              error: 'User exists but profile not found',
-              details: 'Profile record missing for existing user'
-            }),
-            {
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            }
-          )
+          // User exists in auth but profile not found - try to get ID from auth.users
+          console.log('[create-worker] Profile not found, attempting to fetch user ID from auth.users by email')
+          
+          const { data: usersList, error: listError } = await supabaseAdmin.auth.admin.listUsers()
+          
+          if (listError) {
+            console.error('[create-worker] Error listing users:', listError)
+            return new Response(
+              JSON.stringify({ 
+                error: 'User exists but profile lookup failed',
+                details: 'Could not retrieve user ID from auth'
+              }),
+              {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              }
+            )
+          }
+          
+          const existingUser = usersList?.users?.find(u => u.email === technicalEmail)
+          
+          if (!existingUser?.id) {
+            console.error('[create-worker] User exists in auth but could not find user ID')
+            return new Response(
+              JSON.stringify({ 
+                error: 'User exists but user ID not found',
+                details: 'Profile record missing for existing user'
+              }),
+              {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              }
+            )
+          }
+          
+          userId = existingUser.id
+          console.log(`[create-worker] Found existing user ID from auth.users: ${userId} (profile will be created by upsert)`)
+        } else {
+          userId = existingProfile.id
+          console.log(`[create-worker] Found existing user ID from profiles: ${userId}`)
         }
-
-        userId = existingProfile.id
+        
         isNewUser = false // User already existed
-        console.log(`[create-worker] Found existing user ID: ${userId} (idempotent - continuing with upsert)`)
+        console.log(`[create-worker] Continuing with upsert for existing user: ${userId} (idempotent behavior)`)
       } else {
         // Other error - not related to existing user
         console.error('[create-worker] Error creating auth user:', authError)
