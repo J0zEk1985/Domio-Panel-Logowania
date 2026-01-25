@@ -76,7 +76,8 @@ export default function LoginPage() {
             hasCheckedSessionRef.current = true
             
             // User has session - check returnTo and redirect
-            const returnToParam = searchParams.get('returnTo')
+            // CRITICAL: Use window.location.replace() to force full page reload and proper cookie loading
+            const returnToParam = searchParams.get('returnTo') || returnTo
             if (returnToParam && isValidDomioSubdomain(returnToParam)) {
               console.log('[SSO DEBUG] LoginPage: Przekierowanie do returnTo:', returnToParam)
               window.location.replace(returnToParam)
@@ -95,7 +96,8 @@ export default function LoginPage() {
           hasCheckedSessionRef.current = true
           
           // Session found - check returnTo and redirect immediately
-          const returnToParam = searchParams.get('returnTo')
+          // CRITICAL: Use window.location.replace() to force full page reload and proper cookie loading
+          const returnToParam = searchParams.get('returnTo') || returnTo
           if (returnToParam && isValidDomioSubdomain(returnToParam)) {
             console.log('[SSO DEBUG] LoginPage: Użytkownik ma sesję, przekierowanie do returnTo:', returnToParam)
             window.location.replace(returnToParam)

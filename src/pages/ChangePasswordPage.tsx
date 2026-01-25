@@ -85,17 +85,34 @@ export default function ChangePasswordPage() {
 
       if (updateError) throw updateError
 
+      // CRITICAL: Reset is_first_login flag in profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert(
+          {
+            id: user.id,
+            is_first_login: false,
+          },
+          {
+            onConflict: 'id',
+          }
+        )
+
+      if (profileError) {
+        console.error('[ChangePasswordPage] Błąd aktualizacji profilu:', profileError)
+        // Don't throw - password was changed successfully, profile update is secondary
+      }
+
       setSuccess(true)
 
-      // Redirect after 2 seconds
-      setTimeout(() => {
-        const returnTo = searchParams.get('returnTo')
-        if (returnTo) {
-          window.location.href = returnTo
-        } else {
-          navigate('/dashboard')
-        }
-      }, 2000)
+      // Redirect immediately after success (no delay needed)
+      const returnTo = searchParams.get('returnTo')
+      if (returnTo) {
+        // Use window.location.replace() to force full page reload and prevent back navigation
+        window.location.replace(returnTo)
+      } else {
+        navigate('/dashboard', { replace: true })
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Wystąpił błąd podczas zmiany hasła')
     } finally {

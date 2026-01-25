@@ -43,16 +43,55 @@ function App() {
           if (refreshedSession) {
             console.log('[SSO DEBUG] App: Sesja odświeżona z ciastek:', refreshedSession.user?.id)
             setSession(refreshedSession)
+            
+            // CRITICAL: Check is_first_login flag and redirect if needed
+            await checkFirstLoginAndRedirect(refreshedSession.user.id)
+            
             setLoading(false)
             return
           }
         }
         
         setSession(session)
+        
+        // CRITICAL: Check is_first_login flag and redirect if needed
+        if (session?.user?.id) {
+          await checkFirstLoginAndRedirect(session.user.id)
+        }
+        
         setLoading(false)
       } catch (error) {
         console.error('[SSO DEBUG] App: Błąd podczas sprawdzania sesji:', error)
         setLoading(false)
+      }
+    }
+
+    // Helper function to check is_first_login and redirect
+    const checkFirstLoginAndRedirect = async (userId: string) => {
+      try {
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('is_first_login')
+          .eq('id', userId)
+          .single()
+
+        if (profileError) {
+          console.error('[SSO DEBUG] App: Błąd pobierania profilu:', profileError)
+          return
+        }
+
+        // CRITICAL: If is_first_login is true, redirect to change-password
+        // This check happens regardless of which app user is trying to access
+        if (profile?.is_first_login === true) {
+          const currentPath = window.location.pathname
+          // Only redirect if not already on change-password page
+          if (currentPath !== '/change-password') {
+            console.log('[SSO DEBUG] App: is_first_login=true, przekierowanie na /change-password')
+            window.location.href = '/change-password'
+          }
+        }
+      } catch (error) {
+        console.error('[SSO DEBUG] App: Błąd podczas sprawdzania is_first_login:', error)
       }
     }
 
@@ -65,6 +104,28 @@ function App() {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('[SSO DEBUG] App: Auth state changed:', event, session?.user?.id)
       setSession(session)
+      
+      // CRITICAL: Check is_first_login after auth state change
+      if (session?.user?.id && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+        try {
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('is_first_login')
+            .eq('id', session.user.id)
+            .single()
+
+          if (!profileError && profile?.is_first_login === true) {
+            const currentPath = window.location.pathname
+            // Only redirect if not already on change-password page
+            if (currentPath !== '/change-password') {
+              console.log('[SSO DEBUG] App: is_first_login=true po zmianie stanu auth, przekierowanie na /change-password')
+              window.location.href = '/change-password'
+            }
+          }
+        } catch (error) {
+          console.error('[SSO DEBUG] App: Błąd podczas sprawdzania is_first_login w onAuthStateChange:', error)
+        }
+      }
     })
 
     return () => subscription.unsubscribe()
