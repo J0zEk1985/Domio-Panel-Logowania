@@ -1,7 +1,6 @@
 import { useState, FormEvent, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { validatePassword } from '../lib/validation'
 import ValidationChecklist from '../components/ValidationChecklist'
 
 export default function ChangePasswordPage() {
