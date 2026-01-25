@@ -8,6 +8,7 @@ import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
+import ChangePasswordPage from './pages/ChangePasswordPage'
 
 function App() {
   const [session, setSession] = useState<unknown>(null)
@@ -97,6 +98,10 @@ function App() {
       <Route
         path="/reset-password"
         element={<ResetPasswordPage />}
+      />
+      <Route
+        path="/change-password"
+        element={session ? <ChangePasswordPage /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/dashboard"

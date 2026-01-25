@@ -1,6 +1,8 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { validatePassword } from '../lib/validation'
+import ValidationChecklist from '../components/ValidationChecklist'
 
 export default function SignupPage() {
   const [email, setEmail] = useState('')
@@ -29,6 +31,11 @@ export default function SignupPage() {
     setError(null)
 
     try {
+      const passwordValidation = validatePassword(password)
+      if (!passwordValidation.isValid) {
+        throw new Error('Hasło nie spełnia wymagań')
+      }
+
       if (password !== repeatPassword) {
         throw new Error('Hasła nie są identyczne')
       }
@@ -149,6 +156,7 @@ export default function SignupPage() {
                 required
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
+              <ValidationChecklist value={password} type="password" />
             </div>
 
             <div>
@@ -211,7 +219,7 @@ export default function SignupPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !validatePassword(password).isValid}
               className="w-full bg-gray-700 text-white py-2 px-4 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Tworzenie konta...' : 'Utwórz konto'}
