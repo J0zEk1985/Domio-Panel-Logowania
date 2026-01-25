@@ -1,6 +1,7 @@
 import { useState, FormEvent, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { validatePassword, validatePIN, isPasswordHistoryValid } from '../lib/validation'
 import ValidationChecklist from '../components/ValidationChecklist'
 
 export default function ChangePasswordPage() {
@@ -46,12 +47,12 @@ export default function ChangePasswordPage() {
       let validation
       if (passwordType === 'password') {
         validation = validatePassword(newPassword)
-        if (!validation.isValid) {
+        if (!validation.allValid) {
           throw new Error('Nowe hasło nie spełnia wymagań')
         }
       } else {
         validation = validatePIN(newPassword)
-        if (!validation.isValid) {
+        if (!validation.allValid) {
           throw new Error('Nowy PIN nie spełnia wymagań')
         }
       }
@@ -73,8 +74,9 @@ export default function ChangePasswordPage() {
       }
 
       // Check password history (prevent reusing same password)
-      // Note: We can't easily get old password from Supabase, so we'll skip this check
-      // In a production system, you'd store password hashes in a separate table
+      if (!isPasswordHistoryValid(newPassword, currentPassword)) {
+        throw new Error('Nowe hasło musi różnić się od obecnego')
+      }
 
       // Update password
       const { error: updateError } = await supabase.auth.updateUser({
@@ -213,7 +215,7 @@ export default function ChangePasswordPage() {
                 !currentPassword ||
                 !newPassword ||
                 !repeatPassword ||
-                (passwordType === 'password' ? !validatePassword(newPassword).isValid : !validatePIN(newPassword).isValid)
+                (passwordType === 'password' ? !validatePassword(newPassword).allValid : !validatePIN(newPassword).allValid)
               }
               className="w-full bg-gray-700 text-white py-2 px-4 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >

@@ -4,23 +4,16 @@
  */
 
 export interface PasswordValidationResult {
-  isValid: boolean
-  errors: string[]
-  checks: {
-    minLength: boolean
-    hasUpperCase: boolean
-    hasNumberOrSpecial: boolean
-  }
+  isLong: boolean
+  hasUpper: boolean
+  hasSpecial: boolean
+  allValid: boolean
 }
 
 export interface PINValidationResult {
-  isValid: boolean
-  errors: string[]
-  checks: {
-    exactLength: boolean
-    isNumeric: boolean
-    notSimpleSequence: boolean
-  }
+  isSixDigits: boolean
+  isNotSimple: boolean
+  allValid: boolean
 }
 
 /**
@@ -31,21 +24,16 @@ export interface PINValidationResult {
  * - At least 1 number or special character
  */
 export function validatePassword(password: string): PasswordValidationResult {
-  const checks = {
-    minLength: password.length >= 8,
-    hasUpperCase: /[A-Z]/.test(password),
-    hasNumberOrSpecial: /[0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password),
-  }
-
-  const errors: string[] = []
-  if (!checks.minLength) errors.push('Hasło musi mieć minimum 8 znaków')
-  if (!checks.hasUpperCase) errors.push('Hasło musi zawierać przynajmniej jedną wielką literę')
-  if (!checks.hasNumberOrSpecial) errors.push('Hasło musi zawierać przynajmniej jedną cyfrę lub znak specjalny')
+  const isLong = password.length >= 8
+  const hasUpper = /[A-Z]/.test(password)
+  const hasSpecial = /[0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+  const allValid = isLong && hasUpper && hasSpecial
 
   return {
-    isValid: checks.minLength && checks.hasUpperCase && checks.hasNumberOrSpecial,
-    errors,
-    checks,
+    isLong,
+    hasUpper,
+    hasSpecial,
+    allValid,
   }
 }
 
@@ -57,21 +45,14 @@ export function validatePassword(password: string): PasswordValidationResult {
  * - Cannot be simple sequences (e.g., 123456, 111111, 000000)
  */
 export function validatePIN(pin: string): PINValidationResult {
-  const checks = {
-    exactLength: pin.length === 6,
-    isNumeric: /^\d+$/.test(pin),
-    notSimpleSequence: !isSimpleSequence(pin),
-  }
-
-  const errors: string[] = []
-  if (!checks.exactLength) errors.push('PIN musi składać się z dokładnie 6 cyfr')
-  if (!checks.isNumeric) errors.push('PIN może zawierać tylko cyfry')
-  if (!checks.notSimpleSequence) errors.push('PIN nie może być prostą sekwencją (np. 123456, 111111)')
+  const isSixDigits = pin.length === 6 && /^\d+$/.test(pin)
+  const isNotSimple = !isSimpleSequence(pin)
+  const allValid = isSixDigits && isNotSimple
 
   return {
-    isValid: checks.exactLength && checks.isNumeric && checks.notSimpleSequence,
-    errors,
-    checks,
+    isSixDigits,
+    isNotSimple,
+    allValid,
   }
 }
 

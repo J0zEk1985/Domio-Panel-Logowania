@@ -32,7 +32,7 @@ export default function SignupPage() {
 
     try {
       const passwordValidation = validatePassword(password)
-      if (!passwordValidation.isValid) {
+      if (!passwordValidation.allValid) {
         throw new Error('Hasło nie spełnia wymagań')
       }
 
@@ -219,7 +219,7 @@ export default function SignupPage() {
 
             <button
               type="submit"
-              disabled={loading || !validatePassword(password).isValid}
+              disabled={loading || !validatePassword(password).allValid}
               className="w-full bg-gray-700 text-white py-2 px-4 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Tworzenie konta...' : 'Utwórz konto'}
