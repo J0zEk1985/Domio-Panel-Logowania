@@ -138,6 +138,8 @@ Deno.serve(async (req) => {
     let isNewUser = false // Track if we just created the user (for cleanup on error)
 
     // Handle existing user case (idempotent behavior)
+    // CRITICAL: Jeśli admin.createUser zwróci błąd o istniejącym mailu, nie przerywaj funkcji
+    // Pobierz id istniejącego użytkownika z tabeli profiles
     if (authError) {
       const errorMessage = authError.message?.toLowerCase() || ''
       
@@ -145,23 +147,38 @@ Deno.serve(async (req) => {
       if (
         errorMessage.includes('already registered') ||
         errorMessage.includes('user already exists') ||
-        errorMessage.includes('already exists')
+        errorMessage.includes('already exists') ||
+        errorMessage.includes('email address is already registered')
       ) {
-        console.log(`[create-worker] User ${technicalEmail} already exists, fetching ID from profiles`)
+        console.log(`[create-worker] User ${technicalEmail} already exists, fetching ID from profiles (idempotent behavior)`)
         
         // Fetch existing user ID from profiles table
         const { data: existingProfile, error: profileFetchError } = await supabaseAdmin
           .from('profiles')
           .select('id')
           .eq('email', technicalEmail)
-          .single()
+          .maybeSingle()
 
-        if (profileFetchError || !existingProfile?.id) {
+        if (profileFetchError) {
           console.error('[create-worker] Error fetching existing profile:', profileFetchError)
           return new Response(
             JSON.stringify({ 
-              error: 'User exists but profile not found',
+              error: 'User exists but profile lookup failed',
               details: profileFetchError?.message || 'Profile lookup failed'
+            }),
+            {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            }
+          )
+        }
+
+        if (!existingProfile?.id) {
+          console.error('[create-worker] User exists but profile not found in database')
+          return new Response(
+            JSON.stringify({ 
+              error: 'User exists but profile not found',
+              details: 'Profile record missing for existing user'
             }),
             {
               status: 500,
@@ -172,7 +189,7 @@ Deno.serve(async (req) => {
 
         userId = existingProfile.id
         isNewUser = false // User already existed
-        console.log(`[create-worker] Found existing user ID: ${userId}`)
+        console.log(`[create-worker] Found existing user ID: ${userId} (idempotent - continuing with upsert)`)
       } else {
         // Other error - not related to existing user
         console.error('[create-worker] Error creating auth user:', authError)
@@ -206,9 +223,18 @@ Deno.serve(async (req) => {
     }
 
     // Upsert profile in Hub database
-    // CRITICAL: accepted_terms_at w formacie ISO String dla spójności z VPS
+    // CRITICAL: Gwarancja NOT NULL - upewnij się, że funkcja przy każdym wywołaniu wysyła accepted_terms_at
+    // Format ISO String dla spójności z VPS
+    // To zapobiegnie błędom 500 z Postgresa (NOT NULL constraint violation)
     const acceptedTermsAt = new Date().toISOString()
-    console.log(`[create-worker] Upserting profile with accepted_terms_at: ${acceptedTermsAt}`)
+    console.log(`[create-worker] Upserting profile with accepted_terms_at: ${acceptedTermsAt} (NOT NULL guarantee)`)
+    console.log(`[create-worker] Profile data:`, {
+      userId,
+      fullName,
+      technicalEmail,
+      acceptedTermsAt,
+      isNewUser,
+    })
     
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
@@ -216,7 +242,7 @@ Deno.serve(async (req) => {
         id: userId,
         full_name: fullName,
         email: technicalEmail,
-        accepted_terms_at: acceptedTermsAt,
+        accepted_terms_at: acceptedTermsAt, // CRITICAL: Zawsze ustawione - NOT NULL constraint
         terms_version: '1.0',
         account_type: 'simplified',
         is_first_login: true,

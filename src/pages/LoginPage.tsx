@@ -1,4 +1,4 @@
-import { useState, FormEvent, useEffect } from 'react'
+import { useState, FormEvent, useEffect, useRef } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
@@ -33,12 +33,14 @@ export default function LoginPage() {
 
   // CRITICAL: Check if user is already logged in and redirect accordingly
   // This is the gatekeeper - if user has session and came from Cleaning, redirect back immediately
-  // FIX: Dodaj flagę, aby uniknąć pętli przekierowań
-  const [hasCheckedSession, setHasCheckedSession] = useState(false)
+  // FIX 503 / Pętla: Zaimplementuj flagę hasCheckedSession używając useRef
+  // useRef zapobiega problemom z zależnościami w useEffect i pętlami przekierowań
+  const hasCheckedSessionRef = useRef(false)
   
   useEffect(() => {
     // Prevent multiple checks and redirect loops
-    if (hasCheckedSession) {
+    if (hasCheckedSessionRef.current) {
+      console.log('[SSO DEBUG] LoginPage: Sesja już sprawdzona, pomijanie...')
       return
     }
     
@@ -63,7 +65,7 @@ export default function LoginPage() {
           if (refreshError) {
             console.log('[SSO DEBUG] LoginPage: Błąd odświeżania sesji:', refreshError.message)
             // Mark as checked even on error to prevent infinite loops
-            setHasCheckedSession(true)
+            hasCheckedSessionRef.current = true
             return
           }
           
@@ -71,7 +73,7 @@ export default function LoginPage() {
             console.log('[SSO DEBUG] LoginPage: Sesja odświeżona z ciastek:', refreshedSession.user?.id)
             
             // Mark as checked before redirect to prevent loops
-            setHasCheckedSession(true)
+            hasCheckedSessionRef.current = true
             
             // User has session - check returnTo and redirect
             const returnToParam = searchParams.get('returnTo')
@@ -86,11 +88,11 @@ export default function LoginPage() {
             }
           } else {
             // No session found - mark as checked
-            setHasCheckedSession(true)
+            hasCheckedSessionRef.current = true
           }
         } else {
           // Mark as checked before redirect to prevent loops
-          setHasCheckedSession(true)
+          hasCheckedSessionRef.current = true
           
           // Session found - check returnTo and redirect immediately
           const returnToParam = searchParams.get('returnTo')
@@ -107,12 +109,12 @@ export default function LoginPage() {
       } catch (error) {
         console.error('[SSO DEBUG] LoginPage: Błąd podczas sprawdzania sesji:', error)
         // Mark as checked even on error to prevent infinite loops
-        setHasCheckedSession(true)
+        hasCheckedSessionRef.current = true
       }
     }
     
     checkSession()
-  }, [searchParams, navigate, hasCheckedSession])
+  }, [searchParams, navigate])
 
   const handleEmailLogin = async (e: FormEvent) => {
     e.preventDefault()
