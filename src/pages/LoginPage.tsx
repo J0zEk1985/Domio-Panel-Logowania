@@ -33,7 +33,15 @@ export default function LoginPage() {
 
   // CRITICAL: Check if user is already logged in and redirect accordingly
   // This is the gatekeeper - if user has session and came from Cleaning, redirect back immediately
+  // FIX: Dodaj flagę, aby uniknąć pętli przekierowań
+  const [hasCheckedSession, setHasCheckedSession] = useState(false)
+  
   useEffect(() => {
+    // Prevent multiple checks and redirect loops
+    if (hasCheckedSession) {
+      return
+    }
+    
     const checkSession = async () => {
       console.log('[SSO DEBUG] LoginPage: Sprawdzanie sesji przy wejściu na stronę logowania...')
       
@@ -54,10 +62,16 @@ export default function LoginPage() {
           
           if (refreshError) {
             console.log('[SSO DEBUG] LoginPage: Błąd odświeżania sesji:', refreshError.message)
+            // Mark as checked even on error to prevent infinite loops
+            setHasCheckedSession(true)
+            return
           }
           
           if (refreshedSession) {
             console.log('[SSO DEBUG] LoginPage: Sesja odświeżona z ciastek:', refreshedSession.user?.id)
+            
+            // Mark as checked before redirect to prevent loops
+            setHasCheckedSession(true)
             
             // User has session - check returnTo and redirect
             const returnToParam = searchParams.get('returnTo')
@@ -70,8 +84,14 @@ export default function LoginPage() {
               navigate('/dashboard')
               return
             }
+          } else {
+            // No session found - mark as checked
+            setHasCheckedSession(true)
           }
         } else {
+          // Mark as checked before redirect to prevent loops
+          setHasCheckedSession(true)
+          
           // Session found - check returnTo and redirect immediately
           const returnToParam = searchParams.get('returnTo')
           if (returnToParam && isValidDomioSubdomain(returnToParam)) {
@@ -86,11 +106,13 @@ export default function LoginPage() {
         }
       } catch (error) {
         console.error('[SSO DEBUG] LoginPage: Błąd podczas sprawdzania sesji:', error)
+        // Mark as checked even on error to prevent infinite loops
+        setHasCheckedSession(true)
       }
     }
     
     checkSession()
-  }, [searchParams, navigate])
+  }, [searchParams, navigate, hasCheckedSession])
 
   const handleEmailLogin = async (e: FormEvent) => {
     e.preventDefault()
