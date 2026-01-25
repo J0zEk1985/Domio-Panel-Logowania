@@ -42,21 +42,10 @@ export default function LoginPage() {
 
     const checkSession = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession()
+        const { data: { session } } = await supabase.auth.getSession()
         if (!isMounted) return
 
-        let effectiveSession = session
         if (!session) {
-          const { data: { session: refreshed }, error: refreshErr } = await supabase.auth.refreshSession()
-          if (!isMounted) return
-          if (refreshErr) {
-            hasCheckedSessionRef.current = true
-            return
-          }
-          effectiveSession = refreshed
-        }
-
-        if (!effectiveSession) {
           hasCheckedSessionRef.current = true
           return
         }

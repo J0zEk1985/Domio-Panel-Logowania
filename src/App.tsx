@@ -20,12 +20,11 @@ function App() {
     const checkInitialSession = async () => {
       try {
         // Try to get session from cookies
-        const { data: { session }, error } = await supabase.auth.getSession()
+        const { data: { session } } = await supabase.auth.getSession()
         
         console.log('[SSO DEBUG] App: Wynik getSession:', {
           hasSession: !!session,
           userId: session?.user?.id,
-          error: error?.message,
         })
         
         // If session is empty, try to refresh it (forces reading from cookie)
