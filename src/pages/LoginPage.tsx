@@ -120,12 +120,37 @@ export default function LoginPage() {
         navigate('/dashboard')
       }
     } catch (err: unknown) {
-      // Handle rate limit error (429)
-      if (err && typeof err === 'object' && 'status' in err && err.status === 429) {
-        setError('Zbyt wiele nieudanych prób. Twoje konto zostało tymczasowo zablokowane ze względów bezpieczeństwa. Spróbuj ponownie za 15 minut.')
-      } else {
-        setError(err instanceof Error ? err.message : 'Wystąpił błąd podczas logowania')
+      // Translate Supabase errors to Polish messages
+      let errorMessage = 'Wystąpił nieoczekiwany błąd podczas logowania.'
+      
+      if (err && typeof err === 'object') {
+        // Handle rate limit error (429)
+        if ('status' in err && err.status === 429) {
+          errorMessage = 'Zbyt wiele prób logowania. Spróbuj ponownie za chwilę.'
+        } else if ('message' in err && typeof err.message === 'string') {
+          const errorMsg = err.message.toLowerCase()
+          
+          // Invalid login credentials
+          if (errorMsg.includes('invalid login credentials') || 
+              errorMsg.includes('invalid credentials') ||
+              errorMsg.includes('email') && errorMsg.includes('password')) {
+            errorMessage = 'Nieprawidłowy e-mail/login lub hasło.'
+          }
+          // Email not confirmed
+          else if (errorMsg.includes('email not confirmed') || 
+                   errorMsg.includes('email_not_confirmed') ||
+                   errorMsg.includes('email address not confirmed')) {
+            errorMessage = 'Adres e-mail nie został jeszcze potwierdzony.'
+          }
+          // Too many requests (alternative check)
+          else if (errorMsg.includes('too many requests') || 
+                   errorMsg.includes('rate limit')) {
+            errorMessage = 'Zbyt wiele prób logowania. Spróbuj ponownie za chwilę.'
+          }
+        }
       }
+      
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
