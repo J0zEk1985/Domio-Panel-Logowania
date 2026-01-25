@@ -1,0 +1,202 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+
+/**
+ * Edge Function: create-worker
+ * Creates simplified worker accounts in Hub database
+ * 
+ * Accepts: slug, pin, firstName, lastName, orgId
+ * Returns: userId, email
+ */
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': 'https://cleaning.domio.com.pl',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+interface CreateWorkerRequest {
+  slug: string
+  pin: string
+  firstName: string
+  lastName: string
+  orgId: string
+}
+
+Deno.serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  try {
+    // Get environment variables
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error('[create-worker] Missing environment variables')
+      return new Response(
+        JSON.stringify({ error: 'Server configuration error' }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    // Create admin client with service role key
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+
+    // Parse request body
+    const body: CreateWorkerRequest = await req.json()
+
+    // Validate required fields
+    if (!body.slug || !body.pin || !body.firstName || !body.lastName || !body.orgId) {
+      console.error('[create-worker] Missing required fields:', body)
+      return new Response(
+        JSON.stringify({ error: 'Missing required fields: slug, pin, firstName, lastName, orgId' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    // Generate technical email
+    const technicalEmail = `${body.slug.toLowerCase()}@staff.domio.com.pl`
+    const fullName = `${body.firstName} ${body.lastName}`
+
+    console.log(`[create-worker] Creating worker account for: ${technicalEmail}`)
+
+    // Check if user with this email already exists
+    const { data: existingUser, error: checkError } = await supabaseAdmin.auth.admin.listUsers()
+    
+    if (checkError) {
+      console.error('[create-worker] Error checking existing users:', checkError)
+      return new Response(
+        JSON.stringify({ error: 'Failed to check existing users' }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    const userExists = existingUser?.users?.some(
+      (user) => user.email === technicalEmail
+    )
+
+    if (userExists) {
+      console.error(`[create-worker] User with email ${technicalEmail} already exists`)
+      return new Response(
+        JSON.stringify({ error: `User with slug "${body.slug}" already exists` }),
+        {
+          status: 409,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    // Create auth user
+    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email: technicalEmail,
+      password: body.pin,
+      email_confirm: true,
+      user_metadata: {
+        firstName: body.firstName,
+        lastName: body.lastName,
+        is_simplified: true,
+      },
+    })
+
+    if (authError || !authUser?.user) {
+      console.error('[create-worker] Error creating auth user:', authError)
+      return new Response(
+        JSON.stringify({ 
+          error: 'Failed to create user account',
+          details: authError?.message 
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    const userId = authUser.user.id
+    console.log(`[create-worker] Auth user created successfully: ${userId}`)
+
+    // Upsert profile in Hub database
+    const { error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .upsert({
+        id: userId,
+        full_name: fullName,
+        email: technicalEmail,
+        accepted_terms_at: new Date().toISOString(),
+        terms_version: '1.0',
+        account_type: 'simplified',
+        is_first_login: true,
+        preferences: {
+          firstName: body.firstName,
+          lastName: body.lastName,
+          orgId: body.orgId,
+          is_simplified: true,
+        },
+      }, {
+        onConflict: 'id',
+      })
+
+    if (profileError) {
+      console.error('[create-worker] Error upserting profile:', profileError)
+      
+      // Attempt to clean up auth user if profile creation fails
+      await supabaseAdmin.auth.admin.deleteUser(userId)
+      console.log(`[create-worker] Cleaned up auth user ${userId} due to profile creation failure`)
+
+      return new Response(
+        JSON.stringify({ 
+          error: 'Failed to create user profile',
+          details: profileError.message 
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    console.log(`[create-worker] Profile created successfully for user: ${userId}`)
+
+    // Return success response
+    return new Response(
+      JSON.stringify({
+        userId,
+        email: technicalEmail,
+        message: 'Worker account created successfully',
+      }),
+      {
+        status: 201,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    )
+
+  } catch (error) {
+    console.error('[create-worker] Unexpected error:', error)
+    return new Response(
+      JSON.stringify({ 
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    )
+  }
+})
