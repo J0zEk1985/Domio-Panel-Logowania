@@ -19,9 +19,6 @@ function App() {
     
     const checkInitialSession = async () => {
       try {
-        // Log all cookies for debugging
-        console.log('[SSO DEBUG] App: Wszystkie ciastka:', document.cookie)
-        
         // Try to get session from cookies
         const { data: { session }, error } = await supabase.auth.getSession()
         

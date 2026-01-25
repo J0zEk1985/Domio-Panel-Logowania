@@ -31,92 +31,53 @@ export default function LoginPage() {
     }
   }, [searchParams])
 
-  // CRITICAL: Check if user is already logged in and redirect accordingly
-  // This is the gatekeeper - if user has session and came from Cleaning, redirect back immediately
-  // FIX 503 / Pętla: Zaimplementuj flagę hasCheckedSession używając useRef
-  // useRef zapobiega problemom z zależnościami w useEffect i pętlami przekierowań
+  // CRITICAL: Check if user is already logged in and redirect accordingly.
+  // Single getSession, returnTo + window.location.replace for SSO correctness.
   const hasCheckedSessionRef = useRef(false)
-  
+
   useEffect(() => {
-    // Prevent multiple checks and redirect loops
-    if (hasCheckedSessionRef.current) {
-      console.log('[SSO DEBUG] LoginPage: Sesja już sprawdzona, pomijanie...')
-      return
-    }
-    
+    if (hasCheckedSessionRef.current) return
+
+    let isMounted = true
+
     const checkSession = async () => {
-      console.log('[SSO DEBUG] LoginPage: Sprawdzanie sesji przy wejściu na stronę logowania...')
-      
       try {
-        // First, try to get session from cookies
         const { data: { session }, error } = await supabase.auth.getSession()
-        
-        console.log('[SSO DEBUG] LoginPage: Wynik getSession:', {
-          hasSession: !!session,
-          userId: session?.user?.id,
-          error: error?.message,
-        })
-        
-        // If no session, try to refresh (forces reading from cookie)
+        if (!isMounted) return
+
+        let effectiveSession = session
         if (!session) {
-          console.log('[SSO DEBUG] LoginPage: Sesja pusta, próba odświeżenia z ciastek...')
-          const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
-          
-          if (refreshError) {
-            console.log('[SSO DEBUG] LoginPage: Błąd odświeżania sesji:', refreshError.message)
-            // Mark as checked even on error to prevent infinite loops
+          const { data: { session: refreshed }, error: refreshErr } = await supabase.auth.refreshSession()
+          if (!isMounted) return
+          if (refreshErr) {
             hasCheckedSessionRef.current = true
             return
           }
-          
-          if (refreshedSession) {
-            console.log('[SSO DEBUG] LoginPage: Sesja odświeżona z ciastek:', refreshedSession.user?.id)
-            
-            // Mark as checked before redirect to prevent loops
-            hasCheckedSessionRef.current = true
-            
-            // User has session - check returnTo and redirect
-            // CRITICAL: Use window.location.replace() to force full page reload and proper cookie loading
-            const returnToParam = searchParams.get('returnTo') || returnTo
-            if (returnToParam && isValidDomioSubdomain(returnToParam)) {
-              console.log('[SSO DEBUG] LoginPage: Przekierowanie do returnTo:', returnToParam)
-              window.location.replace(returnToParam)
-              return
-            } else {
-              console.log('[SSO DEBUG] LoginPage: Przekierowanie do dashboard (brak returnTo)')
-              navigate('/dashboard')
-              return
-            }
-          } else {
-            // No session found - mark as checked
-            hasCheckedSessionRef.current = true
-          }
-        } else {
-          // Mark as checked before redirect to prevent loops
-          hasCheckedSessionRef.current = true
-          
-          // Session found - check returnTo and redirect immediately
-          // CRITICAL: Use window.location.replace() to force full page reload and proper cookie loading
-          const returnToParam = searchParams.get('returnTo') || returnTo
-          if (returnToParam && isValidDomioSubdomain(returnToParam)) {
-            console.log('[SSO DEBUG] LoginPage: Użytkownik ma sesję, przekierowanie do returnTo:', returnToParam)
-            window.location.replace(returnToParam)
-            return
-          } else {
-            console.log('[SSO DEBUG] LoginPage: Użytkownik ma sesję, przekierowanie do dashboard')
-            navigate('/dashboard')
-            return
-          }
+          effectiveSession = refreshed
         }
-      } catch (error) {
-        console.error('[SSO DEBUG] LoginPage: Błąd podczas sprawdzania sesji:', error)
-        // Mark as checked even on error to prevent infinite loops
+
+        if (!effectiveSession) {
+          hasCheckedSessionRef.current = true
+          return
+        }
+
         hasCheckedSessionRef.current = true
+        const returnToParam = searchParams.get('returnTo') || returnTo
+        if (returnToParam && isValidDomioSubdomain(returnToParam)) {
+          window.location.replace(returnToParam)
+          return
+        }
+        if (isMounted) navigate('/dashboard')
+      } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') return
+        console.error('[SSO DEBUG] LoginPage: Błąd podczas sprawdzania sesji:', e)
+        if (isMounted) hasCheckedSessionRef.current = true
       }
     }
-    
+
     checkSession()
-  }, [searchParams, navigate])
+    return () => { isMounted = false }
+  }, [searchParams, navigate, returnTo])
 
   const handleEmailLogin = async (e: FormEvent) => {
     e.preventDefault()
