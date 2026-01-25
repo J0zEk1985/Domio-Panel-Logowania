@@ -1,5 +1,5 @@
 import { useState, FormEvent } from 'react'
-import { useNavigate, Link, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 export default function ForgotPasswordPage() {
@@ -7,7 +7,6 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 
   const handleResetPassword = async (e: FormEvent) => {
@@ -19,14 +18,14 @@ export default function ForgotPasswordPage() {
     try {
       const emailInput = email.trim()
 
-      // Check if input contains @ (is an email)
+      // Sprawdzenie czy input zawiera @ (czy jest mailem)
       if (!emailInput.includes('@')) {
         setError('Personel nie może resetować hasła samodzielnie. Skontaktuj się z przełożonym')
         setLoading(false)
         return
       }
 
-      // If it's an email, send reset password email
+      // Jeśli to email, wyślij link do resetowania
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(emailInput, {
         redirectTo: `${window.location.origin}/reset-password`,
       })
