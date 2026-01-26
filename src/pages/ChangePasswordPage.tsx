@@ -22,6 +22,14 @@ export default function ChangePasswordPage() {
       } = await supabase.auth.getUser()
       if (!user) {
         navigate('/login')
+        return
+      }
+
+      // Automatyczna detekcja typu hasła na podstawie e-maila
+      if (user.email && user.email.includes('@staff.domio.com.pl')) {
+        setPasswordType('pin')
+      } else {
+        setPasswordType('password')
       }
     }
     checkUser()
@@ -59,7 +67,11 @@ export default function ChangePasswordPage() {
 
       // Check if passwords match
       if (newPassword !== repeatPassword) {
-        throw new Error('Nowe hasła nie są identyczne')
+        throw new Error(
+          passwordType === 'password' 
+            ? 'Nowe hasła nie są identyczne' 
+            : 'Nowe PIN-y nie są identyczne'
+        )
       }
 
       // SECURITY: Silent login to verify current password
@@ -70,12 +82,20 @@ export default function ChangePasswordPage() {
       })
 
       if (signInError) {
-        throw new Error('Obecne hasło jest nieprawidłowe')
+        throw new Error(
+          passwordType === 'password' 
+            ? 'Obecne hasło jest nieprawidłowe' 
+            : 'Obecny PIN jest nieprawidłowy'
+        )
       }
 
       // Check password history (prevent reusing same password)
       if (!isPasswordHistoryValid(newPassword, currentPassword)) {
-        throw new Error('Nowe hasło musi różnić się od obecnego')
+        throw new Error(
+          passwordType === 'password' 
+            ? 'Nowe hasło musi różnić się od obecnego' 
+            : 'Nowy PIN musi różnić się od obecnego'
+        )
       }
 
       // Update password
@@ -114,7 +134,11 @@ export default function ChangePasswordPage() {
         navigate('/dashboard', { replace: true })
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Wystąpił błąd podczas zmiany hasła')
+      setError(
+        err instanceof Error 
+          ? err.message 
+          : `Wystąpił błąd podczas zmiany ${passwordType === 'password' ? 'hasła' : 'PIN'}`
+      )
     } finally {
       setLoading(false)
     }
@@ -140,7 +164,9 @@ export default function ChangePasswordPage() {
                 />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold text-white mb-2">Hasło zostało zmienione</h1>
+            <h1 className="text-2xl font-bold text-white mb-2">
+              {passwordType === 'password' ? 'Hasło zostało zmienione' : 'PIN został zmieniony'}
+            </h1>
             <p className="text-gray-400">Przekierowywanie...</p>
           </div>
         </div>
@@ -152,28 +178,23 @@ export default function ChangePasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-900 px-4">
       <div className="w-full max-w-md">
         <div className="bg-gray-800 rounded-lg shadow-xl p-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Zmień hasło</h1>
-          <p className="text-gray-400 mb-8">Wprowadź obecne hasło i nowe hasło</p>
+          <h1 className="text-3xl font-bold text-white mb-2">Zmień {passwordType === 'password' ? 'hasło' : 'PIN'}</h1>
+          <p className="text-gray-400 mb-2">
+            {passwordType === 'password' 
+              ? 'Zmieniasz hasło do konta' 
+              : 'Zmieniasz swój PIN pracowniczy'}
+          </p>
+          <p className="text-gray-500 text-sm mb-8">
+            {passwordType === 'password' 
+              ? 'Wprowadź obecne hasło i nowe hasło' 
+              : 'Wprowadź obecny PIN i nowy PIN'}
+          </p>
 
           <form onSubmit={handleChangePassword} className="space-y-6">
-            <div>
-              <label htmlFor="password-type" className="block text-sm font-medium text-gray-300 mb-2">
-                Typ hasła
-              </label>
-              <select
-                id="password-type"
-                value={passwordType}
-                onChange={(e) => setPasswordType(e.target.value as 'password' | 'pin')}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="password">Hasło (Właściciel)</option>
-                <option value="pin">PIN (Pracownik)</option>
-              </select>
-            </div>
 
             <div>
               <label htmlFor="current-password" className="block text-sm font-medium text-gray-300 mb-2">
-                Obecne hasło
+                Obecne {passwordType === 'password' ? 'hasło' : 'PIN'}
               </label>
               <input
                 id="current-password"
@@ -236,7 +257,9 @@ export default function ChangePasswordPage() {
               }
               className="w-full bg-gray-700 text-white py-2 px-4 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Zmienianie hasła...' : 'Zmień hasło'}
+              {loading 
+                ? `Zmienianie ${passwordType === 'password' ? 'hasła' : 'PIN'}...` 
+                : `Zmień ${passwordType === 'password' ? 'hasło' : 'PIN'}`}
             </button>
           </form>
         </div>
