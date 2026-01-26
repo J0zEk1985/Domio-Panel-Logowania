@@ -1,6 +1,5 @@
 import { useState, FormEvent, useEffect, useRef } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
-import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 
 const isValidDomioSubdomain = (url: string): boolean => {
@@ -13,19 +12,64 @@ const isValidDomioSubdomain = (url: string): boolean => {
   }
 }
 
-interface LoginPageProps {
-  session: Session | null
+/**
+ * Hard reset function - completely clears session, cookies, and localStorage
+ * Used when 403 error occurs or logout=true parameter is detected
+ */
+const performHardReset = async (): Promise<void> => {
+  try {
+    // Sign out from Supabase (local scope only)
+    await supabase.auth.signOut({ scope: 'local' })
+  } catch (error) {
+    console.error('[LoginPage] Error during signOut:', error)
+  }
+
+  try {
+    // Manually remove cookies from parent domain (Supabase library sometimes lacks permissions)
+    const cookiesToRemove = [
+      'sb-access-token',
+      'sb-refresh-token',
+      'domio-auth-token',
+    ]
+    
+    cookiesToRemove.forEach((cookieName) => {
+      // Remove from parent domain
+      document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.domio.com.pl;`
+      // Remove from current domain
+      document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+    })
+  } catch (error) {
+    console.error('[LoginPage] Error removing cookies:', error)
+  }
+
+  try {
+    // Clear localStorage under session key
+    localStorage.removeItem('domio-auth-token')
+    // Clear all Supabase-related keys
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && (key.startsWith('sb-') || key.includes('supabase') || key.includes('domio-auth'))) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key))
+  } catch (error) {
+    console.error('[LoginPage] Error clearing localStorage:', error)
+  }
 }
 
-export default function LoginPage({ session }: LoginPageProps) {
+export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [isChecking, setIsChecking] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [returnTo, setReturnTo] = useState<string | null>(null)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const lastRedirectedUserIdRef = useRef<string | null>(null)
+  const hasCheckedRef = useRef(false)
 
   useEffect(() => {
     const returnToParam = searchParams.get('returnTo')
@@ -35,26 +79,79 @@ export default function LoginPage({ session }: LoginPageProps) {
     }
   }, [searchParams])
 
+  // Session verification using getUser() - server-side token validation
   useEffect(() => {
-    if (!session?.user?.id) return
-    const userId = session.user.id
-    if (lastRedirectedUserIdRef.current === userId) return
+    if (hasCheckedRef.current) return
+    hasCheckedRef.current = true
 
-    const returnToParam = searchParams.get('returnTo') || returnTo
-    const target = returnToParam && isValidDomioSubdomain(returnToParam)
-      ? returnToParam
-      : '/dashboard'
+    const verifySession = async () => {
+      try {
+        setIsChecking(true)
+        setError(null)
 
-    const t = setTimeout(() => {
-      lastRedirectedUserIdRef.current = userId
-      if (target.startsWith('http')) {
-        window.location.replace(target)
-      } else {
-        navigate(target, { replace: true })
+        // Check if logout parameter is present - perform hard reset first
+        const logoutParam = searchParams.get('logout')
+        if (logoutParam === 'true') {
+          await performHardReset()
+          // Remove logout parameter from URL
+          const newSearchParams = new URLSearchParams(searchParams)
+          newSearchParams.delete('logout')
+          const newSearch = newSearchParams.toString()
+          const newUrl = newSearch ? `?${newSearch}` : window.location.pathname
+          window.history.replaceState({}, '', newUrl)
+        }
+
+        // Use getUser() to force server-side token validation
+        const { data: userData, error: userError } = await supabase.auth.getUser()
+
+        // Handle 403 Forbidden or any error
+        if (userError || !userData?.user) {
+          // If error status is 403 or token is invalid, perform hard reset
+          const is403 = userError?.status === 403 || userError?.message?.toLowerCase().includes('forbidden')
+          const isInvalidToken = userError?.message?.toLowerCase().includes('jwt') || 
+                                 userError?.message?.toLowerCase().includes('token') ||
+                                 userError?.message?.toLowerCase().includes('expired')
+
+          if (is403 || isInvalidToken) {
+            await performHardReset()
+          }
+          
+          // Stop checking and show login form
+          setIsChecking(false)
+          return
+        }
+
+        // User is authenticated - check if we should redirect
+        const userId = userData.user.id
+        if (userId && lastRedirectedUserIdRef.current !== userId) {
+          const returnToParam = searchParams.get('returnTo') || returnTo
+          const target = returnToParam && isValidDomioSubdomain(returnToParam)
+            ? returnToParam
+            : '/dashboard'
+
+          lastRedirectedUserIdRef.current = userId
+          
+          if (target.startsWith('http')) {
+            window.location.replace(target)
+          } else {
+            navigate(target, { replace: true })
+          }
+        } else {
+          setIsChecking(false)
+        }
+      } catch (error) {
+        console.error('[LoginPage] Error during session verification:', error)
+        // On any error, perform hard reset and show login form
+        await performHardReset()
+        setIsChecking(false)
+      } finally {
+        // Ensure isChecking is set to false if we're not redirecting
+        // This will be handled by the redirect or error cases above
       }
-    }, 500)
-    return () => clearTimeout(t)
-  }, [session, searchParams, returnTo, navigate])
+    }
+
+    void verifySession()
+  }, [searchParams, returnTo, navigate])
 
   const handleEmailLogin = async (e: FormEvent) => {
     e.preventDefault()
@@ -197,6 +294,22 @@ export default function LoginPage({ session }: LoginPageProps) {
       setError(err instanceof Error ? err.message : 'Wystąpił błąd podczas logowania przez Facebook')
       setLoading(false)
     }
+  }
+
+  // Show loading state during session verification
+  if (isChecking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white px-4">
+        <div className="w-full max-w-md">
+          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+            <div className="mb-4">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+            </div>
+            <p className="text-gray-600">Weryfikacja sesji...</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

@@ -124,7 +124,7 @@ function App() {
     <Routes>
       <Route
         path="/login"
-        element={<LoginPage session={session} />}
+        element={<LoginPage />}
       />
       <Route
         path="/signup"
