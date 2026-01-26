@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
@@ -11,55 +12,10 @@ import ResetPasswordPage from './pages/ResetPasswordPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
 
 function App() {
-  const [session, setSession] = useState<unknown>(null)
+  const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    console.log('[SSO DEBUG] App: Inicjalizacja aplikacji Hub...')
-    
-    const checkInitialSession = async () => {
-      try {
-        // Try to get session from cookies
-        const { data: { session } } = await supabase.auth.getSession()
-        
-        console.log('[SSO DEBUG] App: Wynik getSession:', {
-          hasSession: !!session,
-          userId: session?.user?.id,
-        })
-        
-        // If session is empty, try to refresh it (forces reading from cookie)
-        if (!session) {
-          console.log('[SSO DEBUG] App: Sesja pusta, próba odświeżenia z ciastek...')
-          const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
-          
-          if (refreshError) {
-            console.log('[SSO DEBUG] App: Błąd odświeżania sesji:', refreshError.message)
-          }
-          
-          if (refreshedSession) {
-            console.log('[SSO DEBUG] App: Sesja odświeżona z ciastek:', refreshedSession.user?.id)
-            setSession(refreshedSession)
-            if (await checkSimplifiedMembership(refreshedSession.user.id)) return
-            await checkFirstLoginAndRedirect(refreshedSession.user.id)
-            setLoading(false)
-            return
-          }
-        }
-        
-        setSession(session)
-        
-        if (session?.user?.id) {
-          if (await checkSimplifiedMembership(session.user.id)) return
-          await checkFirstLoginAndRedirect(session.user.id)
-        }
-        
-        setLoading(false)
-      } catch (e) {
-        console.error('[SSO DEBUG] App: Błąd podczas sprawdzania sesji:', e)
-        setLoading(false)
-      }
-    }
-
     /** Simplified users must have at least one membership; otherwise signOut and redirect to login. */
     const checkSimplifiedMembership = async (userId: string): Promise<boolean> => {
       try {
@@ -83,7 +39,6 @@ function App() {
       }
     }
 
-    // Helper function to check is_first_login and redirect
     const checkFirstLoginAndRedirect = async (userId: string) => {
       try {
         const { data: profile, error: profileError } = await supabase
@@ -93,59 +48,67 @@ function App() {
           .single()
 
         if (profileError) {
-          console.error('[SSO DEBUG] App: Błąd pobierania profilu:', profileError)
+          console.error('[App] Błąd pobierania profilu:', profileError)
           return
         }
 
-        // CRITICAL: If is_first_login is true, redirect to change-password
-        // This check happens regardless of which app user is trying to access
         if (profile?.is_first_login === true) {
           const currentPath = window.location.pathname
-          // Only redirect if not already on change-password page
           if (currentPath !== '/change-password') {
-            console.log('[SSO DEBUG] App: is_first_login=true, przekierowanie na /change-password')
             window.location.href = '/change-password'
           }
         }
       } catch (error) {
-        console.error('[SSO DEBUG] App: Błąd podczas sprawdzania is_first_login:', error)
+        console.error('[App] Błąd podczas sprawdzania is_first_login:', error)
       }
     }
 
-    // Check session immediately
-    checkInitialSession()
+    let cancelled = false
+    let sub: { unsubscribe: () => void } | null = null
 
-    // Listen for auth state changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[SSO DEBUG] App: Auth state changed:', event, session?.user?.id)
-      setSession(session)
-      
-      // CRITICAL: Check simplified membership, then is_first_login after auth state change
-      if (session?.user?.id && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
-        try {
-          if (await checkSimplifiedMembership(session.user.id)) return
-          const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('is_first_login')
-            .eq('id', session.user.id)
-            .single()
-
-          if (!profileError && profile?.is_first_login === true) {
-            const currentPath = window.location.pathname
-            if (currentPath !== '/change-password') {
-              console.log('[SSO DEBUG] App: is_first_login=true po zmianie stanu auth, przekierowanie na /change-password')
-              window.location.href = '/change-password'
-            }
+    const setupAuth = async () => {
+      try {
+        const { data: { session: initialSession } } = await supabase.auth.getSession()
+        if (!initialSession) {
+          const { error: refreshError } = await supabase.auth.refreshSession()
+          if (refreshError) {
+            const msg = (refreshError.message ?? '').toLowerCase()
+            const isExpiredOrInvalid =
+              msg.includes('expired') ||
+              (msg.includes('refresh') && msg.includes('invalid')) ||
+              (msg.includes('jwt') && msg.includes('expired'))
+            if (isExpiredOrInvalid) await supabase.auth.signOut()
+            setLoading(false)
           }
-        } catch (e) {
-          console.error('[SSO DEBUG] App: Błąd podczas sprawdzania is_first_login w onAuthStateChange:', e)
         }
+      } catch (e) {
+        console.error('[App] Błąd inicjalizacji auth:', e)
+        setLoading(false)
       }
+    }
+
+    void setupAuth().then(() => {
+      if (cancelled) return
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        setSession(session)
+        setLoading(false)
+
+        if (session?.user?.id && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+          try {
+            if (await checkSimplifiedMembership(session.user.id)) return
+            await checkFirstLoginAndRedirect(session.user.id)
+          } catch (e) {
+            console.error('[App] Błąd w onAuthStateChange:', e)
+          }
+        }
+      })
+      sub = subscription
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      cancelled = true
+      sub?.unsubscribe()
+    }
   }, [])
 
   if (loading) {
@@ -156,14 +119,11 @@ function App() {
     )
   }
 
-  // CRITICAL: For login route, always render LoginPage - it will handle returnTo redirect logic
-  // LoginPage checks if user has session and redirects to returnTo if present
-  // This prevents App from auto-redirecting to /dashboard and losing returnTo parameter
   return (
     <Routes>
       <Route
         path="/login"
-        element={<LoginPage />}
+        element={<LoginPage session={session} />}
       />
       <Route
         path="/signup"

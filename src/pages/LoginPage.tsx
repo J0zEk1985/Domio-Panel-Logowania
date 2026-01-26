@@ -1,20 +1,23 @@
 import { useState, FormEvent, useEffect, useRef } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
+import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 
-// Helper function to validate if URL is a valid *.domio.com.pl subdomain
 const isValidDomioSubdomain = (url: string): boolean => {
   try {
     const urlObj = new URL(url)
     const hostname = urlObj.hostname
-    // Check if hostname ends with .domio.com.pl or is exactly domio.com.pl
     return hostname === 'domio.com.pl' || hostname.endsWith('.domio.com.pl')
   } catch {
     return false
   }
 }
 
-export default function LoginPage() {
+interface LoginPageProps {
+  session: Session | null
+}
+
+export default function LoginPage({ session }: LoginPageProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,54 +25,36 @@ export default function LoginPage() {
   const [returnTo, setReturnTo] = useState<string | null>(null)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const lastRedirectedUserIdRef = useRef<string | null>(null)
 
-  // Store returnTo in component state to prevent it from "escaping" during password input
   useEffect(() => {
     const returnToParam = searchParams.get('returnTo')
-    if (returnToParam) {
-      setReturnTo(returnToParam)
-    }
+    if (returnToParam) setReturnTo(returnToParam)
     if (searchParams.get('error') === 'no_membership') {
       setError('Brak uprawnień do żadnej organizacji. Skontaktuj się z administratorem.')
     }
   }, [searchParams])
 
-  // CRITICAL: Check if user is already logged in and redirect accordingly.
-  // Single getSession, returnTo + window.location.replace for SSO correctness.
-  const hasCheckedSessionRef = useRef(false)
-
   useEffect(() => {
-    if (hasCheckedSessionRef.current) return
+    if (!session?.user?.id) return
+    const userId = session.user.id
+    if (lastRedirectedUserIdRef.current === userId) return
 
-    let isMounted = true
+    const returnToParam = searchParams.get('returnTo') || returnTo
+    const target = returnToParam && isValidDomioSubdomain(returnToParam)
+      ? returnToParam
+      : '/dashboard'
 
-    const checkSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!isMounted) return
-
-        if (!session) {
-          hasCheckedSessionRef.current = true
-          return
-        }
-
-        hasCheckedSessionRef.current = true
-        const returnToParam = searchParams.get('returnTo') || returnTo
-        if (returnToParam && isValidDomioSubdomain(returnToParam)) {
-          window.location.replace(returnToParam)
-          return
-        }
-        if (isMounted) navigate('/dashboard')
-      } catch (e) {
-        if (e instanceof Error && e.name === 'AbortError') return
-        console.error('[SSO DEBUG] LoginPage: Błąd podczas sprawdzania sesji:', e)
-        if (isMounted) hasCheckedSessionRef.current = true
+    const t = setTimeout(() => {
+      lastRedirectedUserIdRef.current = userId
+      if (target.startsWith('http')) {
+        window.location.replace(target)
+      } else {
+        navigate(target, { replace: true })
       }
-    }
-
-    checkSession()
-    return () => { isMounted = false }
-  }, [searchParams, navigate, returnTo])
+    }, 500)
+    return () => clearTimeout(t)
+  }, [session, searchParams, returnTo, navigate])
 
   const handleEmailLogin = async (e: FormEvent) => {
     e.preventDefault()
