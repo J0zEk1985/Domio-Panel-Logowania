@@ -29,6 +29,9 @@ export default function LoginPage() {
     if (returnToParam) {
       setReturnTo(returnToParam)
     }
+    if (searchParams.get('error') === 'no_membership') {
+      setError('Brak uprawnień do żadnej organizacji. Skontaktuj się z administratorem.')
+    }
   }, [searchParams])
 
   // CRITICAL: Check if user is already logged in and redirect accordingly.
@@ -80,12 +83,37 @@ export default function LoginPage() {
         emailToUse = `${emailToUse}@staff.domio.com.pl`
       }
 
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email: emailToUse,
         password,
       })
 
-      if (error) throw error
+      if (signInError) throw signInError
+
+      const userId = signInData.session?.user?.id
+      if (!userId) {
+        setError('Wystąpił błąd podczas logowania.')
+        return
+      }
+
+      // Simplified users must have at least one membership
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('account_type')
+        .eq('id', userId)
+        .maybeSingle()
+      const accountType = (profile?.account_type ?? '').toString().toLowerCase()
+      if (accountType === 'simplified') {
+        const { data: membershipRows } = await supabase
+          .from('memberships')
+          .select('id')
+          .eq('user_id', userId)
+        if (!membershipRows || membershipRows.length === 0) {
+          await supabase.auth.signOut()
+          setError('Brak uprawnień do żadnej organizacji. Skontaktuj się z administratorem.')
+          return
+        }
+      }
 
       // Get returnTo from search params and redirect accordingly
       const returnTo = searchParams.get('returnTo')

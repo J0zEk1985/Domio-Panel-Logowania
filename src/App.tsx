@@ -39,10 +39,8 @@ function App() {
           if (refreshedSession) {
             console.log('[SSO DEBUG] App: Sesja odświeżona z ciastek:', refreshedSession.user?.id)
             setSession(refreshedSession)
-            
-            // CRITICAL: Check is_first_login flag and redirect if needed
+            if (await checkSimplifiedMembership(refreshedSession.user.id)) return
             await checkFirstLoginAndRedirect(refreshedSession.user.id)
-            
             setLoading(false)
             return
           }
@@ -50,15 +48,38 @@ function App() {
         
         setSession(session)
         
-        // CRITICAL: Check is_first_login flag and redirect if needed
         if (session?.user?.id) {
+          if (await checkSimplifiedMembership(session.user.id)) return
           await checkFirstLoginAndRedirect(session.user.id)
         }
         
         setLoading(false)
-      } catch (error) {
-        console.error('[SSO DEBUG] App: Błąd podczas sprawdzania sesji:', error)
+      } catch (e) {
+        console.error('[SSO DEBUG] App: Błąd podczas sprawdzania sesji:', e)
         setLoading(false)
+      }
+    }
+
+    /** Simplified users must have at least one membership; otherwise signOut and redirect to login. */
+    const checkSimplifiedMembership = async (userId: string): Promise<boolean> => {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('account_type')
+          .eq('id', userId)
+          .maybeSingle()
+        const accountType = (profile?.account_type ?? '').toString().toLowerCase()
+        if (accountType !== 'simplified') return false
+        const { data: rows } = await supabase
+          .from('memberships')
+          .select('id')
+          .eq('user_id', userId)
+        if (rows && rows.length > 0) return false
+        await supabase.auth.signOut()
+        window.location.href = '/login?error=no_membership'
+        return true
+      } catch {
+        return false
       }
     }
 
@@ -101,9 +122,10 @@ function App() {
       console.log('[SSO DEBUG] App: Auth state changed:', event, session?.user?.id)
       setSession(session)
       
-      // CRITICAL: Check is_first_login after auth state change
+      // CRITICAL: Check simplified membership, then is_first_login after auth state change
       if (session?.user?.id && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
         try {
+          if (await checkSimplifiedMembership(session.user.id)) return
           const { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('is_first_login')
@@ -112,14 +134,13 @@ function App() {
 
           if (!profileError && profile?.is_first_login === true) {
             const currentPath = window.location.pathname
-            // Only redirect if not already on change-password page
             if (currentPath !== '/change-password') {
               console.log('[SSO DEBUG] App: is_first_login=true po zmianie stanu auth, przekierowanie na /change-password')
               window.location.href = '/change-password'
             }
           }
-        } catch (error) {
-          console.error('[SSO DEBUG] App: Błąd podczas sprawdzania is_first_login w onAuthStateChange:', error)
+        } catch (e) {
+          console.error('[SSO DEBUG] App: Błąd podczas sprawdzania is_first_login w onAuthStateChange:', e)
         }
       }
     })

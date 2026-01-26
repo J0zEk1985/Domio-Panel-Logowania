@@ -22,6 +22,24 @@ interface CreateWorkerRequest {
   orgId: string
 }
 
+async function ensureMembership(
+  client: ReturnType<typeof createClient>,
+  userId: string,
+  orgId: string
+): Promise<{ error: { message: string } | null }> {
+  const { data: existing } = await client
+    .from('memberships')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('org_id', orgId)
+    .maybeSingle()
+  if (existing?.id) return { error: null }
+  const { error } = await client
+    .from('memberships')
+    .insert({ user_id: userId, org_id: orgId, role: 'cleaner' })
+  return { error: error ?? null }
+}
+
 Deno.serve(async (req) => {
   // CRITICAL: Logowanie na samym początku funkcji - sprawdza, czy zapytanie dotarło do serwera
   console.log('[create-worker] ===== REQUEST RECEIVED =====')
@@ -112,6 +130,28 @@ Deno.serve(async (req) => {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
+      )
+    }
+
+    // Validate orgId exists in organizations (before user creation)
+    const { data: orgRow, error: orgCheckError } = await supabaseAdmin
+      .from('organizations')
+      .select('id')
+      .eq('id', body.orgId)
+      .maybeSingle()
+
+    if (orgCheckError) {
+      console.error('[create-worker] Error checking organization:', orgCheckError)
+      return new Response(
+        JSON.stringify({ error: 'Organization lookup failed', details: orgCheckError.message }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+    if (!orgRow?.id) {
+      console.error('[create-worker] Organization not found:', body.orgId)
+      return new Response(
+        JSON.stringify({ error: 'Organization not found', details: 'Invalid orgId' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
@@ -217,6 +257,33 @@ Deno.serve(async (req) => {
         }
         
         isNewUser = false // User already existed
+
+        // Protect standard/hub accounts: do not overwrite profile or preferences; only ensure membership
+        const { data: existingProfileFull, error: profileTypeError } = await supabaseAdmin
+          .from('profiles')
+          .select('id, account_type')
+          .eq('id', userId)
+          .maybeSingle()
+
+        if (!profileTypeError && existingProfileFull?.account_type) {
+          const at = String(existingProfileFull.account_type).toLowerCase()
+          if (at === 'standard' || at === 'hub') {
+            console.log(`[create-worker] Existing user has account_type=${existingProfileFull.account_type}; skipping profile upsert, ensuring membership only`)
+            const { error: membErr } = await ensureMembership(supabaseAdmin, userId, body.orgId)
+            if (membErr) {
+              console.error('[create-worker] Error ensuring membership for standard user:', membErr)
+              return new Response(
+                JSON.stringify({ error: 'Failed to ensure membership', details: membErr.message }),
+                { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              )
+            }
+            return new Response(
+              JSON.stringify({ userId, email: technicalEmail, message: 'Membership ensured for existing standard account' }),
+              { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+        }
+        
         console.log(`[create-worker] Continuing with upsert for existing user: ${userId} (idempotent behavior)`)
       } else {
         // Other error - not related to existing user
@@ -305,7 +372,21 @@ Deno.serve(async (req) => {
       )
     }
 
-    console.log(`[create-worker] Profile created successfully for user: ${userId}`)
+    // CRITICAL: Always create membership (required for RLS)
+    const { error: membErr } = await ensureMembership(supabaseAdmin, userId, body.orgId)
+    if (membErr) {
+      console.error('[create-worker] Error ensuring membership:', membErr)
+      if (isNewUser) {
+        await supabaseAdmin.auth.admin.deleteUser(userId)
+        console.log(`[create-worker] Cleaned up auth user ${userId} due to membership failure`)
+      }
+      return new Response(
+        JSON.stringify({ error: 'Failed to create membership', details: membErr.message }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    console.log(`[create-worker] Profile and membership created successfully for user: ${userId}`)
     console.log(`[create-worker] ===== SUCCESS - RETURNING RESPONSE =====`)
 
     // Return success response
