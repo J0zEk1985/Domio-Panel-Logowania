@@ -140,6 +140,12 @@ export default function LoginPage() {
           setIsChecking(false)
         }
       } catch (error) {
+        // Ignore AbortError from tab suspension
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log('[LoginPage] Session verification aborted (tab suspended)')
+          setIsChecking(false)
+          return
+        }
         console.error('[LoginPage] Error during session verification:', error)
         // On any error, perform hard reset and show login form
         await performHardReset()

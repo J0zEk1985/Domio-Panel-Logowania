@@ -34,7 +34,11 @@ function App() {
         await supabase.auth.signOut()
         window.location.href = '/login?error=no_membership'
         return true
-      } catch {
+      } catch (error) {
+        // Ignore AbortError from tab suspension
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log('[App] Membership check aborted (tab suspended)')
+        }
         return false
       }
     }
@@ -59,7 +63,12 @@ function App() {
           }
         }
       } catch (error) {
-        console.error('[App] Błąd podczas sprawdzania is_first_login:', error)
+        // Ignore AbortError from tab suspension
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log('[App] First login check aborted (tab suspended)')
+        } else {
+          console.error('[App] Błąd podczas sprawdzania is_first_login:', error)
+        }
       }
     }
 
@@ -83,7 +92,12 @@ function App() {
           }
         }
       } catch (e) {
-        console.error('[App] Błąd inicjalizacji auth:', e)
+        // Ignore AbortError from tab suspension
+        if (e instanceof Error && e.name === 'AbortError') {
+          console.log('[App] Request aborted (tab suspended)')
+        } else {
+          console.error('[App] Błąd inicjalizacji auth:', e)
+        }
         setLoading(false)
       }
     }
@@ -109,6 +123,30 @@ function App() {
     return () => {
       cancelled = true
       sub?.unsubscribe()
+    }
+  }, [])
+
+  // Visibility API: Monitor tab activity and silently refresh session when tab becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        try {
+          // Silent session refresh - don't block UI
+          await supabase.auth.getUser()
+        } catch (error) {
+          // Ignore AbortError from tab suspension
+          if (error instanceof Error && error.name === 'AbortError') {
+            console.log('[App] Session refresh aborted (tab was suspended)')
+          } else {
+            console.error('[App] Błąd odświeżania sesji:', error)
+          }
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [])
 

@@ -82,8 +82,13 @@ export default function DashboardPage() {
 
         setApps(appsData || [])
       } catch (err) {
-        console.error('Error loading apps:', err)
-        setError(err instanceof Error ? err.message : 'Wystąpił błąd podczas ładowania aplikacji')
+        // Ignore AbortError from tab suspension
+        if (err instanceof Error && err.name === 'AbortError') {
+          console.log('[DashboardPage] Request aborted (tab suspended)')
+        } else {
+          console.error('Error loading apps:', err)
+          setError(err instanceof Error ? err.message : 'Wystąpił błąd podczas ładowania aplikacji')
+        }
       } finally {
         setLoading(false)
       }
@@ -101,24 +106,28 @@ export default function DashboardPage() {
   }
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
+    // Optimistic logout: clear local state immediately, redirect, then sign out in background
+    // 1. Clear localStorage immediately
+    try {
+      const keysToRemove: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && (key.startsWith('sb-') || key.includes('supabase') || key.includes('domio-auth'))) {
+          keysToRemove.push(key)
+        }
+      }
+      keysToRemove.forEach((key) => localStorage.removeItem(key))
+    } catch (error) {
+      console.error('[DashboardPage] Error clearing localStorage:', error)
+    }
+
+    // 2. Redirect immediately (don't wait for server response)
     navigate('/login')
-  }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Ładowanie aplikacji...</div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-red-600">{error}</div>
-      </div>
-    )
+    // 3. Sign out in background (non-blocking)
+    supabase.auth.signOut().catch((error) => {
+      console.error('[DashboardPage] Error during background signOut:', error)
+    })
   }
 
   return (
@@ -128,46 +137,61 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-bold text-gray-900">Moje aplikacje</h1>
           <button
             onClick={handleLogout}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
+            disabled={false}
+            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Wyloguj się
           </button>
         </div>
 
-        {apps.length === 0 ? (
+        {loading && (
           <div className="text-center py-12">
-            <p className="text-gray-500 text-lg">Brak dostępnych aplikacji</p>
+            <div className="text-lg">Ładowanie aplikacji...</div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {apps.map((app) => (
-              <div
-                key={app.id}
-                onClick={() => handleAppClick(app)}
-                className="bg-white rounded-lg shadow-md p-6 cursor-pointer hover:shadow-lg transition-shadow"
-              >
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">{app.name}</h2>
-                <div className="flex items-center justify-between mt-4">
-                  <span className="text-sm text-gray-600">
-                    {app.is_free ? 'Darmowa' : 'Płatna'}
-                  </span>
-                  <svg
-                    className="w-5 h-5 text-gray-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 5l7 7-7 7"
-                    />
-                  </svg>
+        )}
+
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            {error}
+          </div>
+        )}
+
+        {!loading && !error && (
+          apps.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-500 text-lg">Brak dostępnych aplikacji</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {apps.map((app) => (
+                <div
+                  key={app.id}
+                  onClick={() => handleAppClick(app)}
+                  className="bg-white rounded-lg shadow-md p-6 cursor-pointer hover:shadow-lg transition-shadow"
+                >
+                  <h2 className="text-xl font-semibold text-gray-900 mb-2">{app.name}</h2>
+                  <div className="flex items-center justify-between mt-4">
+                    <span className="text-sm text-gray-600">
+                      {app.is_free ? 'Darmowa' : 'Płatna'}
+                    </span>
+                    <svg
+                      className="w-5 h-5 text-gray-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 5l7 7-7 7"
+                      />
+                    </svg>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )
         )}
       </div>
     </div>
