@@ -183,6 +183,7 @@ CREATE TABLE public.notification_templates (
   body_template text NOT NULL,
   days_before integer NOT NULL DEFAULT 7,
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  org_id uuid,
   CONSTRAINT notification_templates_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.org_subscriptions (
@@ -241,9 +242,11 @@ CREATE TABLE public.property_checklists (
   frequency text DEFAULT 'Codziennie'::text,
   frequency_config jsonb DEFAULT '{"type": "daily"}'::jsonb,
   is_active boolean DEFAULT true,
+  org_id uuid,
   CONSTRAINT property_checklists_pkey PRIMARY KEY (id),
   CONSTRAINT property_checklists_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.cleaning_locations(id),
-  CONSTRAINT property_checklists_section_id_fkey FOREIGN KEY (section_id) REFERENCES public.property_sections(id)
+  CONSTRAINT property_checklists_section_id_fkey FOREIGN KEY (section_id) REFERENCES public.property_sections(id),
+  CONSTRAINT property_checklists_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id)
 );
 CREATE TABLE public.property_issues (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -271,6 +274,17 @@ CREATE TABLE public.property_sections (
   CONSTRAINT property_sections_pkey PRIMARY KEY (id),
   CONSTRAINT property_sections_assigned_staff_id_fkey FOREIGN KEY (assigned_staff_id) REFERENCES public.profiles(id),
   CONSTRAINT property_sections_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.cleaning_locations(id)
+);
+CREATE TABLE public.repair_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'::uuid,
+  vehicle_id uuid NOT NULL,
+  description text NOT NULL,
+  cost numeric NOT NULL DEFAULT 0,
+  repair_date date NOT NULL DEFAULT CURRENT_DATE,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT repair_logs_pkey PRIMARY KEY (id),
+  CONSTRAINT repair_logs_vehicle_id_fkey FOREIGN KEY (vehicle_id) REFERENCES public.vehicles(id)
 );
 CREATE TABLE public.spatial_ref_sys (
   srid integer NOT NULL CHECK (srid > 0 AND srid <= 998999),

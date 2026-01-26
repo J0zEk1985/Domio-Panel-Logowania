@@ -1,0 +1,212 @@
+schemaname,tablename,policyname,permissive,roles,cmd,qual,with_check
+public,profiles,DOMIO_FINAL_PROFILE,PERMISSIVE,{public},ALL,(id = ( SELECT auth.uid() AS uid)),null
+public,profiles,Users can manage own profile,PERMISSIVE,{public},ALL,(id = auth.uid()),null
+public,applications,Public apps are viewable by everyone,PERMISSIVE,{public},SELECT,(is_active = true),null
+public,organizations,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(id),null
+public,cleaning_catalog,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(org_id),null
+public,cleaning_catalog,Org isolation ALL for owners,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.org_id = cleaning_catalog.org_id) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,cleaning_clients,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(org_id),null
+public,cleaning_clients,Org isolation ALL for owners,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.org_id = cleaning_clients.org_id) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,cleaning_inventory,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(org_id),null
+public,cleaning_staff,DOMIO_FINAL_STAFF,PERMISSIVE,{public},ALL,"(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE (memberships.user_id = ( SELECT auth.uid() AS uid))))",null
+public,property_issues,DOMIO_FINAL_ISSUES,PERMISSIVE,{public},ALL,"(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE (memberships.user_id = ( SELECT auth.uid() AS uid))))",null
+public,material_requests,DOMIO_FINAL_MATERIAL,PERMISSIVE,{public},ALL,"(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE (memberships.user_id = ( SELECT auth.uid() AS uid))))",null
+public,cleaning_clients,Users can view their own organization clients,PERMISSIVE,{public},SELECT,"(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE (memberships.user_id = auth.uid())))",null
+public,staff_payouts,Users can view payouts for their org staff,PERMISSIVE,{public},SELECT,"(EXISTS ( SELECT 1
+   FROM memberships m
+  WHERE ((m.org_id = staff_payouts.org_id) AND (m.user_id = auth.uid()))))",null
+public,profiles,profiles_select_own,PERMISSIVE,{authenticated},SELECT,(auth.uid() = id),null
+public,cleaning_tasks,DOMIO_SaaS_Isolation,PERMISSIVE,{public},ALL,"(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE (memberships.user_id = ( SELECT auth.uid() AS uid))))",null
+public,property_sections,Users can manage sections of their organization properties,PERMISSIVE,{authenticated},ALL,"(location_id IN ( SELECT cleaning_locations.id
+   FROM cleaning_locations
+  WHERE (cleaning_locations.org_id IN ( SELECT memberships.org_id
+           FROM memberships
+          WHERE (memberships.user_id = auth.uid())))))","(location_id IN ( SELECT cleaning_locations.id
+   FROM cleaning_locations
+  WHERE (cleaning_locations.org_id IN ( SELECT memberships.org_id
+           FROM memberships
+          WHERE (memberships.user_id = auth.uid())))))"
+public,staff_payouts,Management can manage payouts,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships m
+  WHERE ((m.org_id = staff_payouts.org_id) AND (m.user_id = auth.uid()) AND (m.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,cleaning_staff,staff_select_own,PERMISSIVE,{authenticated},SELECT,((auth.uid() = id) OR check_is_admin()),null
+public,cleaning_locations,cleaning_locations_select_assigned,PERMISSIVE,{authenticated},SELECT,"(check_is_admin() OR (id IN ( SELECT cleaning_tasks.location_id
+   FROM cleaning_tasks
+  WHERE (cleaning_tasks.assigned_staff_id = auth.uid()))))",null
+public,memberships,Users can see their own memberships,PERMISSIVE,{public},SELECT,(auth.uid() = user_id),null
+public,cleaning_locations,Users can see locations of their organization,PERMISSIVE,{public},SELECT,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.org_id = cleaning_locations.org_id) AND (memberships.user_id = auth.uid()))))",null
+public,property_sections,Org members view sections,PERMISSIVE,{authenticated},SELECT,true,null
+public,cleaning_tasks,Users can see tasks of their organization,PERMISSIVE,{public},SELECT,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.org_id = cleaning_tasks.org_id) AND (memberships.user_id = auth.uid()))))",null
+public,cleaning_tasks,Staff can update their assigned tasks,PERMISSIVE,{public},UPDATE,(assigned_staff_id = auth.uid()),(assigned_staff_id = auth.uid())
+public,location_access,Users can view staff assigned to their locations,PERMISSIVE,{authenticated},SELECT,"(location_id IN ( SELECT cleaning_locations.id
+   FROM cleaning_locations
+  WHERE (cleaning_locations.org_id IN ( SELECT memberships.org_id
+           FROM memberships
+          WHERE (memberships.user_id = auth.uid())))))",null
+public,profiles,Admins can view all profiles,PERMISSIVE,{public},SELECT,((auth.uid() = id) OR ((auth.jwt() ->> 'role'::text) = 'service_role'::text)),null
+public,cleaning_inventory,Enable read access for authenticated users,PERMISSIVE,{authenticated},SELECT,true,null
+storage,objects,zadania 1kp2d3p_2,PERMISSIVE,{public},UPDATE,(bucket_id = 'cleaning-photos'::text),null
+public,location_access,Users can view location_access for their org locations,PERMISSIVE,{public},SELECT,"(EXISTS ( SELECT 1
+   FROM (cleaning_locations cl
+     JOIN memberships m ON ((m.org_id = cl.org_id)))
+  WHERE ((cl.id = location_access.location_id) AND (m.user_id = auth.uid()))))",null
+public,location_access,Owners and coordinators can insert location_access,PERMISSIVE,{public},INSERT,null,"(EXISTS ( SELECT 1
+   FROM (cleaning_locations cl
+     JOIN memberships m ON ((m.org_id = cl.org_id)))
+  WHERE ((cl.id = location_access.location_id) AND (m.user_id = auth.uid()) AND (m.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))"
+public,cleaning_inventory,Org isolation ALL for owners,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.org_id = cleaning_inventory.org_id) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,location_access,Owners and coordinators can delete location_access,PERMISSIVE,{public},DELETE,"(EXISTS ( SELECT 1
+   FROM (cleaning_locations cl
+     JOIN memberships m ON ((m.org_id = cl.org_id)))
+  WHERE ((cl.id = location_access.location_id) AND (m.user_id = auth.uid()) AND (m.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,cleaning_locations,Owners and coordinators can insert locations,PERMISSIVE,{public},INSERT,null,"(EXISTS ( SELECT 1
+   FROM memberships m
+  WHERE ((m.org_id = cleaning_locations.org_id) AND (m.user_id = auth.uid()) AND (m.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))"
+public,cleaning_locations,Users can view locations in their org,PERMISSIVE,{public},SELECT,"(EXISTS ( SELECT 1
+   FROM memberships m
+  WHERE ((m.org_id = cleaning_locations.org_id) AND (m.user_id = auth.uid()))))",null
+public,repair_logs,Zalogowani widzą naprawy,PERMISSIVE,{public},SELECT,(auth.role() = 'authenticated'::text),null
+public,cleaning_locations,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(org_id),null
+public,material_requests,Users can insert requests,PERMISSIVE,{authenticated},INSERT,null,true
+storage,objects,zadania 1kp2d3p_0,PERMISSIVE,{public},SELECT,(bucket_id = 'cleaning-photos'::text),null
+public,cleaning_locations,Users can update their own organization locations,PERMISSIVE,{authenticated},UPDATE,"(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE (memberships.user_id = auth.uid())))","(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE (memberships.user_id = auth.uid())))"
+public,cleaning_locations,Users can select their own organization locations,PERMISSIVE,{authenticated},SELECT,"(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE (memberships.user_id = auth.uid())))",null
+public,organizations,Users_Organizations_Optimized,PERMISSIVE,{public},SELECT,"(id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE (memberships.user_id = ( SELECT auth.uid() AS uid))))",null
+public,cleaning_catalog,Users can view catalog items from their organization,PERMISSIVE,{public},SELECT,"(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE (memberships.user_id = auth.uid())))",null
+public,cleaning_catalog,Coordinators and owners can insert catalog items,PERMISSIVE,{public},INSERT,null,"(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.role = ANY (ARRAY['coordinator'::text, 'owner'::text])))))"
+public,cleaning_catalog,Enable read access for authenticated users on catalog,PERMISSIVE,{authenticated},SELECT,true,null
+storage,objects,zadania 1kp2d3p_1,PERMISSIVE,{public},INSERT,null,(bucket_id = 'cleaning-photos'::text)
+public,cleaning_locations,Org isolation ALL for owners,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.org_id = cleaning_locations.org_id) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,cleaning_catalog,Coordinators and owners can update catalog items,PERMISSIVE,{public},UPDATE,"(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.role = ANY (ARRAY['coordinator'::text, 'owner'::text])))))",null
+public,cleaning_catalog,Coordinators and owners can delete catalog items,PERMISSIVE,{public},DELETE,"(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.role = ANY (ARRAY['coordinator'::text, 'owner'::text])))))",null
+public,cleaning_staff,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(org_id),null
+public,memberships,memberships_select_own,PERMISSIVE,{authenticated},SELECT,(auth.uid() = user_id),null
+public,cleaning_staff,Org isolation ALL for owners,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.org_id = cleaning_staff.org_id) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,cleaning_tasks,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(org_id),null
+storage,objects,DOMIO Cleaning 10b10vm_2,PERMISSIVE,"{anon,authenticated}",UPDATE,(bucket_id = 'property-issues'::text),null
+public,cleaning_tasks,Org isolation ALL for owners,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.org_id = cleaning_tasks.org_id) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,property_checklists,Users can manage checklists of their organization,PERMISSIVE,{authenticated},ALL,"(location_id IN ( SELECT cleaning_locations.id
+   FROM cleaning_locations
+  WHERE (cleaning_locations.org_id IN ( SELECT memberships.org_id
+           FROM memberships
+          WHERE (memberships.user_id = auth.uid())))))","(location_id IN ( SELECT cleaning_locations.id
+   FROM cleaning_locations
+  WHERE (cleaning_locations.org_id IN ( SELECT memberships.org_id
+           FROM memberships
+          WHERE (memberships.user_id = auth.uid())))))"
+public,notification_templates,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(org_id),null
+public,profiles,Admini mogą zarządzać wszystkimi profilami,PERMISSIVE,{authenticated},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+storage,objects,DOMIO Cleaning 10b10vm_1,PERMISSIVE,"{anon,authenticated}",SELECT,(bucket_id = 'property-issues'::text),null
+public,memberships,Users can view their own memberships,PERMISSIVE,{public},SELECT,(auth.uid() = user_id),null
+public,notification_templates,Org isolation ALL for owners,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.org_id = notification_templates.org_id) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,repair_logs,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(org_id),null
+public,staff_equipment,Manage equipment,PERMISSIVE,{authenticated},ALL,"(EXISTS ( SELECT 1
+   FROM memberships m
+  WHERE ((m.org_id = staff_equipment.org_id) AND (m.user_id = auth.uid()) AND (m.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,profiles,Users can view own profile,PERMISSIVE,{public},SELECT,(auth.uid() = id),null
+public,cleaning_staff,Pracownicy mogą widzieć swoje dane,PERMISSIVE,{authenticated},SELECT,(auth.uid() = id),null
+public,memberships,memberships_admin_insert,PERMISSIVE,{authenticated},INSERT,null,check_is_admin()
+public,memberships,memberships_admin_update,PERMISSIVE,{authenticated},UPDATE,check_is_admin(),null
+public,memberships,memberships_admin_delete,PERMISSIVE,{authenticated},DELETE,check_is_admin(),null
+public,repair_logs,Org isolation ALL for owners,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.org_id = repair_logs.org_id) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,vehicles,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(org_id),null
+public,vehicles,Org isolation ALL for owners,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.org_id = vehicles.org_id) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,property_checklists,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(org_id),null
+storage,objects,DOMIO Cleaning 10b10vm_0,PERMISSIVE,"{anon,authenticated}",INSERT,null,(bucket_id = 'property-issues'::text)
+public,property_checklists,Org isolation ALL for owners,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.org_id = property_checklists.org_id) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,profiles,profiles_self_read,PERMISSIVE,{authenticated},SELECT,(auth.uid() = id),null
+public,property_issues,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(org_id),null
+public,memberships,memberships_admin_select,PERMISSIVE,{authenticated},SELECT,check_is_admin(),null
+public,cleaning_staff,staff_admin_all,PERMISSIVE,{authenticated},ALL,check_is_admin(),null
+public,property_issues,Org isolation ALL for owners,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.org_id = property_issues.org_id) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,property_checklists,DOMIO_Checklists_Relational,PERMISSIVE,{public},ALL,"(location_id IN ( SELECT cleaning_locations.id
+   FROM cleaning_locations
+  WHERE (cleaning_locations.org_id IN ( SELECT memberships.org_id
+           FROM memberships
+          WHERE (memberships.user_id = ( SELECT auth.uid() AS uid))))))",null
+public,task_execution_logs,DOMIO_Logs_Relational,PERMISSIVE,{public},ALL,"((user_id = ( SELECT auth.uid() AS uid)) OR (task_id IN ( SELECT cleaning_tasks.id
+   FROM cleaning_tasks
+  WHERE (cleaning_tasks.org_id IN ( SELECT memberships.org_id
+           FROM memberships
+          WHERE (memberships.user_id = ( SELECT auth.uid() AS uid)))))))",null
+public,material_requests,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(org_id),null
+public,material_requests,Org isolation ALL for owners,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.org_id = material_requests.org_id) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,cleaning_tasks,cleaning_tasks_select_org_member,PERMISSIVE,{authenticated},SELECT,check_user_belongs_to_org(org_id),null
+public,cleaning_tasks,cleaning_tasks_update_org_member,PERMISSIVE,{authenticated},UPDATE,check_user_belongs_to_org(org_id),check_user_belongs_to_org(org_id)
+public,cleaning_staff,Admini mogą zarządzać personelem,PERMISSIVE,{authenticated},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,cleaning_locations,Pracownicy widzą tylko swoje lokalizacje,PERMISSIVE,{authenticated},SELECT,"((EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])) AND (memberships.org_id = cleaning_locations.org_id)))) OR (id IN ( SELECT cleaning_tasks.location_id
+   FROM cleaning_tasks
+  WHERE (cleaning_tasks.assigned_staff_id = auth.uid()))))",null
+public,cleaning_tasks,Pracownicy widzą tylko swoje zadania,PERMISSIVE,{authenticated},SELECT,"((EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text]))))) OR (assigned_staff_id = auth.uid()))",null
+public,notification_templates,Admins can manage templates,PERMISSIVE,{public},ALL,"(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,staff_payouts,Org isolation SELECT,PERMISSIVE,{public},SELECT,check_org_access(org_id),null
+public,repair_logs,Admins can manage repairs,PERMISSIVE,{public},ALL,"(org_id IN ( SELECT memberships.org_id
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null
+public,staff_payouts,Org isolation ALL for owners,PERMISSIVE,{public},ALL,"(EXISTS ( SELECT 1
+   FROM memberships
+  WHERE ((memberships.user_id = auth.uid()) AND (memberships.org_id = staff_payouts.org_id) AND (memberships.role = ANY (ARRAY['owner'::text, 'coordinator'::text])))))",null

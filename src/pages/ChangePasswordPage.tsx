@@ -106,26 +106,20 @@ export default function ChangePasswordPage() {
       if (updateError) throw updateError
 
       // CRITICAL: Reset is_first_login flag in profiles table
+      // Wait for successful database update before redirecting
       const { error: profileError } = await supabase
         .from('profiles')
-        .upsert(
-          {
-            id: user.id,
-            is_first_login: false,
-          },
-          {
-            onConflict: 'id',
-          }
-        )
+        .update({ is_first_login: false })
+        .eq('id', user.id)
 
       if (profileError) {
         console.error('[ChangePasswordPage] Błąd aktualizacji profilu:', profileError)
-        // Don't throw - password was changed successfully, profile update is secondary
+        throw new Error('Nie udało się zaktualizować profilu. Hasło zostało zmienione, ale proszę odświeżyć stronę.')
       }
 
       setSuccess(true)
 
-      // Redirect immediately after success (no delay needed)
+      // Redirect only after successful database update
       const returnTo = searchParams.get('returnTo')
       if (returnTo) {
         // Use window.location.replace() to force full page reload and prevent back navigation
@@ -236,8 +230,15 @@ export default function ChangePasswordPage() {
                 placeholder={passwordType === 'password' ? '********' : '123456'}
                 required
                 maxLength={passwordType === 'pin' ? 6 : undefined}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className={`w-full px-4 py-2 bg-gray-700 border rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  repeatPassword && newPassword !== repeatPassword
+                    ? 'border-red-600 focus:ring-red-500'
+                    : 'border-gray-600'
+                }`}
               />
+              {repeatPassword && newPassword !== repeatPassword && (
+                <p className="mt-1 text-sm text-red-400">Hasła muszą być identyczne</p>
+              )}
             </div>
 
             {error && (
@@ -253,6 +254,7 @@ export default function ChangePasswordPage() {
                 !currentPassword ||
                 !newPassword ||
                 !repeatPassword ||
+                newPassword !== repeatPassword ||
                 (passwordType === 'password' ? !validatePassword(newPassword).allValid : !validatePIN(newPassword).allValid)
               }
               className="w-full bg-gray-700 text-white py-2 px-4 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
