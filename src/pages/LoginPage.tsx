@@ -31,7 +31,7 @@ export default function LoginPage({ session }: LoginPageProps) {
     const returnToParam = searchParams.get('returnTo')
     if (returnToParam) setReturnTo(returnToParam)
     if (searchParams.get('error') === 'no_membership') {
-      setError('Brak uprawnień do żadnej organizacji. Skontaktuj się z administratorem.')
+      setError('Brak uprawnień do tej firmy.')
     }
   }, [searchParams])
 
@@ -81,7 +81,7 @@ export default function LoginPage({ session }: LoginPageProps) {
         return
       }
 
-      // Simplified users must have at least one membership
+      const targetOrgId = searchParams.get('orgId') ?? null
       const { data: profile } = await supabase
         .from('profiles')
         .select('account_type')
@@ -91,12 +91,20 @@ export default function LoginPage({ session }: LoginPageProps) {
       if (accountType === 'simplified') {
         const { data: membershipRows } = await supabase
           .from('memberships')
-          .select('id')
+          .select('id, org_id')
           .eq('user_id', userId)
         if (!membershipRows || membershipRows.length === 0) {
           await supabase.auth.signOut()
-          setError('Brak uprawnień do żadnej organizacji. Skontaktuj się z administratorem.')
+          setError('Brak uprawnień do tej firmy.')
           return
+        }
+        if (targetOrgId) {
+          const hasOrg = membershipRows.some((r) => r.org_id === targetOrgId)
+          if (!hasOrg) {
+            await supabase.auth.signOut()
+            setError('Brak uprawnień do tej firmy.')
+            return
+          }
         }
       }
 

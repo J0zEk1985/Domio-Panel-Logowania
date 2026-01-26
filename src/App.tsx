@@ -68,7 +68,8 @@ function App() {
 
     const setupAuth = async () => {
       try {
-        const { data: { session: initialSession } } = await supabase.auth.getSession()
+        const { data } = await supabase.auth.getSession()
+        const initialSession = data?.session ?? null
         if (!initialSession) {
           const { error: refreshError } = await supabase.auth.refreshSession()
           if (refreshError) {
