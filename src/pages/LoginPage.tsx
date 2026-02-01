@@ -92,13 +92,23 @@ export default function LoginPage() {
         // Check if logout parameter is present - perform hard reset first
         const logoutParam = searchParams.get('logout')
         if (logoutParam === 'true') {
-          await performHardReset()
+          // Immediately set isChecking to false to show login form
+          setIsChecking(false)
+          
+          // Perform hard reset in background (non-blocking)
+          performHardReset().catch((error) => {
+            console.error('[LoginPage] Error during background hard reset:', error)
+          })
+          
           // Remove logout parameter from URL
           const newSearchParams = new URLSearchParams(searchParams)
           newSearchParams.delete('logout')
           const newSearch = newSearchParams.toString()
           const newUrl = newSearch ? `?${newSearch}` : window.location.pathname
           window.history.replaceState({}, '', newUrl)
+          
+          // Exit early - don't check session when logging out
+          return
         }
 
         // Use getUser() to force server-side token validation
@@ -303,7 +313,9 @@ export default function LoginPage() {
   }
 
   // Show loading state during session verification
-  if (isChecking) {
+  // Never show spinner when logout=true - user should see login form immediately
+  const logoutParam = searchParams.get('logout')
+  if (isChecking && logoutParam !== 'true') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white px-4">
         <div className="w-full max-w-md">
