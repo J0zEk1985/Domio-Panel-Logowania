@@ -1,16 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@layer base {
+  :root {
+    --background: 30 20% 97%;
+    --foreground: 220 20% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 15%;
+    --primary: 22 80% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 30% 92%;
+    --secondary-foreground: 220 20% 15%;
+    --muted: 210 20% 95%;
+    --muted-foreground: 215 15% 50%;
+    --accent: 210 50% 60%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 20% 90%;
+    --input: 210 20% 90%;
+    --ring: 22 80% 55%;
+    --radius: 0.75rem;
+    --gradient-brand: linear-gradient(135deg, hsl(22, 80%, 55%), hsl(210, 50%, 60%));
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    margin: 0;
+    @apply bg-background text-foreground font-sans antialiased;
+  }
 }
 
 #root {
   min-height: 100vh;
+}
+
+@layer components {
+  .glass {
+    @apply bg-card/60 backdrop-blur-xl border border-border/50 shadow-lg;
+  }
+
+  .glass-strong {
+    @apply bg-card/80 backdrop-blur-2xl border border-border/30 shadow-xl;
+  }
+
+  .gradient-brand {
+    background: var(--gradient-brand);
+  }
+
+  .gradient-brand-text {
+    background: var(--gradient-brand);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .bento-card {
+    @apply glass rounded-2xl p-6 transition-all duration-300;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
 }

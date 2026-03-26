@@ -10,6 +10,7 @@ import PrivacyPage from './pages/PrivacyPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
+import LandingPage from './pages/LandingPage'
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -186,7 +187,7 @@ function App() {
       />
       <Route path="/regulamin" element={<TermsPage />} />
       <Route path="/polityka-prywatnosci" element={<PrivacyPage />} />
-      <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route path="/" element={<LandingPage isAuthenticated={!!session} />} />
     </Routes>
   )
 }
