@@ -29,6 +29,28 @@
     --gradient-brand: linear-gradient(135deg, hsl(22, 80%, 55%), hsl(210, 50%, 60%));
   }
 
+  .dark {
+    --background: 222 30% 8%;
+    --foreground: 210 20% 92%;
+    --card: 222 25% 12%;
+    --card-foreground: 210 20% 92%;
+    --popover: 222 25% 12%;
+    --popover-foreground: 210 20% 92%;
+    --primary: 22 80% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 20% 18%;
+    --secondary-foreground: 210 20% 92%;
+    --muted: 222 20% 16%;
+    --muted-foreground: 215 15% 55%;
+    --accent: 210 50% 60%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 20% 18%;
+    --input: 222 20% 18%;
+    --ring: 22 80% 55%;
+  }
+
   * {
     @apply border-border;
   }
@@ -65,6 +87,11 @@
 
   .bento-card {
     @apply glass rounded-2xl p-6 transition-all duration-300;
+  }
+
+  .bento-card:hover {
+    @apply shadow-2xl;
+    border-color: hsl(var(--primary) / 0.3);
   }
 }
 

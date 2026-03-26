@@ -1,7 +1,14 @@
+import { motion } from 'framer-motion'
+
 export function ValueProposition() {
   return (
     <section className="py-24 px-4">
-      <div className="container mx-auto max-w-5xl">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, amount: 0.25 }}
+        className="container mx-auto max-w-5xl"
+      >
         <div className="grid md:grid-cols-2 gap-6">
           <article id="residents" className="bento-card relative overflow-hidden group">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl group-hover:bg-primary/10 transition-colors" />
@@ -23,7 +30,7 @@ export function ValueProposition() {
             </div>
           </article>
         </div>
-      </div>
+      </motion.div>
     </section>
   )
 }

@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { LayoutDashboard, Menu, Shield, X } from 'lucide-react'
+import { ThemeToggle } from './ThemeToggle'
+import domioLogo from '../../../lovable-design/src/assets/domio-logo.jpg'
 
 type NavbarProps = {
   isAuthenticated: boolean
@@ -13,11 +16,11 @@ export function Navbar({ isAuthenticated }: NavbarProps) {
     <nav className="fixed top-0 left-0 right-0 z-50 glass-strong">
       <div className="container mx-auto flex items-center justify-between h-16 px-4">
         <Link to="/" className="flex items-center gap-2">
-          <img src="/logo ver 1.jpg" alt="DOMIO" className="h-8 w-8 rounded-lg object-cover" />
+          <img src={domioLogo} alt="DOMIO" className="h-8 w-8 rounded-lg object-cover" />
           <span className="font-display font-bold text-xl gradient-brand-text">DOMIO</span>
         </Link>
 
-        <div className="hidden md:flex items-center gap-6">
+        <div className="hidden md:flex items-center gap-3">
           <a href="#ecosystem" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Ekosystem
           </a>
@@ -27,6 +30,17 @@ export function Navbar({ isAuthenticated }: NavbarProps) {
           <a href="#business" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Firmy
           </a>
+          {isAuthenticated && (
+            <>
+              <Link to="/dashboard" className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                <LayoutDashboard className="h-4 w-4" /> Hub
+              </Link>
+              <Link to="/admin" className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                <Shield className="h-4 w-4" /> Admin
+              </Link>
+            </>
+          )}
+          <ThemeToggle />
           <Link to={ctaTarget} className="gradient-brand text-primary-foreground border-0 rounded-md px-4 py-2 text-sm font-medium">
             Zaloguj się
           </Link>
@@ -39,7 +53,7 @@ export function Navbar({ isAuthenticated }: NavbarProps) {
           aria-expanded={mobileOpen}
           aria-label="Przełącz menu"
         >
-          Menu
+          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
       </div>
 
@@ -54,6 +68,19 @@ export function Navbar({ isAuthenticated }: NavbarProps) {
           <a href="#business" className="block text-sm text-muted-foreground" onClick={() => setMobileOpen(false)}>
             Firmy
           </a>
+          <div className="pt-1">
+            <ThemeToggle />
+          </div>
+          {isAuthenticated && (
+            <>
+              <Link to="/dashboard" className="block text-sm text-muted-foreground" onClick={() => setMobileOpen(false)}>
+                Hub
+              </Link>
+              <Link to="/admin" className="block text-sm text-muted-foreground" onClick={() => setMobileOpen(false)}>
+                Admin
+              </Link>
+            </>
+          )}
           <Link
             to={ctaTarget}
             className="block w-full rounded-md px-4 py-2 text-center font-medium gradient-brand text-primary-foreground"

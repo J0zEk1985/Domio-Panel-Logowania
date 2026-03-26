@@ -1,30 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { motion, useScroll, useTransform } from 'framer-motion'
+import { ArrowDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import domioLogo from '../../../lovable-design/src/assets/domio-logo.jpg'
 
 type HeroSectionProps = {
   isAuthenticated: boolean
 }
 
 export function HeroSection({ isAuthenticated }: HeroSectionProps) {
-  const [scrollY, setScrollY] = useState(0)
   const ctaTarget = isAuthenticated ? '/dashboard' : '/login'
-
-  useEffect(() => {
-    const onScroll = () => {
-      setScrollY(window.scrollY)
-    }
-
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
-
-  const logoStyle = useMemo(() => {
-    const progress = Math.min(scrollY / 400, 1)
-    const scale = 1 - progress * 0.7
-    const opacity = 1 - Math.min(scrollY / 300, 1)
-    const translateY = -progress * 200
-    return { transform: `translateY(${translateY}px) scale(${scale})`, opacity }
-  }, [scrollY])
+  const { scrollY } = useScroll()
+  const logoScale = useTransform(scrollY, [0, 400], [1, 0.3])
+  const logoOpacity = useTransform(scrollY, [0, 300], [1, 0])
+  const logoY = useTransform(scrollY, [0, 400], [0, -200])
+  const textY = useTransform(scrollY, [0, 300], [0, -50])
+  const textOpacity = useTransform(scrollY, [0, 250], [1, 0])
 
   return (
     <section className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden px-4 pt-16">
@@ -36,21 +26,21 @@ export function HeroSection({ isAuthenticated }: HeroSectionProps) {
         />
       </div>
 
-      <div className="mb-8 transition-transform duration-100" style={logoStyle}>
+      <motion.div style={{ scale: logoScale, opacity: logoOpacity, y: logoY }} className="mb-8">
         <div className="relative">
           <div className="absolute inset-0 rounded-3xl bg-primary/20 blur-2xl animate-glow" />
-          <img src="/logo ver 1.jpg" alt="DOMIO Logo" className="relative w-40 h-40 md:w-56 md:h-56 rounded-3xl object-cover shadow-2xl" />
+          <img src={domioLogo} alt="DOMIO Logo" className="relative w-40 h-40 md:w-56 md:h-56 rounded-3xl object-cover shadow-2xl" />
         </div>
-      </div>
+      </motion.div>
 
-      <div className="text-center max-w-3xl">
+      <motion.div style={{ y: textY, opacity: textOpacity }} className="text-center max-w-3xl">
         <h1 className="font-display text-5xl md:text-7xl font-bold tracking-tight mb-4">
           <span className="gradient-brand-text">DOMIO</span>
           <br />
-          <span className="text-foreground">Ecosystem Hub</span>
+          <span className="text-foreground">Nowoczesny Hub Operacyjny</span>
         </h1>
         <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto mb-8 text-balance">
-          Jeden ekosystem aplikacji dla mieszkańców i firm. Zarządzaj, kontroluj, rozwijaj - wszystko w jednym miejscu.
+          Jeden ekosystem aplikacji dla mieszkańców i firm. Zarządzaj usługami, zespołami i procesami w jednym, szybkim panelu.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link to={ctaTarget} className="gradient-brand text-primary-foreground border-0 px-8 py-3 rounded-md text-base font-medium">
@@ -60,7 +50,11 @@ export function HeroSection({ isAuthenticated }: HeroSectionProps) {
             Odkryj ekosystem
           </a>
         </div>
-      </div>
+      </motion.div>
+
+      <motion.div className="absolute bottom-8" animate={{ y: [0, 10, 0] }} transition={{ duration: 2, repeat: Infinity }}>
+        <ArrowDown className="h-6 w-6 text-muted-foreground" />
+      </motion.div>
     </section>
   )
 }
