@@ -1,18 +1,81 @@
-import { useState, FormEvent } from 'react'
+import { useEffect, useState, FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { validatePassword } from '../lib/validation'
 import ValidationChecklist from '../components/ValidationChecklist'
+import { DOC_LABELS, type LegalDocType } from '../components/admin/legalAdminTypes'
+
+type ActiveLegalDoc = {
+  id: string
+  document_type: LegalDocType
+  version: string
+  content: string
+  is_required: boolean
+}
+
+const DOC_ORDER: LegalDocType[] = ['terms', 'privacy', 'marketing']
+
+function emptyAcceptedDocs(): Record<LegalDocType, boolean> {
+  return { terms: false, privacy: false, marketing: false }
+}
+
+function sortLegalDocs(docs: ActiveLegalDoc[]): ActiveLegalDoc[] {
+  return [...docs].sort(
+    (a, b) => DOC_ORDER.indexOf(a.document_type) - DOC_ORDER.indexOf(b.document_type),
+  )
+}
 
 export default function SignupPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [repeatPassword, setRepeatPassword] = useState('')
-  const [acceptedTerms, setAcceptedTerms] = useState(false)
-  const [marketingConsent, setMarketingConsent] = useState(false)
+  const [activeLegalDocs, setActiveLegalDocs] = useState<ActiveLegalDoc[]>([])
+  const [acceptedDocs, setAcceptedDocs] = useState<Record<LegalDocType, boolean>>(emptyAcceptedDocs)
+  const [legalDocsLoading, setLegalDocsLoading] = useState(true)
+  const [legalDocsError, setLegalDocsError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadLegalDocs = async () => {
+      setLegalDocsLoading(true)
+      setLegalDocsError(null)
+      try {
+        const { data, error: fetchError } = await supabase
+          .from('legal_documents')
+          .select('id, document_type, version, content, is_required')
+          .eq('is_active', true)
+
+        if (cancelled) return
+
+        if (fetchError) {
+          console.error('[SignupPage] legal_documents:', fetchError)
+          setLegalDocsError('Nie udało się pobrać dokumentów prawnych. Odśwież stronę lub spróbuj później.')
+          setActiveLegalDocs([])
+          return
+        }
+
+        setActiveLegalDocs(sortLegalDocs((data as ActiveLegalDoc[]) ?? []))
+        setAcceptedDocs(emptyAcceptedDocs())
+      } catch (e) {
+        console.error('[SignupPage] loadLegalDocs:', e)
+        if (!cancelled) {
+          setLegalDocsError('Wystąpił błąd podczas ładowania dokumentów prawnych.')
+          setActiveLegalDocs([])
+        }
+      } finally {
+        if (!cancelled) setLegalDocsLoading(false)
+      }
+    }
+
+    void loadLegalDocs()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const fetchIPAddress = async (): Promise<string | null> => {
     try {
@@ -40,14 +103,28 @@ export default function SignupPage() {
         throw new Error('Hasła nie są identyczne')
       }
 
-      if (!acceptedTerms) {
-        throw new Error('Musisz zaakceptować regulamin oraz politykę prywatności')
+      if (legalDocsLoading) {
+        throw new Error('Poczekaj na załadowanie dokumentów prawnych.')
       }
 
-      // Fetch IP address
+      if (activeLegalDocs.length === 0) {
+        throw new Error(
+          legalDocsError
+            ? 'Nie udało się załadować dokumentów prawnych. Spróbuj ponownie później.'
+            : 'Brak opublikowanych dokumentów prawnych. Rejestracja jest chwilowo niedostępna.',
+        )
+      }
+
+      for (const doc of activeLegalDocs) {
+        if (doc.is_required && !acceptedDocs[doc.document_type]) {
+          throw new Error(
+            `Musisz zaakceptować: ${DOC_LABELS[doc.document_type]} (wersja ${doc.version}).`,
+          )
+        }
+      }
+
       const ipAddress = await fetchIPAddress()
 
-      // Create user account in Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -59,19 +136,22 @@ export default function SignupPage() {
         throw new Error('Nie udało się utworzyć konta')
       }
 
-      // Create profile with audit data
+      const termsDoc = activeLegalDocs.find((d) => d.document_type === 'terms')
+      const privacyDoc = activeLegalDocs.find((d) => d.document_type === 'privacy')
+      const marketingDoc = activeLegalDocs.find((d) => d.document_type === 'marketing')
+
       const { error: profileError } = await supabase.from('profiles').insert({
         id: authData.user.id,
         ip_address: ipAddress,
         accepted_terms_at: new Date().toISOString(),
-        terms_version: '1.0',
-        marketing_consent: marketingConsent,
+        terms_version: termsDoc && acceptedDocs.terms ? termsDoc.version : '1.0',
+        privacy_version: privacyDoc && acceptedDocs.privacy ? privacyDoc.version : null,
+        marketing_consent: marketingDoc ? acceptedDocs.marketing : false,
+        marketing_version: marketingDoc && acceptedDocs.marketing ? marketingDoc.version : null,
       })
 
       if (profileError) {
         console.error('Profile creation error:', profileError)
-        // If profile creation fails, we should still allow the user to continue
-        // The profile might be created via a database trigger
       }
 
       navigate('/dashboard')
@@ -87,14 +167,14 @@ export default function SignupPage() {
     setError(null)
 
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/dashboard`,
         },
       })
 
-      if (error) throw error
+      if (oauthError) throw oauthError
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Wystąpił błąd podczas rejestracji przez Google')
       setLoading(false)
@@ -106,19 +186,55 @@ export default function SignupPage() {
     setError(null)
 
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
         options: {
           redirectTo: `${window.location.origin}/dashboard`,
         },
       })
 
-      if (error) throw error
+      if (oauthError) throw oauthError
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Wystąpił błąd podczas rejestracji przez Facebook')
       setLoading(false)
     }
   }
+
+  const renderDocCheckboxLabel = (doc: ActiveLegalDoc) => {
+    const label = DOC_LABELS[doc.document_type]
+    const href =
+      doc.document_type === 'terms'
+        ? '/regulamin'
+        : doc.document_type === 'privacy'
+          ? '/polityka-prywatnosci'
+          : null
+
+    if (href) {
+      return (
+        <>
+          Akceptuję{' '}
+          <Link to={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
+            {label}
+          </Link>{' '}
+          w wersji {doc.version}
+          {doc.is_required ? ' *' : ''}
+        </>
+      )
+    }
+
+    return (
+      <>
+        Akceptuję {label} w wersji {doc.version}
+        {doc.is_required ? ' *' : ''}
+      </>
+    )
+  }
+
+  const canSubmitEmail =
+    !legalDocsLoading &&
+    !legalDocsError &&
+    activeLegalDocs.length > 0 &&
+    validatePassword(password).allValid
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-900 px-4">
@@ -175,40 +291,37 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-4">
-              <div className="flex items-start">
-                <input
-                  id="terms"
-                  type="checkbox"
-                  checked={acceptedTerms}
-                  onChange={(e) => setAcceptedTerms(e.target.checked)}
-                  required
-                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-600 rounded bg-gray-700"
-                />
-                <label htmlFor="terms" className="ml-3 text-sm text-gray-300">
-                  Akceptuję{' '}
-                  <Link to="/regulamin" target="_blank" className="text-blue-400 hover:text-blue-300 underline">
-                    Regulamin
-                  </Link>{' '}
-                  oraz{' '}
-                  <Link to="/polityka-prywatnosci" target="_blank" className="text-blue-400 hover:text-blue-300 underline">
-                    Politykę Prywatności
-                  </Link>{' '}
-                  *
-                </label>
-              </div>
-
-              <div className="flex items-start">
-                <input
-                  id="marketing"
-                  type="checkbox"
-                  checked={marketingConsent}
-                  onChange={(e) => setMarketingConsent(e.target.checked)}
-                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-600 rounded bg-gray-700"
-                />
-                <label htmlFor="marketing" className="ml-3 text-sm text-gray-300">
-                  Zgadzam się na otrzymywanie informacji marketingowych i newslettera
-                </label>
-              </div>
+              {legalDocsLoading && (
+                <p className="text-sm text-gray-400">Ładowanie dokumentów prawnych…</p>
+              )}
+              {legalDocsError && (
+                <div className="bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded text-sm">{legalDocsError}</div>
+              )}
+              {!legalDocsLoading && !legalDocsError && activeLegalDocs.length === 0 && (
+                <div className="bg-amber-900/40 border border-amber-700 text-amber-100 px-4 py-3 rounded text-sm">
+                  Brak opublikowanych dokumentów prawnych. Rejestracja e-mail jest niedostępna — skontaktuj się z administratorem.
+                </div>
+              )}
+              {!legalDocsLoading &&
+                activeLegalDocs.map((doc) => (
+                  <div key={doc.id} className="flex items-start">
+                    <input
+                      id={`legal-accept-${doc.id}`}
+                      type="checkbox"
+                      checked={acceptedDocs[doc.document_type]}
+                      onChange={(e) =>
+                        setAcceptedDocs((prev) => ({
+                          ...prev,
+                          [doc.document_type]: e.target.checked,
+                        }))
+                      }
+                      className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-600 rounded bg-gray-700"
+                    />
+                    <label htmlFor={`legal-accept-${doc.id}`} className="ml-3 text-sm text-gray-300">
+                      {renderDocCheckboxLabel(doc)}
+                    </label>
+                  </div>
+                ))}
             </div>
 
             {error && (
@@ -219,7 +332,7 @@ export default function SignupPage() {
 
             <button
               type="submit"
-              disabled={loading || !validatePassword(password).allValid}
+              disabled={loading || !canSubmitEmail}
               className="w-full bg-gray-700 text-white py-2 px-4 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Tworzenie konta...' : 'Utwórz konto'}

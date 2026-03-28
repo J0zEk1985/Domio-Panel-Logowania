@@ -38,4 +38,6 @@ export interface Profile {
   marketing_consent: boolean
   updated_at: string
   terms_version: string
+  privacy_version?: string | null
+  marketing_version?: string | null
 }

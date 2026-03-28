@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Eye, FileText, Scale } from 'lucide-react'
+import { Eye, FileText, Megaphone, Scale } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { inputClass } from './pricingAdminUtils'
 import LegalDocumentPreviewModal from './LegalDocumentPreviewModal'
@@ -14,10 +14,15 @@ export default function LegalAdminTab() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [newVersion, setNewVersion] = useState('')
   const [newContent, setNewContent] = useState('')
+  const [isRequired, setIsRequired] = useState(true)
   const [publishError, setPublishError] = useState<string | null>(null)
   const [publishing, setPublishing] = useState(false)
 
   const [previewRow, setPreviewRow] = useState<LegalDocumentRow | null>(null)
+
+  useEffect(() => {
+    setIsRequired(activeDocType !== 'marketing')
+  }, [activeDocType])
 
   const loadHistory = useCallback(async () => {
     setLoadError(null)
@@ -26,7 +31,7 @@ export default function LegalAdminTab() {
     try {
       const { data, error } = await supabase
         .from('legal_documents')
-        .select('id, document_type, version, content, is_active, published_at, created_by')
+        .select('id, document_type, version, content, is_active, is_required, published_at, created_by')
         .eq('document_type', activeDocType)
         .order('published_at', { ascending: false })
 
@@ -94,6 +99,7 @@ export default function LegalAdminTab() {
         version,
         content,
         is_active: true,
+        is_required: isRequired,
         created_by: user.id,
       })
 
@@ -147,6 +153,18 @@ export default function LegalAdminTab() {
           <FileText className="h-4 w-4 shrink-0" />
           Polityka prywatności
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveDocType('marketing')}
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
+            activeDocType === 'marketing'
+              ? 'bg-primary/10 text-primary'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+          }`}
+        >
+          <Megaphone className="h-4 w-4 shrink-0" />
+          Zgody marketingowe
+        </button>
       </div>
 
       <section aria-labelledby="legal-publish-heading" className="bento-card p-6 space-y-4">
@@ -192,6 +210,21 @@ export default function LegalAdminTab() {
           />
         </div>
 
+        <label className="flex items-start gap-3 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={isRequired}
+            onChange={(e) => setIsRequired(e.target.checked)}
+            className="mt-1 h-4 w-4 rounded border-input text-primary focus:ring-ring"
+          />
+          <span className="text-sm text-foreground">
+            Wymagane do założenia konta
+            <span className="block text-xs text-muted-foreground mt-1">
+              Jeśli zaznaczone, użytkownik musi zaakceptować ten dokument przy rejestracji (dotyczy dokumentów obowiązkowych).
+            </span>
+          </span>
+        </label>
+
         <button
           type="button"
           disabled={publishing}
@@ -212,6 +245,7 @@ export default function LegalAdminTab() {
               <tr className="border-b border-border/60 text-left text-muted-foreground">
                 <th className="p-4 font-medium">Wersja</th>
                 <th className="p-4 font-medium">Data publikacji</th>
+                <th className="p-4 font-medium">Wymagany</th>
                 <th className="p-4 font-medium">Status</th>
                 <th className="p-4 font-medium text-right">Akcje</th>
               </tr>
@@ -219,7 +253,7 @@ export default function LegalAdminTab() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={4} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={5} className="p-8 text-center text-muted-foreground">
                     Ładowanie historii…
                   </td>
                 </tr>
@@ -229,6 +263,9 @@ export default function LegalAdminTab() {
                 <tr key={row.id} className="border-b border-border/40 last:border-0">
                   <td className="p-4 font-medium">{row.version}</td>
                   <td className="p-4 text-muted-foreground">{formatPublishedLegal(row.published_at)}</td>
+                  <td className="p-4 text-muted-foreground">
+                    {row.is_required ? 'Tak' : 'Nie'}
+                  </td>
                   <td className="p-4">
                     {row.is_active ? (
                       <span className="inline-flex rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 px-2.5 py-0.5 text-xs font-medium">
