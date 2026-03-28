@@ -14,6 +14,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { Navbar } from '../components/landing/Navbar'
 import { Footer } from '../components/landing/Footer'
+import PricingAdminTab from '../components/admin/PricingAdminTab'
 
 type ProfileRow = {
   id: string
@@ -311,14 +312,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {activeTab === 'pricing' && (
-              <div className="p-6 bento-card">
-                <h2 className="font-display text-xl font-semibold mb-2">Zarządzanie cennikiem i promocjami</h2>
-                <p className="text-muted-foreground">
-                  Tutaj wdrożymy obsługę tabel pricing_plans i promo_codes.
-                </p>
-              </div>
-            )}
+            {activeTab === 'pricing' && <PricingAdminTab />}
 
             {activeTab === 'legal' && (
               <div className="p-6 bento-card">
