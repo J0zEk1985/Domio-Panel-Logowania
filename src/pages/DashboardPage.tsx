@@ -173,56 +173,17 @@ export default function DashboardPage() {
     }
   }
 
-  const handleLogout = async () => {
-    // Optimistic logout: clear local state immediately, redirect to login with logout=true, then sign out in background
-    // 1. Clear localStorage immediately
-    try {
-      const keysToRemove: string[] = []
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i)
-        if (key && (key.startsWith('sb-') || key.includes('supabase') || key.includes('domio-auth'))) {
-          keysToRemove.push(key)
-        }
-      }
-      keysToRemove.forEach((key) => localStorage.removeItem(key))
-    } catch (e) {
-      console.error('[DashboardPage] Error clearing localStorage:', e)
-    }
-
-    // 2. Redirect immediately to the login page with logout=true parameter
-    // Use window.location.href to force full page reload and proper cleanup
-    window.location.href = '/login?logout=true'
-
-    // 3. Sign out in background (non-blocking) - will be handled by LoginPage
-    supabase.auth.signOut().catch((e) => {
-      console.error('[DashboardPage] Error during background signOut:', e)
-    })
-  }
-
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Navbar isAuthenticated />
 
       <div className="flex-1 pt-24 pb-16 px-4">
         <div className="container mx-auto max-w-6xl">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
-          >
-            <div>
-              <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">
-                Witaj w <span className="gradient-brand-text">panelu DOMIO</span>
-              </h1>
-              <p className="text-muted-foreground text-lg">Zarządzaj swoimi modułami i odkrywaj nowe możliwości.</p>
-            </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="shrink-0 rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/60 transition-colors"
-            >
-              Wyloguj się
-            </button>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-10">
+            <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">
+              Witaj w <span className="gradient-brand-text">panelu DOMIO</span>
+            </h1>
+            <p className="text-muted-foreground text-lg">Zarządzaj swoimi modułami i odkrywaj nowe możliwości.</p>
           </motion.div>
 
           <motion.div
