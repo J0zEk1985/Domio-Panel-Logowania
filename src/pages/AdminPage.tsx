@@ -18,6 +18,7 @@ import PricingAdminTab from '../components/admin/PricingAdminTab'
 import LegalAdminTab from '../components/admin/LegalAdminTab'
 import UsersAndOrgsTab from '../components/admin/UsersAndOrgsTab'
 import SubscriptionsAdminTab from '../components/admin/SubscriptionsAdminTab'
+import CmsAdminTab from '../components/admin/CmsAdminTab'
 
 type ProfileRow = {
   id: string
@@ -305,14 +306,7 @@ export default function AdminPage() {
 
             {activeTab === 'legal' && <LegalAdminTab />}
 
-            {activeTab === 'cms' && (
-              <div className="p-6 bento-card">
-                <h2 className="font-display text-xl font-semibold mb-2">Treści strony (CMS)</h2>
-                <p className="text-muted-foreground">
-                  Tutaj wdrożymy zarządzanie treściami marketingowymi i sekcjami strony publicznej.
-                </p>
-              </div>
-            )}
+            {activeTab === 'cms' && <CmsAdminTab />}
           </main>
         </div>
       </div>

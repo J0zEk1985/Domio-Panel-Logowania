@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
+import { Toaster } from 'sonner'
 import { supabase } from './lib/supabase'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
@@ -185,6 +186,8 @@ function App() {
   }
 
   return (
+    <>
+      <Toaster position="top-center" richColors closeButton />
     <Routes>
       <Route
         path="/login"
@@ -223,6 +226,7 @@ function App() {
       <Route path="/module/:slug" element={<ModuleDetail />} />
       <Route path="/" element={<LandingPage />} />
     </Routes>
+    </>
   )
 }
 
