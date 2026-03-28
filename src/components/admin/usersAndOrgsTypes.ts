@@ -43,6 +43,7 @@ export type OrgSubscriptionRow = {
   app_id: string
   status: string
   created_at: string | null
+  expires_at: string | null
   applications: { name: string } | null
 }
 

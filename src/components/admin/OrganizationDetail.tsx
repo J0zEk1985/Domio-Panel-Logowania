@@ -145,6 +145,7 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
           app_id: string
           status: string
           created_at: string | null
+          expires_at: string | null
         }
         const subsData = (subRes.data ?? []) as SubRow[]
         const appIds = [...new Set(subsData.map((s) => s.app_id))]

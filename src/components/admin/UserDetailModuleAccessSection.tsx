@@ -14,6 +14,31 @@ type OrgSubRow = {
   id: string
   app_id: string
   status: string
+  expires_at: string | null
+}
+
+function defaultExpiresAtIso(): string {
+  return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+}
+
+/** Local calendar date for input[type=date] (YYYY-MM-DD). */
+function expiresAtToDateInputValue(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** Noon local time to reduce timezone edge cases when persisting a picked calendar day. */
+function dateInputToExpiresIso(ymd: string): string | null {
+  const t = ymd.trim()
+  if (!t) return null
+  const d = new Date(`${t}T12:00:00`)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toISOString()
 }
 
 const ROLE_OPTIONS: { value: string; label: string }[] = [
@@ -45,6 +70,7 @@ export default function UserDetailModuleAccessSection({
   const [roleError, setRoleError] = useState<string | null>(null)
   const [moduleError, setModuleError] = useState<string | null>(null)
   const [togglingAppId, setTogglingAppId] = useState<string | null>(null)
+  const [expirySavingAppId, setExpirySavingAppId] = useState<string | null>(null)
 
   const [applications, setApplications] = useState<ApplicationRow[]>([])
   const [subsByAppId, setSubsByAppId] = useState<Map<string, OrgSubRow>>(new Map())
@@ -65,7 +91,7 @@ export default function UserDetailModuleAccessSection({
     try {
       const [appsRes, subsRes] = await Promise.all([
         supabase.from('applications').select('id,name,is_active').order('name'),
-        supabase.from('org_subscriptions').select('id,app_id,status').eq('org_id', primaryOrgId),
+        supabase.from('org_subscriptions').select('id,app_id,status,expires_at').eq('org_id', primaryOrgId),
       ])
       if (appsRes.error) {
         console.error('[UserDetailModuleAccessSection] applications:', appsRes.error)
@@ -167,35 +193,85 @@ export default function UserDetailModuleAccessSection({
     }
   }
 
+  const updateSubscriptionExpiry = async (sub: OrgSubRow, ymd: string) => {
+    if (!isSubActive(sub.status)) return
+    const trimmed = ymd.trim()
+    const currentYmd = expiresAtToDateInputValue(sub.expires_at)
+    if (trimmed === currentYmd) return
+    setModuleError(null)
+    setExpirySavingAppId(sub.app_id)
+    const expires_at = dateInputToExpiresIso(ymd)
+    try {
+      const { data, error } = await supabase
+        .from('org_subscriptions')
+        .update({ expires_at })
+        .eq('id', sub.id)
+        .select('id,app_id,status,expires_at')
+        .maybeSingle()
+      if (error) {
+        console.error('[UserDetailModuleAccessSection] expires_at update:', error)
+        setModuleError(error.message || 'Nie udało się zaktualizować daty wygaśnięcia.')
+        return
+      }
+      if (data) {
+        const row = data as OrgSubRow
+        setSubsByAppId((prev) => {
+          const next = new Map(prev)
+          next.set(row.app_id, row)
+          return next
+        })
+      }
+    } catch (e) {
+      console.error('[UserDetailModuleAccessSection] updateSubscriptionExpiry:', e)
+      setModuleError('Wystąpił błąd podczas zapisu daty.')
+    } finally {
+      setExpirySavingAppId(null)
+    }
+  }
+
   const setModuleActive = async (appId: string, appName: string, nextActive: boolean) => {
     if (!primaryOrgId) return
     setModuleError(null)
     setTogglingAppId(appId)
     const nextStatus = nextActive ? 'active' : 'inactive'
+    const expiresOnActivate = defaultExpiresAtIso()
     try {
       const existing = subsByAppId.get(appId)
       if (existing) {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('org_subscriptions')
-          .update({ status: nextStatus })
+          .update({
+            status: nextStatus,
+            expires_at: nextActive ? expiresOnActivate : null,
+          })
           .eq('id', existing.id)
+          .select('id,app_id,status,expires_at')
+          .maybeSingle()
         if (error) {
           console.error('[UserDetailModuleAccessSection] sub update:', error)
           setModuleError(error.message || 'Nie udało się zaktualizować modułu.')
           return
         }
-        setSubsByAppId((prev) => {
-          const next = new Map(prev)
-          next.set(appId, { ...existing, status: nextStatus })
-          return next
-        })
+        if (data) {
+          const row = data as OrgSubRow
+          setSubsByAppId((prev) => {
+            const next = new Map(prev)
+            next.set(appId, row)
+            return next
+          })
+        }
         return
       }
       if (!nextActive) return
       const { data: inserted, error: insErr } = await supabase
         .from('org_subscriptions')
-        .insert({ org_id: primaryOrgId, app_id: appId, status: nextStatus })
-        .select('id,app_id,status')
+        .insert({
+          org_id: primaryOrgId,
+          app_id: appId,
+          status: nextStatus,
+          expires_at: expiresOnActivate,
+        })
+        .select('id,app_id,status,expires_at')
         .maybeSingle()
       if (insErr) {
         console.error('[UserDetailModuleAccessSection] sub insert:', insErr)
@@ -299,6 +375,7 @@ export default function UserDetailModuleAccessSection({
               const sub = subsByAppId.get(app.id)
               const active = sub ? isSubActive(sub.status) : false
               const busy = togglingAppId === app.id
+              const expiryBusy = expirySavingAppId === app.id
               return (
                 <li key={app.id} className="flex flex-wrap items-center justify-between gap-4 px-4 py-3 bg-background/50">
                   <div>
@@ -307,16 +384,30 @@ export default function UserDetailModuleAccessSection({
                       {sub ? `Status: ${sub.status}` : 'Brak wpisu subskrypcji — włączenie utworzy rekord.'}
                     </p>
                   </div>
-                  <label className="flex items-center gap-3 cursor-pointer select-none shrink-0">
-                    <span className="text-sm text-muted-foreground">{active ? 'Włączony' : 'Wyłączony'}</span>
-                    <input
-                      type="checkbox"
-                      disabled={busy}
-                      className="h-4 w-4 rounded border-input text-primary focus:ring-ring disabled:opacity-50"
-                      checked={active}
-                      onChange={(e) => void setModuleActive(app.id, app.name, e.target.checked)}
-                    />
-                  </label>
+                  <div className="flex flex-wrap items-center gap-3 shrink-0">
+                    {active && sub && (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Wygasa</span>
+                        <input
+                          type="date"
+                          disabled={busy || expiryBusy}
+                          className={`${inputClass} w-[11rem] text-sm py-1.5 h-9`}
+                          value={expiresAtToDateInputValue(sub.expires_at)}
+                          onChange={(e) => void updateSubscriptionExpiry(sub, e.target.value)}
+                        />
+                      </div>
+                    )}
+                    <label className="flex items-center gap-3 cursor-pointer select-none">
+                      <span className="text-sm text-muted-foreground">{active ? 'Włączony' : 'Wyłączony'}</span>
+                      <input
+                        type="checkbox"
+                        disabled={busy}
+                        className="h-4 w-4 rounded border-input text-primary focus:ring-ring disabled:opacity-50"
+                        checked={active}
+                        onChange={(e) => void setModuleActive(app.id, app.name, e.target.checked)}
+                      />
+                    </label>
+                  </div>
                 </li>
               )
             })}

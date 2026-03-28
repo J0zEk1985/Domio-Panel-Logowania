@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Building2, CreditCard, Layers } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { inputClass } from './pricingAdminUtils'
-import { formatDateOnly } from './usersAndOrgsUtils'
+import { formatDateOnly, formatDateTime } from './usersAndOrgsUtils'
 
 type OrgSubscriptionRaw = {
   id: string
@@ -10,6 +10,7 @@ type OrgSubscriptionRaw = {
   app_id: string
   status: string
   created_at: string | null
+  expires_at: string | null
 }
 
 export type GlobalSubscriptionRow = OrgSubscriptionRaw & {
@@ -48,7 +49,9 @@ export default function SubscriptionsAdminTab() {
     setLoadError(null)
     setLoading(true)
     try {
-      const { data: subsData, error: subsErr } = await supabase.from('org_subscriptions').select('*')
+      const { data: subsData, error: subsErr } = await supabase
+        .from('org_subscriptions')
+        .select('id,org_id,app_id,status,created_at,expires_at')
       if (subsErr) {
         console.error('[SubscriptionsAdminTab] org_subscriptions:', subsErr)
         setLoadError('Nie udało się pobrać subskrypcji.')
@@ -225,7 +228,13 @@ export default function SubscriptionsAdminTab() {
                     <StatusBadge active={isActiveStatus(r.status)} />
                   </td>
                   <td className="p-4 text-muted-foreground whitespace-nowrap">{formatDateOnly(r.created_at)}</td>
-                  <td className="p-4 text-muted-foreground whitespace-nowrap">—</td>
+                  <td className="p-4 whitespace-nowrap">
+                    {r.expires_at == null ? (
+                      <span className="text-muted-foreground/80">Bezterminowo</span>
+                    ) : (
+                      <span className="text-muted-foreground">{formatDateTime(r.expires_at)}</span>
+                    )}
+                  </td>
                 </tr>
               ))}
           </tbody>
