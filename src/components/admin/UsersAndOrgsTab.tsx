@@ -16,22 +16,6 @@ import type {
 } from './usersAndOrgsTypes'
 import { formatDateTime } from './usersAndOrgsUtils'
 
-/** Two kolumny Imię/Nazwisko; gdy brak obu pól — pokazujemy full_name w pierwszej komórce (stare konta). */
-function profileFirstCell(row: ProfileListRow): string {
-  const fn = row.first_name?.trim()
-  const ln = row.last_name?.trim()
-  if (fn) return fn
-  if (ln) return '—'
-  return row.full_name?.trim() || '—'
-}
-
-function profileLastCell(row: ProfileListRow): string {
-  const fn = row.first_name?.trim()
-  const ln = row.last_name?.trim()
-  if (fn || ln) return ln || '—'
-  return '—'
-}
-
 /** Surfaces PostgREST / Postgres details in UI and logs (not generic RLS text). */
 function formatSupabaseError(err: PostgrestError | Error | null | undefined): string {
   if (err == null) return 'Nieznany błąd'
@@ -177,15 +161,15 @@ export default function UsersAndOrgsTab() {
     try {
       const key = userSort.key
       const ascending = userSort.direction === 'asc'
-      let q = supabase.from('profiles').select('*').order(key, { ascending }).limit(10)
-
-      const term = debouncedSearch.trim()
-      if (term) {
-        const pattern = `%${term.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
-        q = q.or(`email.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern}`)
+      let query = supabase.from('profiles').select('*')
+      const searchQuery = debouncedSearch.trim()
+      if (searchQuery) {
+        const pattern = `%${searchQuery.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
+        query = query.or(`email.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern}`)
       }
+      query = query.order(key, { ascending }).limit(10)
 
-      const { data, error } = await q
+      const { data, error } = await query
       if (error) {
         console.error('SUPABASE ERROR:', error)
         setListError(formatSupabaseError(error))
@@ -235,14 +219,7 @@ export default function UsersAndOrgsTab() {
   }
 
   if (selectedUser) {
-    return (
-      <UserDetail
-        userId={selectedUser}
-        onBack={() => {
-          setSelectedUser(null)
-        }}
-      />
-    )
+    return <UserDetail userId={selectedUser} onBack={() => setSelectedUser(null)} />
   }
 
   return (
@@ -350,17 +327,11 @@ export default function UsersAndOrgsTab() {
             </tbody>
           </table>
         ) : (
-          <table className="w-full text-sm min-w-[48rem]">
+          <table className="w-full text-sm min-w-[44rem]">
             <thead>
               <tr className="border-b border-border/60 text-left">
                 <UserSortableTh
-                  label="Imię"
-                  sortKey="first_name"
-                  currentSort={userSort}
-                  onSort={handleUserSort}
-                />
-                <UserSortableTh
-                  label="Nazwisko"
+                  label="Imię i nazwisko"
                   sortKey="last_name"
                   currentSort={userSort}
                   onSort={handleUserSort}
@@ -383,23 +354,26 @@ export default function UsersAndOrgsTab() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={4} className="p-8 text-center text-muted-foreground">
                     Ładowanie…
                   </td>
                 </tr>
               )}
               {!loading &&
-                users.map((row) => (
+                users.map((user) => (
                   <tr
-                    key={row.id}
-                    className="border-b border-border/40 last:border-0 cursor-pointer hover:bg-muted/40"
-                    onClick={() => setSelectedUser(row.id)}
+                    key={user.id}
+                    className="border-b border-border/40 last:border-0 cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => setSelectedUser(user.id)}
                   >
-                    <td className="p-4 font-medium">{profileFirstCell(row)}</td>
-                    <td className="p-4 font-medium">{profileLastCell(row)}</td>
-                    <td className="p-4 text-muted-foreground">{row.email?.trim() ?? '—'}</td>
-                    <td className="p-4">{row.platform_role?.trim() ?? '—'}</td>
-                    <td className="p-4 text-muted-foreground">{formatDateTime(row.last_login_at)}</td>
+                    <td className="p-4 font-medium">
+                      {[user.first_name?.trim(), user.last_name?.trim()].filter(Boolean).join(' ') ||
+                        user.full_name?.trim() ||
+                        '—'}
+                    </td>
+                    <td className="p-4 text-muted-foreground">{user.email?.trim() ?? '—'}</td>
+                    <td className="p-4">{user.platform_role?.trim() ?? '—'}</td>
+                    <td className="p-4 text-muted-foreground">{formatDateTime(user.last_login_at)}</td>
                   </tr>
                 ))}
             </tbody>
