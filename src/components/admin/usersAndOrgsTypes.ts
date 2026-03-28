@@ -48,6 +48,7 @@ export type OrgSubscriptionRow = {
 
 export type MembershipWithProfile = {
   id: string
+  user_id: string
   role: string
   profiles: {
     first_name: string | null

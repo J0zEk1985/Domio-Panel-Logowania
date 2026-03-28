@@ -163,6 +163,11 @@ export default function UsersAndOrgsTab() {
         onBack={() => {
           setSelectedOrg(null)
         }}
+        onUserClick={(userId) => {
+          setSelectedOrg(null)
+          setSelectedUser(userId)
+          setActiveSubTab('users')
+        }}
       />
     )
   }

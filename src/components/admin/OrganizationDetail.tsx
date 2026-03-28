@@ -1,16 +1,89 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ArrowLeft } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ArrowDown, ArrowLeft, ArrowUp } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { inputClass } from './pricingAdminUtils'
 import type { MembershipWithProfile, OrganizationDetailRow, OrgSubscriptionRow } from './usersAndOrgsTypes'
 import { displayPersonName, formatDateTime, membershipRoleLabel, nestedName } from './usersAndOrgsUtils'
 
-type Props = {
+export type OrganizationDetailProps = {
   organizationId: string
   onBack: () => void
+  onUserClick?: (userId: string) => void
 }
 
-export default function OrganizationDetail({ organizationId, onBack }: Props) {
+type MemberSortKey = 'role' | 'first_name' | 'last_name' | 'full_name' | 'email'
+type MemberSortConfig = { key: MemberSortKey; direction: 'asc' | 'desc' }
+
+function MemberSortableTh({
+  label,
+  sortKey,
+  currentSort,
+  onSort,
+}: {
+  label: string
+  sortKey: MemberSortKey
+  currentSort: MemberSortConfig
+  onSort: (k: MemberSortKey) => void
+}) {
+  const active = currentSort.key === sortKey
+  return (
+    <th className="p-3 font-medium">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1.5 text-left hover:text-foreground text-muted-foreground hover:text-foreground"
+        onClick={() => onSort(sortKey)}
+      >
+        {label}
+        {active &&
+          (currentSort.direction === 'asc' ? (
+            <ArrowUp className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+          ) : (
+            <ArrowDown className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+          ))}
+      </button>
+    </th>
+  )
+}
+
+function strNorm(s: string | null | undefined): string {
+  return (s ?? '').trim().toLowerCase()
+}
+
+function compareMembers(
+  a: MembershipWithProfile,
+  b: MembershipWithProfile,
+  key: MemberSortKey,
+  direction: 'asc' | 'desc',
+): number {
+  const dir = direction === 'asc' ? 1 : -1
+  const pa = a.profiles
+  const pb = b.profiles
+  let cmp = 0
+  switch (key) {
+    case 'role':
+      cmp = membershipRoleLabel(a.role).localeCompare(membershipRoleLabel(b.role), 'pl')
+      break
+    case 'email':
+      cmp = strNorm(pa?.email).localeCompare(strNorm(pb?.email), 'pl', { sensitivity: 'base' })
+      break
+    case 'first_name':
+      cmp = strNorm(pa?.first_name).localeCompare(strNorm(pb?.first_name), 'pl', { sensitivity: 'base' })
+      if (cmp === 0) cmp = strNorm(pa?.last_name).localeCompare(strNorm(pb?.last_name), 'pl', { sensitivity: 'base' })
+      break
+    case 'last_name':
+      cmp = strNorm(pa?.last_name).localeCompare(strNorm(pb?.last_name), 'pl', { sensitivity: 'base' })
+      if (cmp === 0) cmp = strNorm(pa?.first_name).localeCompare(strNorm(pb?.first_name), 'pl', { sensitivity: 'base' })
+      break
+    case 'full_name':
+      cmp = strNorm(pa?.full_name).localeCompare(strNorm(pb?.full_name), 'pl', { sensitivity: 'base' })
+      break
+    default:
+      cmp = 0
+  }
+  return cmp * dir
+}
+
+export default function OrganizationDetail({ organizationId, onBack, onUserClick }: OrganizationDetailProps) {
   const [org, setOrg] = useState<OrganizationDetailRow | null>(null)
   const [name, setName] = useState('')
   const [nip, setNip] = useState('')
@@ -24,6 +97,21 @@ export default function OrganizationDetail({ organizationId, onBack }: Props) {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [subToggleError, setSubToggleError] = useState<string | null>(null)
+  const [memberSort, setMemberSort] = useState<MemberSortConfig>({ key: 'role', direction: 'asc' })
+
+  const handleMemberSort = useCallback((key: MemberSortKey) => {
+    setMemberSort((prev) =>
+      prev.key === key
+        ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: 'asc' },
+    )
+  }, [])
+
+  const sortedMembers = useMemo(() => {
+    const list = [...memberships]
+    list.sort((a, b) => compareMembers(a, b, memberSort.key, memberSort.direction))
+    return list
+  }, [memberships, memberSort])
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -95,6 +183,7 @@ export default function OrganizationDetail({ organizationId, onBack }: Props) {
         }
         const merged: MembershipWithProfile[] = rows.map((r) => ({
           id: r.id,
+          user_id: r.user_id,
           role: r.role,
           profiles: profileMap.get(r.user_id) ?? null,
         }))
@@ -302,14 +391,35 @@ export default function OrganizationDetail({ organizationId, onBack }: Props) {
           <table className="w-full text-sm min-w-[32rem]">
             <thead>
               <tr className="border-b border-border/60 text-left text-muted-foreground">
-                <th className="p-3 font-medium">Imię i nazwisko</th>
-                <th className="p-3 font-medium">E-mail</th>
-                <th className="p-3 font-medium">Rola</th>
+                <MemberSortableTh
+                  label="Imię i nazwisko"
+                  sortKey="last_name"
+                  currentSort={memberSort}
+                  onSort={handleMemberSort}
+                />
+                <MemberSortableTh
+                  label="E-mail"
+                  sortKey="email"
+                  currentSort={memberSort}
+                  onSort={handleMemberSort}
+                />
+                <MemberSortableTh
+                  label="Rola"
+                  sortKey="role"
+                  currentSort={memberSort}
+                  onSort={handleMemberSort}
+                />
               </tr>
             </thead>
             <tbody>
-              {memberships.map((m) => (
-                <tr key={m.id} className="border-b border-border/40 last:border-0">
+              {sortedMembers.map((m) => (
+                <tr
+                  key={m.id}
+                  className={`border-b border-border/40 last:border-0 transition-colors ${
+                    onUserClick ? 'cursor-pointer hover:bg-muted/50' : ''
+                  }`}
+                  onClick={() => onUserClick?.(m.user_id)}
+                >
                   <td className="p-3 font-medium">{displayPersonName(m.profiles ?? {})}</td>
                   <td className="p-3 text-muted-foreground">{m.profiles?.email?.trim() ?? '—'}</td>
                   <td className="p-3 text-muted-foreground">{membershipRoleLabel(m.role)}</td>
