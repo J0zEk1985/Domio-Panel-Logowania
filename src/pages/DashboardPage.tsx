@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -67,8 +67,18 @@ export default function DashboardPage() {
   const [apps, setApps] = useState<Application[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [noAdminBanner, setNoAdminBanner] = useState(false)
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
+
+  useEffect(() => {
+    const st = location.state as { noAdminAccess?: boolean } | undefined
+    if (st?.noAdminAccess) {
+      setNoAdminBanner(true)
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+  }, [location.pathname, location.state, navigate])
 
   useEffect(() => {
     const loadUserApps = async () => {
@@ -179,6 +189,14 @@ export default function DashboardPage() {
 
       <div className="flex-1 pt-24 pb-16 px-4">
         <div className="container mx-auto max-w-6xl">
+          {noAdminBanner && (
+            <div
+              className="mb-6 bg-amber-500/10 border border-amber-500/30 text-foreground px-4 py-3 rounded-xl"
+              role="status"
+            >
+              Brak uprawnień do panelu administratora.
+            </div>
+          )}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-10">
             <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">
               Witaj w <span className="gradient-brand-text">panelu DOMIO</span>

@@ -12,6 +12,8 @@ import ResetPasswordPage from './pages/ResetPasswordPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
 import LandingPage from './pages/LandingPage'
 import ModuleDetail from './pages/ModuleDetail'
+import AdminPage from './pages/AdminPage'
+import ProtectedRoute from './components/ProtectedRoute'
 
 /** Paths where we never force redirect to /login after auth edge cases (e.g. simplified account without org). */
 const PUBLIC_PATHS = new Set([
@@ -207,6 +209,14 @@ function App() {
       <Route
         path="/dashboard"
         element={session ? <DashboardPage /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute requireAdmin={true}>
+            <AdminPage />
+          </ProtectedRoute>
+        }
       />
       <Route path="/regulamin" element={<TermsPage />} />
       <Route path="/polityka-prywatnosci" element={<PrivacyPage />} />

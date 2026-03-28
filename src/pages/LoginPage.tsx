@@ -12,6 +12,20 @@ const isValidDomioSubdomain = (url: string): boolean => {
   }
 }
 
+/** Same-origin SPA paths after login (e.g. /admin). Rejects open redirects. */
+const isSafeInternalReturnPath = (path: string): boolean => {
+  if (!path.startsWith('/') || path.startsWith('//')) return false
+  const [pathname] = path.split('?')
+  return /^\/[a-zA-Z0-9/_-]*$/.test(pathname) && !pathname.includes('..')
+}
+
+const resolvePostLoginTarget = (returnToParam: string | null): string => {
+  if (!returnToParam) return '/dashboard'
+  if (isValidDomioSubdomain(returnToParam)) return returnToParam
+  if (isSafeInternalReturnPath(returnToParam)) return returnToParam
+  return '/dashboard'
+}
+
 /**
  * Hard reset function - completely clears session, cookies, and localStorage
  * Used when 403 error occurs or logout=true parameter is detected
@@ -135,9 +149,7 @@ export default function LoginPage() {
         const userId = userData.user.id
         if (userId && lastRedirectedUserIdRef.current !== userId) {
           const returnToParam = searchParams.get('returnTo') || returnTo
-          const target = returnToParam && isValidDomioSubdomain(returnToParam)
-            ? returnToParam
-            : '/dashboard'
+          const target = resolvePostLoginTarget(returnToParam)
 
           lastRedirectedUserIdRef.current = userId
           
@@ -223,11 +235,11 @@ export default function LoginPage() {
 
       // Get returnTo from search params and redirect accordingly
       const returnTo = searchParams.get('returnTo')
-      if (returnTo && isValidDomioSubdomain(returnTo)) {
-        // Use replace to force full page reload and proper cookie loading in the other subdomain
-        window.location.replace(returnTo)
+      const target = resolvePostLoginTarget(returnTo)
+      if (target.startsWith('http')) {
+        window.location.replace(target)
       } else {
-        navigate('/dashboard')
+        navigate(target, { replace: true })
       }
     } catch (err: unknown) {
       // Translate Supabase errors to Polish messages
@@ -271,9 +283,10 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      const finalRedirectTo = returnTo && isValidDomioSubdomain(returnTo)
-        ? returnTo
-        : `${window.location.origin}/dashboard`
+      const target = resolvePostLoginTarget(returnTo)
+      const finalRedirectTo = target.startsWith('http')
+        ? target
+        : `${window.location.origin}${target.startsWith('/') ? target : `/${target}`}`
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -294,9 +307,10 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      const finalRedirectTo = returnTo && isValidDomioSubdomain(returnTo)
-        ? returnTo
-        : `${window.location.origin}/dashboard`
+      const target = resolvePostLoginTarget(returnTo)
+      const finalRedirectTo = target.startsWith('http')
+        ? target
+        : `${window.location.origin}${target.startsWith('/') ? target : `/${target}`}`
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
