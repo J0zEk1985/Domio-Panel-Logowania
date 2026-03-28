@@ -40,12 +40,9 @@ export function HeroSection() {
         style={{ y: textY, opacity: textOpacity }}
         className="text-center max-w-3xl"
       >
-        <h1 className="font-display text-5xl md:text-7xl font-bold tracking-tight mb-4">
+        <h1 className="font-display text-5xl md:text-7xl font-bold tracking-tight mb-8">
           <span className="gradient-brand-text">DOMIO</span>
         </h1>
-        <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto mb-8 text-balance">
-          Jeden ekosystem aplikacji dla mieszkańców i firm. Zarządzaj, kontroluj, rozwijaj — wszystko w jednym miejscu.
-        </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link to="/dashboard">
             <Button size="lg" className="gradient-brand text-primary-foreground border-0 px-8 text-base">
