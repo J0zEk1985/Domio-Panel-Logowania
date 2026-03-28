@@ -42,8 +42,6 @@ export function HeroSection() {
       >
         <h1 className="font-display text-5xl md:text-7xl font-bold tracking-tight mb-4">
           <span className="gradient-brand-text">DOMIO</span>
-          <br />
-          <span className="text-foreground">Ecosystem Hub</span>
         </h1>
         <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto mb-8 text-balance">
           Jeden ekosystem aplikacji dla mieszkańców i firm. Zarządzaj, kontroluj, rozwijaj — wszystko w jednym miejscu.
@@ -51,12 +49,12 @@ export function HeroSection() {
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link to="/dashboard">
             <Button size="lg" className="gradient-brand text-primary-foreground border-0 px-8 text-base">
-              Wejdź do Hub
+              Zaloguj się
             </Button>
           </Link>
           <a href="#ecosystem">
             <Button size="lg" variant="outline" className="px-8 text-base">
-              Odkryj ekosystem
+              Odkryj DOMIO
             </Button>
           </a>
         </div>
