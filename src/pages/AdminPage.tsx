@@ -16,6 +16,7 @@ import { Navbar } from '../components/landing/Navbar'
 import { Footer } from '../components/landing/Footer'
 import PricingAdminTab from '../components/admin/PricingAdminTab'
 import LegalAdminTab from '../components/admin/LegalAdminTab'
+import UsersAndOrgsTab from '../components/admin/UsersAndOrgsTab'
 
 type ProfileRow = {
   id: string
@@ -295,14 +296,7 @@ export default function AdminPage() {
               </>
             )}
 
-            {activeTab === 'users' && (
-              <div className="p-6 bento-card">
-                <h2 className="font-display text-xl font-semibold mb-2">Użytkownicy i firmy</h2>
-                <p className="text-muted-foreground">
-                  Tutaj wdrożymy zarządzanie profilami użytkowników oraz organizacjami (firmami).
-                </p>
-              </div>
-            )}
+            {activeTab === 'users' && <UsersAndOrgsTab />}
 
             {activeTab === 'subscriptions' && (
               <div className="p-6 bento-card">
