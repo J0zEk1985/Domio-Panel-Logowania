@@ -110,7 +110,7 @@ export default function DashboardPage() {
   }
 
   const handleLogout = async () => {
-    // Optimistic logout: clear local state immediately, redirect to Hub with logout=true, then sign out in background
+    // Optimistic logout: clear local state immediately, redirect to login with logout=true, then sign out in background
     // 1. Clear localStorage immediately
     try {
       const keysToRemove: string[] = []
@@ -125,7 +125,7 @@ export default function DashboardPage() {
       console.error('[DashboardPage] Error clearing localStorage:', error)
     }
 
-    // 2. Redirect immediately to Hub (login page) with logout=true parameter
+    // 2. Redirect immediately to the login page with logout=true parameter
     // Use window.location.href to force full page reload and proper cleanup
     window.location.href = '/login?logout=true'
 

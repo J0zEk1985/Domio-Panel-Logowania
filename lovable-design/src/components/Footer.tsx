@@ -9,7 +9,7 @@ export function Footer() {
           <span className="font-display font-semibold gradient-brand-text">DOMIO</span>
         </div>
         <p className="text-sm text-muted-foreground">
-          © {new Date().getFullYear()} DOMIO Ecosystem Hub. Wszelkie prawa zastrzeżone.
+          © {new Date().getFullYear()} DOMIO. Wszelkie prawa zastrzeżone.
         </p>
       </div>
     </footer>

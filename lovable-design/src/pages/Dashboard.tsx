@@ -59,7 +59,7 @@ const Dashboard = () => {
             className="mb-10"
           >
             <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">
-              Witaj w <span className="gradient-brand-text">DOMIO Hub</span>
+              Witaj w <span className="gradient-brand-text">panelu DOMIO</span>
             </h1>
             <p className="text-muted-foreground text-lg">Zarządzaj swoimi modułami i odkrywaj nowe możliwości.</p>
           </motion.div>

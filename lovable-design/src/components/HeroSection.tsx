@@ -49,7 +49,7 @@ export function HeroSection() {
               Zaloguj się
             </Button>
           </Link>
-          <a href="#ecosystem">
+          <a href="#domio-modules">
             <Button size="lg" variant="outline" className="px-8 text-base">
               Odkryj DOMIO
             </Button>

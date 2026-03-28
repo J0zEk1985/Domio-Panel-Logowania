@@ -8,7 +8,7 @@ export function Footer() {
           <img src={domioLogo} alt="DOMIO" className="h-6 w-6 rounded object-cover" />
           <span className="font-display font-semibold gradient-brand-text">DOMIO</span>
         </div>
-        <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} DOMIO Ecosystem Hub. Wszelkie prawa zastrzeżone.</p>
+        <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} DOMIO. Wszelkie prawa zastrzeżone.</p>
       </div>
     </footer>
   )

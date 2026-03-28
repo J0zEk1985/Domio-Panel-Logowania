@@ -63,7 +63,7 @@ export default function ModuleDetail() {
                   Rozpocznij za darmo
                 </Button>
               </Link>
-              <Link to="/#ecosystem">
+              <Link to="/#domio-modules">
                 <Button size="lg" variant="ghost" className="gap-2">
                   <ArrowLeft className="h-4 w-4" /> Wróć do Ekosystemu
                 </Button>

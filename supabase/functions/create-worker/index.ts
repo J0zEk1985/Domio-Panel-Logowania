@@ -2,7 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 
 /**
  * Edge Function: create-worker
- * Creates simplified worker accounts in Hub database
+ * Creates simplified worker accounts in the Panel-Logowania database
  * 
  * Accepts: slug, pin, firstName, lastName, orgId
  * Returns: userId, email
@@ -317,7 +317,7 @@ Deno.serve(async (req) => {
       console.log(`[create-worker] Auth user created successfully: ${userId}`)
     }
 
-    // Upsert profile in Hub database
+    // Upsert profile in Panel-Logowania database
     // CRITICAL: Gwarancja NOT NULL - upewnij się, że funkcja przy każdym wywołaniu wysyła accepted_terms_at
     // Format ISO String dla spójności z VPS
     // To zapobiegnie błędom 500 z Postgresa (NOT NULL constraint violation)

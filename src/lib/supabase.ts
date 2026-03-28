@@ -121,7 +121,7 @@ const createCookieStorage = () => {
 /**
  * Supabase client configured identically to Cleaning
  * Uses cookieOptions with domain: '.domio.com.pl', sameSite: 'lax' to share session
- * Uses storageKey: 'domio-auth-token' - MUST be identical in both apps (Hub and Cleaning)
+ * Uses storageKey: 'domio-auth-token' - MUST be identical in both apps (Panel-Logowania and Cleaning)
  * 
  * This configuration enables the app to create session cookies that can be read
  * by Cleaning app on subdomain (cleaning.domio.com.pl) for SSO.

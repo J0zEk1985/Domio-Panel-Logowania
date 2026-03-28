@@ -21,7 +21,7 @@ const TermsPage = () => {
 
           <div>
             <h2 className="text-xl font-semibold text-white mb-2">2. Rodzaje i zakres usług</h2>
-            <p>DOMIO świadczy usługi w zakresie udostępniania platformy Hub do autentykacji, zarządzania subskrypcjami aplikacji dedykowanych (np. sprzątanie, technika) oraz prowadzenia centralnego rejestru lokalizacji.</p>
+            <p>DOMIO świadczy usługi w zakresie udostępniania platformy DOMIO do autentykacji, zarządzania subskrypcjami aplikacji dedykowanych (np. sprzątanie, technika) oraz prowadzenia centralnego rejestru lokalizacji.</p>
           </div>
 
           <div>

@@ -69,7 +69,7 @@ export const modules: ModuleData[] = [
       },
     ],
     integrations: [
-      "Single Sign-On (SSO) z DOMIO Hub",
+      "Single Sign-On (SSO) z DOMIO Panel",
       "Synchronizacja z Serwis DOMIO",
       "Integracja z Nieruchomości DOMIO",
       "API do systemów zewnętrznych",
@@ -113,7 +113,7 @@ export const modules: ModuleData[] = [
       },
     ],
     integrations: [
-      "Single Sign-On (SSO) z DOMIO Hub",
+      "Single Sign-On (SSO) z DOMIO Panel",
       "Synchronizacja z Serwis DOMIO",
       "Integracja z Bezpieczeństwo DOMIO",
       "API do systemów telematycznych",
@@ -138,7 +138,7 @@ export const modules: ModuleData[] = [
       { audience: "Mieszkańcy", icon: Home, benefits: ["Dostęp do dokumentów online", "Zgłaszanie usterek", "Historia płatności", "Komunikacja z zarządcą"] },
       { audience: "Firmy", icon: Building2, benefits: ["Zarządzanie portfolio nieruchomości", "Automatyzacja rozliczeń", "Raporty dla inwestorów", "Optymalizacja kosztów"] },
     ],
-    integrations: ["Single Sign-On (SSO) z DOMIO Hub", "Synchronizacja z Serwis DOMIO", "Integracja z Cleaning DOMIO", "API do systemów księgowych"],
+    integrations: ["Single Sign-On (SSO) z DOMIO Panel", "Synchronizacja z Serwis DOMIO", "Integracja z Cleaning DOMIO", "API do systemów księgowych"],
   },
   {
     slug: "serwis",
@@ -159,7 +159,7 @@ export const modules: ModuleData[] = [
       { audience: "Mieszkańcy", icon: Home, benefits: ["Szybkie zgłaszanie usterek", "Śledzenie statusu naprawy", "Ocena wykonanej pracy", "Historia zgłoszeń"] },
       { audience: "Firmy", icon: Building2, benefits: ["Zarządzanie zespołami serwisowymi", "Optymalizacja czasu reakcji", "Analiza kosztów utrzymania", "Planowanie konserwacji"] },
     ],
-    integrations: ["Single Sign-On (SSO) z DOMIO Hub", "Synchronizacja z Nieruchomości DOMIO", "Integracja z Cleaning DOMIO", "API do systemów CMMS"],
+    integrations: ["Single Sign-On (SSO) z DOMIO Panel", "Synchronizacja z Nieruchomości DOMIO", "Integracja z Cleaning DOMIO", "API do systemów CMMS"],
   },
   {
     slug: "bezpieczenstwo",
@@ -180,7 +180,7 @@ export const modules: ModuleData[] = [
       { audience: "Mieszkańcy", icon: Home, benefits: ["Cyfrowy klucz w telefonie", "Historia dostępu", "Zarządzanie gośćmi", "Powiadomienia o wejściach"] },
       { audience: "Firmy", icon: Building2, benefits: ["Centralne zarządzanie dostępem", "Integracja z CCTV", "Audyt bezpieczeństwa", "Raportowanie incydentów"] },
     ],
-    integrations: ["Single Sign-On (SSO) z DOMIO Hub", "Synchronizacja z Smart Home DOMIO", "Integracja z Nieruchomości DOMIO", "API do systemów SKD"],
+    integrations: ["Single Sign-On (SSO) z DOMIO Panel", "Synchronizacja z Smart Home DOMIO", "Integracja z Nieruchomości DOMIO", "API do systemów SKD"],
   },
   {
     slug: "smart-home",

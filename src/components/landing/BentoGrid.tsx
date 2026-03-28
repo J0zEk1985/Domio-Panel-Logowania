@@ -38,7 +38,7 @@ const modules = [
 
 export function BentoGrid() {
   return (
-    <section id="ecosystem" className="py-24 px-4">
+    <section id="domio-modules" className="py-24 px-4">
       <div className="container mx-auto max-w-6xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -47,7 +47,7 @@ export function BentoGrid() {
           className="text-center mb-16"
         >
           <h2 className="font-display text-3xl md:text-5xl font-bold mb-4">
-            Ekosystem <span className="gradient-brand-text">DOMIO</span>
+            Moduły <span className="gradient-brand-text">DOMIO</span>
           </h2>
           <p className="text-muted-foreground text-lg max-w-md mx-auto">Modularna platforma, którą dopasowujesz do swoich potrzeb.</p>
         </motion.div>

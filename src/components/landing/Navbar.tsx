@@ -22,8 +22,8 @@ export function Navbar({ isAuthenticated }: NavbarProps) {
         </Link>
 
         <div className="hidden md:flex items-center gap-3">
-          <a href="#ecosystem" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            Ekosystem
+          <a href="#domio-modules" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            Moduły
           </a>
           <a href="#residents" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Mieszkańcy
@@ -34,7 +34,7 @@ export function Navbar({ isAuthenticated }: NavbarProps) {
           {isAuthenticated && (
             <>
               <Link to="/dashboard" className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
-                <LayoutDashboard className="h-4 w-4" /> Hub
+                <LayoutDashboard className="h-4 w-4" /> Panel
               </Link>
               <Link to="/admin" className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
                 <Shield className="h-4 w-4" /> Admin
@@ -60,8 +60,8 @@ export function Navbar({ isAuthenticated }: NavbarProps) {
 
       {mobileOpen && (
         <div className="md:hidden border-t border-border/50 p-4 space-y-3 glass-strong">
-          <a href="#ecosystem" className="block text-sm text-muted-foreground" onClick={() => setMobileOpen(false)}>
-            Ekosystem
+          <a href="#domio-modules" className="block text-sm text-muted-foreground" onClick={() => setMobileOpen(false)}>
+            Moduły
           </a>
           <a href="#residents" className="block text-sm text-muted-foreground" onClick={() => setMobileOpen(false)}>
             Mieszkańcy
@@ -75,7 +75,7 @@ export function Navbar({ isAuthenticated }: NavbarProps) {
           {isAuthenticated && (
             <>
               <Link to="/dashboard" className="block text-sm text-muted-foreground" onClick={() => setMobileOpen(false)}>
-                Hub
+                Panel
               </Link>
               <Link to="/admin" className="block text-sm text-muted-foreground" onClick={() => setMobileOpen(false)}>
                 Admin

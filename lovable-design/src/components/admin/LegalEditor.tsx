@@ -20,21 +20,21 @@ const initialDocs: LegalDoc[] = [
     title: "Regulamin",
     icon: Scale,
     lastUpdated: "2025-01-15 14:30",
-    content: `REGULAMIN PLATFORMY DOMIO ECOSYSTEM HUB\n\n§1. Postanowienia ogólne\n1. Niniejszy regulamin określa zasady korzystania z platformy DOMIO Ecosystem Hub.\n2. Platforma jest prowadzona przez DOMIO sp. z o.o. z siedzibą w Warszawie.\n\n§2. Definicje\n1. Użytkownik — osoba fizyczna lub prawna korzystająca z Platformy.\n2. Moduł — pojedyncza usługa dostępna w ramach ekosystemu DOMIO.\n\n§3. Warunki korzystania\n1. Korzystanie z Platformy wymaga rejestracji konta.\n2. Użytkownik zobowiązuje się do podania prawdziwych danych.\n3. Konto jest osobiste i nie może być udostępniane osobom trzecim.`,
+    content: `REGULAMIN PLATFORMY DOMIO\n\n§1. Postanowienia ogólne\n1. Niniejszy regulamin określa zasady korzystania z platformy DOMIO.\n2. Platforma jest prowadzona przez DOMIO sp. z o.o. z siedzibą w Warszawie.\n\n§2. Definicje\n1. Użytkownik — osoba fizyczna lub prawna korzystająca z Platformy.\n2. Moduł — pojedyncza usługa dostępna w ramach platformy DOMIO.\n\n§3. Warunki korzystania\n1. Korzystanie z Platformy wymaga rejestracji konta.\n2. Użytkownik zobowiązuje się do podania prawdziwych danych.\n3. Konto jest osobiste i nie może być udostępniane osobom trzecim.`,
   },
   {
     id: "privacy",
     title: "Polityka Prywatności (RODO)",
     icon: FileText,
     lastUpdated: "2025-02-01 10:00",
-    content: `POLITYKA PRYWATNOŚCI — DOMIO ECOSYSTEM HUB\n\n1. Administrator danych\nAdministratorem danych osobowych jest DOMIO sp. z o.o.\n\n2. Cel przetwarzania\nDane osobowe przetwarzane są w celu świadczenia usług platformy, obsługi konta użytkownika oraz realizacji zobowiązań umownych.\n\n3. Podstawa prawna\nPrzetwarzanie odbywa się na podstawie art. 6 ust. 1 lit. b) RODO.\n\n4. Prawa użytkownika\nUżytkownik ma prawo dostępu do danych, ich sprostowania, usunięcia oraz przenoszenia.`,
+    content: `POLITYKA PRYWATNOŚCI — DOMIO\n\n1. Administrator danych\nAdministratorem danych osobowych jest DOMIO sp. z o.o.\n\n2. Cel przetwarzania\nDane osobowe przetwarzane są w celu świadczenia usług platformy, obsługi konta użytkownika oraz realizacji zobowiązań umownych.\n\n3. Podstawa prawna\nPrzetwarzanie odbywa się na podstawie art. 6 ust. 1 lit. b) RODO.\n\n4. Prawa użytkownika\nUżytkownik ma prawo dostępu do danych, ich sprostowania, usunięcia oraz przenoszenia.`,
   },
   {
     id: "cookies",
     title: "Polityka Cookies",
     icon: Cookie,
     lastUpdated: "2024-12-20 09:15",
-    content: `POLITYKA COOKIES — DOMIO ECOSYSTEM HUB\n\n1. Czym są pliki cookies?\nPliki cookies to małe pliki tekstowe zapisywane na urządzeniu użytkownika.\n\n2. Jakie cookies wykorzystujemy?\n- Niezbędne — wymagane do prawidłowego działania platformy\n- Analityczne — pomagają zrozumieć sposób korzystania z serwisu\n- Marketingowe — umożliwiają dostosowanie treści reklamowych\n\n3. Zarządzanie cookies\nUżytkownik może zmienić ustawienia cookies w przeglądarce.`,
+    content: `POLITYKA COOKIES — DOMIO\n\n1. Czym są pliki cookies?\nPliki cookies to małe pliki tekstowe zapisywane na urządzeniu użytkownika.\n\n2. Jakie cookies wykorzystujemy?\n- Niezbędne — wymagane do prawidłowego działania platformy\n- Analityczne — pomagają zrozumieć sposób korzystania z serwisu\n- Marketingowe — umożliwiają dostosowanie treści reklamowych\n\n3. Zarządzanie cookies\nUżytkownik może zmienić ustawienia cookies w przeglądarce.`,
   },
 ];
 

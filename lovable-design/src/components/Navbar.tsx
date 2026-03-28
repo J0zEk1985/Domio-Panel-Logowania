@@ -22,8 +22,8 @@ export function Navbar() {
         <div className="hidden md:flex items-center gap-2">
           {isLanding && (
             <>
-              <a href="#ecosystem" className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                Ekosystem
+              <a href="#domio-modules" className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Moduły
               </a>
               <a href="#residents" className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
                 Mieszkańcy
@@ -36,7 +36,7 @@ export function Navbar() {
           <ThemeToggle />
           <Link to="/dashboard">
             <Button variant="ghost" size="sm" className="gap-2">
-              <LayoutDashboard className="h-4 w-4" /> Hub
+              <LayoutDashboard className="h-4 w-4" /> Panel
             </Button>
           </Link>
           <Link to="/admin">
@@ -65,7 +65,7 @@ export function Navbar() {
         <div className="md:hidden glass-strong border-t border-border/50 p-4 space-y-2">
           <Link to="/dashboard" onClick={() => setMobileOpen(false)}>
             <Button variant="ghost" className="w-full justify-start gap-2">
-              <LayoutDashboard className="h-4 w-4" /> Hub
+              <LayoutDashboard className="h-4 w-4" /> Panel
             </Button>
           </Link>
           <Link to="/admin" onClick={() => setMobileOpen(false)}>

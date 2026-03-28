@@ -42,7 +42,7 @@ export function HeroSection({ isAuthenticated }: HeroSectionProps) {
           <Link to={ctaTarget} className="gradient-brand text-primary-foreground border-0 px-8 py-3 rounded-md text-base font-medium">
             {ctaLabel}
           </Link>
-          <a href="#ecosystem" className="px-8 py-3 rounded-md text-base font-medium border border-border hover:bg-muted/40">
+          <a href="#domio-modules" className="px-8 py-3 rounded-md text-base font-medium border border-border hover:bg-muted/40">
             Odkryj DOMIO
           </a>
         </div>
