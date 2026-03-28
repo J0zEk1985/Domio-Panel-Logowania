@@ -1,33 +1,50 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, Menu, Shield, X } from 'lucide-react'
 import { ThemeToggle } from './ThemeToggle'
 import domioLogo from '../../../lovable-design/src/assets/domio-logo.jpg'
 import { supabase } from '../../lib/supabase'
 
-type NavbarProps = {
-  isAuthenticated: boolean
-}
-
 const ctaDesktopClass =
-  'gradient-brand text-primary-foreground border-0 rounded-md px-4 py-2 text-sm font-medium inline-flex items-center justify-center'
+  'gradient-brand text-primary-foreground border-0 rounded-md px-4 py-2 text-sm font-medium inline-flex items-center justify-center disabled:opacity-60 disabled:pointer-events-none'
 const ctaMobileClass =
-  'block w-full rounded-md px-4 py-2 text-center font-medium gradient-brand text-primary-foreground'
+  'block w-full rounded-md px-4 py-2 text-center font-medium gradient-brand text-primary-foreground disabled:opacity-60 disabled:pointer-events-none'
 
-export function Navbar({ isAuthenticated }: NavbarProps) {
+export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
   const pathname = location.pathname
   const isLanding = pathname === '/'
 
+  useEffect(() => {
+    let cancelled = false
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!cancelled) setIsAuthenticated(!!session)
+    })
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session)
+    })
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
+    }
+  }, [])
+
   const handleLogout = async () => {
+    setIsLoggingOut(true)
     try {
       await supabase.auth.signOut()
       navigate('/login')
     } catch (error) {
       console.error('[Navbar] Błąd wylogowania:', error)
       navigate('/login')
+    } finally {
+      setIsLoggingOut(false)
     }
   }
 
@@ -50,12 +67,14 @@ export function Navbar({ isAuthenticated }: NavbarProps) {
         <button
           type="button"
           className={className}
+          disabled={isLoggingOut}
+          aria-busy={isLoggingOut}
           onClick={() => {
             closeMobile()
             void handleLogout()
           }}
         >
-          Wyloguj się
+          {isLoggingOut ? 'Wylogowywanie…' : 'Wyloguj się'}
         </button>
       )
     }

@@ -103,6 +103,7 @@ function App() {
       try {
         const { data } = await supabase.auth.getSession()
         const initialSession = data?.session ?? null
+        setSession(initialSession)
         if (!initialSession) {
           const { error: refreshError } = await supabase.auth.refreshSession()
           if (refreshError) {
@@ -112,7 +113,6 @@ function App() {
               (msg.includes('refresh') && msg.includes('invalid')) ||
               (msg.includes('jwt') && msg.includes('expired'))
             if (isExpiredOrInvalid) await supabase.auth.signOut()
-            setLoading(false)
           }
         }
       } catch (e) {
@@ -122,24 +122,44 @@ function App() {
         } else {
           console.error('[App] Błąd inicjalizacji auth:', e)
         }
+      } finally {
+        // Always clear initial gate so UI never stays stuck (tab wake / slow INITIAL_SESSION)
         setLoading(false)
       }
     }
 
+    /** Wake from suspended tab: refresh session client without blocking the main thread. */
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void supabase.auth.getSession()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     void setupAuth().then(() => {
       if (cancelled) return
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((event, session) => {
+        // TOKEN_REFRESHED, USER_UPDATED, INITIAL_SESSION, SIGNED_IN, SIGNED_OUT, etc. — always sync React
         setSession(session)
         setLoading(false)
 
-        if (session?.user?.id && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+        if (event === 'SIGNED_OUT' || !session?.user?.id) {
+          return
+        }
+
+        void (async () => {
+          if (event !== 'SIGNED_IN' && event !== 'INITIAL_SESSION') {
+            return
+          }
           try {
             if (await checkSimplifiedMembership(session.user.id)) return
             await checkFirstLoginAndRedirect(session.user.id)
           } catch (e) {
             console.error('[App] Błąd w onAuthStateChange:', e)
           }
-        }
+        })()
       })
       sub = subscription
     })
@@ -147,29 +167,6 @@ function App() {
     return () => {
       cancelled = true
       sub?.unsubscribe()
-    }
-  }, [])
-
-  // Visibility API: Monitor tab activity and silently refresh session when tab becomes visible
-  useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible') {
-        try {
-          // Silent session refresh - don't block UI
-          await supabase.auth.getUser()
-        } catch (error) {
-          // Ignore AbortError from tab suspension
-          if (error instanceof Error && error.name === 'AbortError') {
-            console.log('[App] Session refresh aborted (tab was suspended)')
-          } else {
-            console.error('[App] Błąd odświeżania sesji:', error)
-          }
-        }
-      }
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [])

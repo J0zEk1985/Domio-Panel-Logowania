@@ -27,7 +27,7 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <Navbar isAuthenticated={isAuthenticated} />
+      <Navbar />
       <HeroSection isAuthenticated={isAuthenticated} />
       <ValueProposition />
       <BentoGrid />
