@@ -9,6 +9,7 @@ type HeroSectionProps = {
 
 export function HeroSection({ isAuthenticated }: HeroSectionProps) {
   const ctaTarget = isAuthenticated ? '/dashboard' : '/login'
+  const ctaLabel = isAuthenticated ? 'Przejdź do panelu' : 'Zaloguj się'
   const { scrollY } = useScroll()
   const logoScale = useTransform(scrollY, [0, 400], [1, 0.3])
   const logoOpacity = useTransform(scrollY, [0, 300], [1, 0])
@@ -42,7 +43,7 @@ export function HeroSection({ isAuthenticated }: HeroSectionProps) {
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link to={ctaTarget} className="gradient-brand text-primary-foreground border-0 px-8 py-3 rounded-md text-base font-medium">
-            Zaloguj się
+            {ctaLabel}
           </Link>
           <a href="#ecosystem" className="px-8 py-3 rounded-md text-base font-medium border border-border hover:bg-muted/40">
             Odkryj DOMIO

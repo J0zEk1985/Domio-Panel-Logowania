@@ -33,15 +33,19 @@ export default function DashboardPage() {
         }
 
         // --- Dispatcher: fleet vs cleaning access ---
-        // 1. Fetch profile (fleet_role)
+        // 1. Fetch profile (fleet_role, first-login flag)
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('fleet_role')
+          .select('fleet_role, is_first_login')
           .eq('id', user.id)
           .maybeSingle()
 
         if (profileError) {
           console.log('[SSO DEBUG] Profile fetch error (fleet_role):', profileError.message)
+        }
+        if (profile?.is_first_login === true) {
+          navigate('/change-password')
+          return
         }
         const fleetRole = profile?.fleet_role ?? null
         console.log('[SSO DEBUG] fleet_role:', fleetRole ?? '(empty)')

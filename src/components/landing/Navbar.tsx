@@ -11,6 +11,7 @@ type NavbarProps = {
 export function Navbar({ isAuthenticated }: NavbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const ctaTarget = isAuthenticated ? '/dashboard' : '/login'
+  const ctaLabel = isAuthenticated ? 'Przejdź do panelu' : 'Zaloguj się'
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 glass-strong">
@@ -42,7 +43,7 @@ export function Navbar({ isAuthenticated }: NavbarProps) {
           )}
           <ThemeToggle />
           <Link to={ctaTarget} className="gradient-brand text-primary-foreground border-0 rounded-md px-4 py-2 text-sm font-medium">
-            Zaloguj się
+            {ctaLabel}
           </Link>
         </div>
 
@@ -86,7 +87,7 @@ export function Navbar({ isAuthenticated }: NavbarProps) {
             className="block w-full rounded-md px-4 py-2 text-center font-medium gradient-brand text-primary-foreground"
             onClick={() => setMobileOpen(false)}
           >
-            Zaloguj się
+            {ctaLabel}
           </Link>
         </div>
       )}

@@ -59,7 +59,8 @@ function App() {
 
         if (profile?.is_first_login === true) {
           const currentPath = window.location.pathname
-          if (currentPath !== '/change-password') {
+          // Landing at `/` always stays visible; DashboardPage enforces password change when entering the panel.
+          if (currentPath !== '/change-password' && currentPath !== '/') {
             window.location.href = '/change-password'
           }
         }
@@ -187,6 +188,7 @@ function App() {
       />
       <Route path="/regulamin" element={<TermsPage />} />
       <Route path="/polityka-prywatnosci" element={<PrivacyPage />} />
+      {/* Always render landing at `/` — no auth-based Navigate; login only at /login or via CTA */}
       <Route path="/" element={<LandingPage isAuthenticated={!!session} />} />
     </Routes>
   )
