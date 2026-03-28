@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { CheckCircle2, Star } from 'lucide-react'
+import { supabase } from '../../lib/supabase'
+import { parseFeaturesFromDb } from '../admin/pricingAdminUtils'
 
 export interface PricingPlan {
   id: string
@@ -56,13 +58,148 @@ const defaultPlans: PricingPlan[] = [
   },
 ]
 
+type DbPricingPlanRow = {
+  id: string
+  app_id: string
+  name: string
+  price_monthly: number
+  price_yearly: number
+  features: unknown
+  is_active: boolean
+}
+
+type ApplicationRow = { id: string; name: string }
+
+/** Map UI tier id (basic/pro/enterprise) to DB plan name variants. */
+function tierMatchesDbPlanName(tierId: string, dbName: string): boolean {
+  const n = dbName.trim().toLowerCase()
+  const t = tierId.toLowerCase()
+  if (n === t) return true
+  if (t === 'basic' && (n.includes('basic') || n.includes('podstaw'))) return true
+  if (t === 'pro' && n.includes('pro') && !n.includes('enterprise')) return true
+  if (t === 'enterprise' && n.includes('enterprise')) return true
+  return false
+}
+
+function matchesModuleApplication(appName: string, moduleName: string, moduleSlug: string): boolean {
+  const a = appName.trim().toLowerCase()
+  const m = moduleName.trim().toLowerCase()
+  if (a === m) return true
+  const slugHints: Record<string, string[]> = {
+    cleaning: ['cleaning'],
+    flota: ['flota'],
+    nieruchomosci: ['nieruchomo'],
+    biznes: ['biznes'],
+    serwis: ['serwis'],
+    bezpieczenstwo: ['bezpiecze'],
+    'smart-home': ['smart'],
+    eko: ['eko'],
+    'ochrona-danych': ['ochrona'],
+  }
+  const hints = slugHints[moduleSlug]
+  if (hints?.some((h) => a.includes(h))) return true
+  const first = m.split(/\s+/)[0]
+  if (first.length >= 4 && a.includes(first)) return true
+  return false
+}
+
+function filterPlansForModule(
+  plans: DbPricingPlanRow[],
+  apps: ApplicationRow[] | null,
+  moduleName: string,
+  moduleSlug: string,
+): DbPricingPlanRow[] {
+  if (!apps?.length) return []
+  const app = apps.find((row) => matchesModuleApplication(row.name, moduleName, moduleSlug))
+  if (!app) return []
+  return plans.filter((p) => p.app_id === app.id)
+}
+
+function findMatchingDbPlan(
+  modulePlans: DbPricingPlanRow[],
+  visualPlan: PricingPlan,
+): DbPricingPlanRow | null {
+  const direct = modulePlans.find((row) => tierMatchesDbPlanName(visualPlan.id, row.name))
+  return direct ?? null
+}
+
+function mergePlanWithDb(visual: PricingPlan, matched: DbPricingPlanRow | null): PricingPlan {
+  if (!matched) return visual
+
+  const monthly = Number(matched.price_monthly)
+  const yearly = Number(matched.price_yearly)
+  const fromDb = matched.features != null ? parseFeaturesFromDb(matched.features) : []
+
+  return {
+    ...visual,
+    monthlyPrice: Number.isFinite(monthly) ? monthly : visual.monthlyPrice,
+    yearlyPrice: Number.isFinite(yearly) ? yearly : visual.yearlyPrice,
+    features: fromDb.length > 0 ? fromDb : visual.features,
+  }
+}
+
 interface PricingSectionProps {
   moduleName: string
+  /** Slug modułu (np. cleaning) — dopasowanie planów z bazy do aplikacji */
+  moduleSlug: string
   onSelectPlan: (plan: PricingPlan, yearly: boolean) => void
 }
 
-export function PricingSection({ moduleName, onSelectPlan }: PricingSectionProps) {
+export function PricingSection({ moduleName, moduleSlug, onSelectPlan }: PricingSectionProps) {
   const [yearly, setYearly] = useState(false)
+  const [dbPlans, setDbPlans] = useState<DbPricingPlanRow[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const load = async () => {
+      const plansRes = await supabase
+        .from('pricing_plans')
+        .select('id, app_id, name, price_monthly, price_yearly, features, is_active')
+        .eq('is_active', true)
+
+      if (cancelled) return
+
+      if (plansRes.error) {
+        console.error('[PricingSection] pricing_plans:', plansRes.error)
+        setDbPlans([])
+        return
+      }
+
+      const rows = (plansRes.data as DbPricingPlanRow[]) ?? []
+      const appIds = [...new Set(rows.map((r) => r.app_id))]
+      if (appIds.length === 0) {
+        setDbPlans([])
+        return
+      }
+
+      const appsRes = await supabase.from('applications').select('id, name').in('id', appIds)
+
+      if (cancelled) return
+
+      if (appsRes.error) {
+        console.error('[PricingSection] applications:', appsRes.error)
+        setDbPlans([])
+        return
+      }
+
+      const apps = (appsRes.data as ApplicationRow[]) ?? []
+      const forModule = filterPlansForModule(rows, apps, moduleName, moduleSlug)
+      setDbPlans(forModule)
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [moduleName, moduleSlug])
+
+  const displayPlans = useMemo(() => {
+    return defaultPlans.map((plan) => {
+      const matched = findMatchingDbPlan(dbPlans, plan)
+      return mergePlanWithDb(plan, matched)
+    })
+  }, [dbPlans])
 
   return (
     <section className="py-20 px-4">
@@ -105,7 +242,7 @@ export function PricingSection({ moduleName, onSelectPlan }: PricingSectionProps
           variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }}
           className="grid grid-cols-1 md:grid-cols-3 gap-6"
         >
-          {defaultPlans.map((plan) => {
+          {displayPlans.map((plan) => {
             const price = yearly ? plan.yearlyPrice : plan.monthlyPrice
             return (
               <motion.div

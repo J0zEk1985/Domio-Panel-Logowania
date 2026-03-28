@@ -185,7 +185,7 @@ export default function ModuleDetail() {
         </section>
       )}
 
-      <PricingSection moduleName={mod.name} onSelectPlan={handleSelectPlan} />
+      <PricingSection moduleName={mod.name} moduleSlug={mod.slug} onSelectPlan={handleSelectPlan} />
 
       <section className="py-16 px-4">
         <div className="container mx-auto max-w-3xl text-center">
