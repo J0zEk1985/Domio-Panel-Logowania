@@ -3,13 +3,21 @@ import { ArrowDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import domioLogo from '../../../lovable-design/src/assets/domio-logo.jpg'
 
+const FALLBACK_HEADLINE = 'Zarządzaj swoją firmą z DOMIO'
+const FALLBACK_SUBHEADLINE =
+  'Jeden system do wszystkiego: mieszkania, biura i cała Twoja firma w jednym miejscu.'
+const FALLBACK_PRIMARY_CTA = 'Rozpocznij darmowy test'
+
 type HeroSectionProps = {
   isAuthenticated: boolean
+  cmsContent: Record<string, string>
 }
 
-export function HeroSection({ isAuthenticated }: HeroSectionProps) {
+export function HeroSection({ isAuthenticated, cmsContent }: HeroSectionProps) {
   const ctaTarget = isAuthenticated ? '/dashboard' : '/login'
-  const ctaLabel = isAuthenticated ? 'Przejdź do panelu' : 'Zaloguj się'
+  const ctaLabel = isAuthenticated
+    ? 'Przejdź do panelu'
+    : cmsContent.hero_button_text || FALLBACK_PRIMARY_CTA
   const { scrollY } = useScroll()
   const logoScale = useTransform(scrollY, [0, 400], [1, 0.3])
   const logoOpacity = useTransform(scrollY, [0, 300], [1, 0])
@@ -35,9 +43,12 @@ export function HeroSection({ isAuthenticated }: HeroSectionProps) {
       </motion.div>
 
       <motion.div style={{ y: textY, opacity: textOpacity }} className="text-center max-w-3xl">
-        <h1 className="font-display text-5xl md:text-7xl font-bold tracking-tight mb-8">
-          <span className="gradient-brand-text">DOMIO</span>
+        <h1 className="font-display text-4xl md:text-6xl font-bold tracking-tight mb-4">
+          <span className="gradient-brand-text">{cmsContent.hero_headline || FALLBACK_HEADLINE}</span>
         </h1>
+        <p className="text-muted-foreground text-lg md:text-xl mb-8 max-w-2xl mx-auto leading-relaxed">
+          {cmsContent.hero_subheadline || FALLBACK_SUBHEADLINE}
+        </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link to={ctaTarget} className="gradient-brand text-primary-foreground border-0 px-8 py-3 rounded-md text-base font-medium">
             {ctaLabel}
