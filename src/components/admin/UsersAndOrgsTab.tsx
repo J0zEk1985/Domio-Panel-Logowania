@@ -165,7 +165,7 @@ export default function UsersAndOrgsTab() {
       const searchQuery = debouncedSearch.trim()
       if (searchQuery) {
         const pattern = `%${searchQuery.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
-        query = query.or(`email.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern}`)
+        query = query.or(`email.ilike.${pattern},full_name.ilike.${pattern}`)
       }
       query = query.order(key, { ascending }).limit(10)
 
@@ -332,7 +332,7 @@ export default function UsersAndOrgsTab() {
               <tr className="border-b border-border/60 text-left">
                 <UserSortableTh
                   label="Imię i nazwisko"
-                  sortKey="last_name"
+                  sortKey="full_name"
                   currentSort={userSort}
                   onSort={handleUserSort}
                 />
@@ -366,11 +366,7 @@ export default function UsersAndOrgsTab() {
                     className="border-b border-border/40 last:border-0 cursor-pointer hover:bg-muted/50 transition-colors"
                     onClick={() => setSelectedUser(user.id)}
                   >
-                    <td className="p-4 font-medium">
-                      {[user.first_name?.trim(), user.last_name?.trim()].filter(Boolean).join(' ') ||
-                        user.full_name?.trim() ||
-                        '—'}
-                    </td>
+                    <td className="p-4 font-medium">{user.full_name?.trim() || 'Brak nazwy'}</td>
                     <td className="p-4 text-muted-foreground">{user.email?.trim() ?? '—'}</td>
                     <td className="p-4">{user.platform_role?.trim() ?? '—'}</td>
                     <td className="p-4 text-muted-foreground">{formatDateTime(user.last_login_at)}</td>

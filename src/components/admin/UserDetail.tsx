@@ -12,9 +12,7 @@ type Props = {
 
 export default function UserDetail({ userId, onBack }: Props) {
   const [profile, setProfile] = useState<ProfileDetailRow | null>(null)
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [phone, setPhone] = useState('')
+  const [editForm, setEditForm] = useState({ full_name: '', phone: '' })
   const [memberships, setMemberships] = useState<MembershipWithOrg[]>([])
   const [logs, setLogs] = useState<TaskExecutionLogRow[] | null>(null)
   const [logsSkipped, setLogsSkipped] = useState(false)
@@ -32,7 +30,7 @@ export default function UserDetail({ userId, onBack }: Props) {
         supabase
           .from('profiles')
           .select(
-            'id,first_name,last_name,full_name,email,phone,platform_role,accepted_terms_at,terms_version,marketing_consent,created_at,last_login_at',
+            'id,full_name,email,phone,platform_role,accepted_terms_at,terms_version,marketing_consent,created_at,last_login_at',
           )
           .eq('id', userId)
           .maybeSingle(),
@@ -49,9 +47,10 @@ export default function UserDetail({ userId, onBack }: Props) {
       const row = profRes.data as ProfileDetailRow | null
       setProfile(row)
       if (row) {
-        setFirstName(row.first_name?.trim() ?? '')
-        setLastName(row.last_name?.trim() ?? '')
-        setPhone(row.phone?.trim() ?? '')
+        setEditForm({
+          full_name: row.full_name?.trim() ?? '',
+          phone: row.phone?.trim() ?? '',
+        })
       }
 
       if (memRes.error) {
@@ -120,17 +119,12 @@ export default function UserDetail({ userId, onBack }: Props) {
   const saveProfile = async () => {
     setSaveError(null)
     setSaving(true)
-    const fn = firstName.trim()
-    const ln = lastName.trim()
-    const combinedFull = [fn, ln].filter(Boolean).join(' ') || null
     try {
       const { error } = await supabase
         .from('profiles')
         .update({
-          first_name: fn || null,
-          last_name: ln || null,
-          full_name: combinedFull,
-          phone: phone.trim() || null,
+          full_name: editForm.full_name.trim() || null,
+          phone: editForm.phone.trim() || null,
         })
         .eq('id', userId)
 
@@ -191,23 +185,27 @@ export default function UserDetail({ userId, onBack }: Props) {
           </div>
         )}
         <div className="grid sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="block text-sm text-muted-foreground" htmlFor="user-fn">
-              Imię
+          <div className="space-y-1.5 sm:col-span-2">
+            <label className="block text-sm text-muted-foreground" htmlFor="user-full-name">
+              Imię i nazwisko
             </label>
-            <input id="user-fn" className={inputClass} value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <label className="block text-sm text-muted-foreground" htmlFor="user-ln">
-              Nazwisko
-            </label>
-            <input id="user-ln" className={inputClass} value={lastName} onChange={(e) => setLastName(e.target.value)} />
+            <input
+              id="user-full-name"
+              className={inputClass}
+              value={editForm.full_name}
+              onChange={(e) => setEditForm((f) => ({ ...f, full_name: e.target.value }))}
+            />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <label className="block text-sm text-muted-foreground" htmlFor="user-phone">
               Telefon
             </label>
-            <input id="user-phone" className={inputClass} value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <input
+              id="user-phone"
+              className={inputClass}
+              value={editForm.phone}
+              onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+            />
           </div>
         </div>
         <button
@@ -245,11 +243,15 @@ export default function UserDetail({ userId, onBack }: Props) {
           </div>
           <div>
             <dt className="text-muted-foreground">Data utworzenia konta</dt>
-            <dd className="font-medium mt-0.5">{formatDateTime(profile.created_at)}</dd>
+            <dd className="font-medium mt-0.5">
+              {profile.created_at ? formatDateTime(profile.created_at) : 'Brak danych'}
+            </dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Ostatnie logowanie</dt>
-            <dd className="font-medium mt-0.5">{formatDateTime(profile.last_login_at)}</dd>
+            <dd className="font-medium mt-0.5">
+              {profile.last_login_at ? formatDateTime(profile.last_login_at) : 'Brak danych'}
+            </dd>
           </div>
         </dl>
       </section>

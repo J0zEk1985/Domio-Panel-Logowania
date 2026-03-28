@@ -3,7 +3,7 @@ import { ArrowDown, ArrowLeft, ArrowUp } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { inputClass } from './pricingAdminUtils'
 import type { MembershipWithProfile, OrganizationDetailRow, OrgSubscriptionRow } from './usersAndOrgsTypes'
-import { displayPersonName, formatDateTime, membershipRoleLabel, nestedName } from './usersAndOrgsUtils'
+import { formatDateTime, membershipRoleLabel, nestedName } from './usersAndOrgsUtils'
 
 export type OrganizationDetailProps = {
   organizationId: string
@@ -11,7 +11,7 @@ export type OrganizationDetailProps = {
   onUserClick?: (userId: string) => void
 }
 
-type MemberSortKey = 'role' | 'first_name' | 'last_name' | 'full_name' | 'email'
+type MemberSortKey = 'role' | 'full_name' | 'email'
 type MemberSortConfig = { key: MemberSortKey; direction: 'asc' | 'desc' }
 
 function MemberSortableTh({
@@ -65,14 +65,6 @@ function compareMembers(
       break
     case 'email':
       cmp = strNorm(pa?.email).localeCompare(strNorm(pb?.email), 'pl', { sensitivity: 'base' })
-      break
-    case 'first_name':
-      cmp = strNorm(pa?.first_name).localeCompare(strNorm(pb?.first_name), 'pl', { sensitivity: 'base' })
-      if (cmp === 0) cmp = strNorm(pa?.last_name).localeCompare(strNorm(pb?.last_name), 'pl', { sensitivity: 'base' })
-      break
-    case 'last_name':
-      cmp = strNorm(pa?.last_name).localeCompare(strNorm(pb?.last_name), 'pl', { sensitivity: 'base' })
-      if (cmp === 0) cmp = strNorm(pa?.first_name).localeCompare(strNorm(pb?.first_name), 'pl', { sensitivity: 'base' })
       break
     case 'full_name':
       cmp = strNorm(pa?.full_name).localeCompare(strNorm(pb?.full_name), 'pl', { sensitivity: 'base' })
@@ -191,36 +183,20 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
           role: string
         }[]
         const userIds = [...new Set(membershipsData.map((m) => m.user_id))]
-        const profileMap = new Map<
-          string,
-          {
-            first_name: string | null
-            last_name: string | null
-            email: string | null
-            full_name: string | null
-          }
-        >()
+        const profileMap = new Map<string, { full_name: string | null; email: string | null }>()
         if (userIds.length > 0) {
           const { data: profilesData, error: profErr } = await supabase
             .from('profiles')
-            .select('id,first_name,last_name,email,full_name')
+            .select('id, full_name, email')
             .in('id', userIds)
           if (profErr) {
             console.error('[OrganizationDetail] profiles:', profErr)
           } else {
             for (const p of profilesData ?? []) {
-              const row = p as {
-                id: string
-                first_name: string | null
-                last_name: string | null
-                email: string | null
-                full_name: string | null
-              }
+              const row = p as { id: string; full_name: string | null; email: string | null }
               profileMap.set(row.id, {
-                first_name: row.first_name,
-                last_name: row.last_name,
-                email: row.email,
                 full_name: row.full_name,
+                email: row.email,
               })
             }
           }
@@ -437,7 +413,7 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
               <tr className="border-b border-border/60 text-left text-muted-foreground">
                 <MemberSortableTh
                   label="Imię i nazwisko"
-                  sortKey="last_name"
+                  sortKey="full_name"
                   currentSort={memberSort}
                   onSort={handleMemberSort}
                 />
@@ -464,7 +440,7 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
                   }`}
                   onClick={() => onUserClick?.(m.user_id)}
                 >
-                  <td className="p-3 font-medium">{displayPersonName(m.profiles ?? {})}</td>
+                  <td className="p-3 font-medium">{m.profiles?.full_name?.trim() || 'Brak nazwy'}</td>
                   <td className="p-3 text-muted-foreground">{m.profiles?.email?.trim() ?? '—'}</td>
                   <td className="p-3 text-muted-foreground">{membershipRoleLabel(m.role)}</td>
                 </tr>
