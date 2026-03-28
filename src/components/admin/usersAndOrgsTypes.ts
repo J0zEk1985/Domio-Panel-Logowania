@@ -54,7 +54,7 @@ export type MembershipWithProfile = {
   profiles: {
     first_name: string | null
     last_name: string | null
-    full_name: string | null
+    full_name?: string | null
     email: string | null
   } | null
 }

@@ -120,16 +120,16 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
       const [orgRes, subRes, memRes] = await Promise.all([
         supabase
           .from('organizations')
-          .select('id, name, nip, address, city, postal_code, created_at')
+          .select('id,name,nip,address,city,postal_code,created_at')
           .eq('id', organizationId)
           .maybeSingle(),
         supabase
           .from('org_subscriptions')
-          .select('*, applications(name)')
+          .select('*,applications(name)')
           .eq('org_id', organizationId),
         supabase
           .from('memberships')
-          .select('*, profiles(first_name, last_name, full_name, email)')
+          .select('*,profiles(first_name,last_name,email)')
           .eq('org_id', organizationId),
       ])
 
@@ -168,13 +168,11 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
             | {
                 first_name: string | null
                 last_name: string | null
-                full_name: string | null
                 email: string | null
               }
             | {
                 first_name: string | null
                 last_name: string | null
-                full_name: string | null
                 email: string | null
               }[]
             | null

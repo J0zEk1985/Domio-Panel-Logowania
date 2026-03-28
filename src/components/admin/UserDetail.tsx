@@ -32,13 +32,13 @@ export default function UserDetail({ userId, onBack }: Props) {
         supabase
           .from('profiles')
           .select(
-            'id, first_name, last_name, full_name, email, phone, platform_role, accepted_terms_at, terms_version, marketing_consent, created_at, last_login_at',
+            'id,first_name,last_name,full_name,email,phone,platform_role,accepted_terms_at,terms_version,marketing_consent,created_at,last_login_at',
           )
           .eq('id', userId)
           .maybeSingle(),
         supabase
           .from('memberships')
-          .select('*, organizations!memberships_org_id_fkey(name)')
+          .select('*,organizations!memberships_org_id_fkey(name)')
           .eq('user_id', userId),
       ])
 
@@ -66,7 +66,7 @@ export default function UserDetail({ userId, onBack }: Props) {
 
       const logsRes = await supabase
         .from('task_execution_logs')
-        .select('id, action_type, notes, created_at')
+        .select('id,action_type,notes,created_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(10)
