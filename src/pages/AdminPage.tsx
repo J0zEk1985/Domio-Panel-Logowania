@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase'
 import { Navbar } from '../components/landing/Navbar'
 import { Footer } from '../components/landing/Footer'
 import PricingAdminTab from '../components/admin/PricingAdminTab'
+import LegalAdminTab from '../components/admin/LegalAdminTab'
 
 type ProfileRow = {
   id: string
@@ -314,14 +315,7 @@ export default function AdminPage() {
 
             {activeTab === 'pricing' && <PricingAdminTab />}
 
-            {activeTab === 'legal' && (
-              <div className="p-6 bento-card">
-                <h2 className="font-display text-xl font-semibold mb-2">Dokumenty prawne</h2>
-                <p className="text-muted-foreground">
-                  Tutaj wdrożymy edycję regulaminów, polityk prywatności i innych dokumentów prawnych.
-                </p>
-              </div>
-            )}
+            {activeTab === 'legal' && <LegalAdminTab />}
 
             {activeTab === 'cms' && (
               <div className="p-6 bento-card">
