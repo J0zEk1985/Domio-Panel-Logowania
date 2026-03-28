@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { inputClass } from './pricingAdminUtils'
 import type { MembershipWithOrg, ProfileDetailRow, TaskExecutionLogRow } from './usersAndOrgsTypes'
 import { formatDateOnly, formatDateTime, membershipRoleLabel, nestedName } from './usersAndOrgsUtils'
+import UserDetailModuleAccessSection from './UserDetailModuleAccessSection'
 
 type Props = {
   userId: string
@@ -34,7 +35,7 @@ export default function UserDetail({ userId, onBack }: Props) {
           )
           .eq('id', userId)
           .maybeSingle(),
-        supabase.from('memberships').select('*').eq('user_id', userId),
+        supabase.from('memberships').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
       ])
 
       if (profRes.error) {
@@ -217,6 +218,8 @@ export default function UserDetail({ userId, onBack }: Props) {
           {saving ? 'Zapisywanie…' : 'Zapisz zmiany'}
         </button>
       </section>
+
+      <UserDetailModuleAccessSection userId={userId} profile={profile} memberships={memberships} onRefresh={load} />
 
       <section className="bento-card p-6 space-y-4">
         <h2 className="font-display text-lg font-semibold">Informacje systemowe</h2>

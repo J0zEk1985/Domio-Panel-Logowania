@@ -17,6 +17,7 @@ import { Footer } from '../components/landing/Footer'
 import PricingAdminTab from '../components/admin/PricingAdminTab'
 import LegalAdminTab from '../components/admin/LegalAdminTab'
 import UsersAndOrgsTab from '../components/admin/UsersAndOrgsTab'
+import SubscriptionsAdminTab from '../components/admin/SubscriptionsAdminTab'
 
 type ProfileRow = {
   id: string
@@ -51,7 +52,7 @@ type AdminTab = 'dashboard' | 'users' | 'subscriptions' | 'pricing' | 'legal' | 
 const sidebarNav: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Pulpit', icon: LayoutDashboard },
   { id: 'users', label: 'Użytkownicy i Firmy', icon: Users },
-  { id: 'subscriptions', label: 'Subskrypcje', icon: CreditCard },
+  { id: 'subscriptions', label: 'Globalne subskrypcje', icon: CreditCard },
   { id: 'pricing', label: 'Cennik i Promocje', icon: Tag },
   { id: 'legal', label: 'Dokumenty prawne', icon: FileText },
   { id: 'cms', label: 'Treści strony (CMS)', icon: MonitorSmartphone },
@@ -298,14 +299,7 @@ export default function AdminPage() {
 
             {activeTab === 'users' && <UsersAndOrgsTab />}
 
-            {activeTab === 'subscriptions' && (
-              <div className="p-6 bento-card">
-                <h2 className="font-display text-xl font-semibold mb-2">Subskrypcje</h2>
-                <p className="text-muted-foreground">
-                  Tutaj wdrożymy przegląd i edycję subskrypcji organizacji (np. tabela org_subscriptions).
-                </p>
-              </div>
-            )}
+            {activeTab === 'subscriptions' && <SubscriptionsAdminTab />}
 
             {activeTab === 'pricing' && <PricingAdminTab />}
 
