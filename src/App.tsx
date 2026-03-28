@@ -12,6 +12,21 @@ import ResetPasswordPage from './pages/ResetPasswordPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
 import LandingPage from './pages/LandingPage'
 
+/** Paths where we never force redirect to /login after auth edge cases (e.g. simplified account without org). */
+const PUBLIC_PATHS = new Set([
+  '/',
+  '/login',
+  '/signup',
+  '/forgot-password',
+  '/reset-password',
+  '/regulamin',
+  '/polityka-prywatnosci',
+])
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.has(pathname)
+}
+
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
@@ -33,7 +48,10 @@ function App() {
           .eq('user_id', userId)
         if (rows && rows.length > 0) return false
         await supabase.auth.signOut()
-        window.location.href = '/login?error=no_membership'
+        const path = window.location.pathname
+        if (!isPublicPath(path)) {
+          window.location.href = '/login?error=no_membership'
+        }
         return true
       } catch (error) {
         // Ignore AbortError from tab suspension
@@ -188,8 +206,7 @@ function App() {
       />
       <Route path="/regulamin" element={<TermsPage />} />
       <Route path="/polityka-prywatnosci" element={<PrivacyPage />} />
-      {/* Always render landing at `/` — no auth-based Navigate; login only at /login or via CTA */}
-      <Route path="/" element={<LandingPage isAuthenticated={!!session} />} />
+      <Route path="/" element={<LandingPage />} />
     </Routes>
   )
 }
