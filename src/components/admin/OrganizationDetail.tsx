@@ -123,14 +123,8 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
           .select('id,name,nip,address,city,postal_code,created_at')
           .eq('id', organizationId)
           .maybeSingle(),
-        supabase
-          .from('org_subscriptions')
-          .select('*,applications(name)')
-          .eq('org_id', organizationId),
-        supabase
-          .from('memberships')
-          .select('*,profiles(first_name,last_name,email)')
-          .eq('org_id', organizationId),
+        supabase.from('org_subscriptions').select('*').eq('org_id', organizationId),
+        supabase.from('memberships').select('*').eq('org_id', organizationId),
       ])
 
       if (orgRes.error) {
@@ -153,41 +147,83 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
         console.error('[OrganizationDetail] subscriptions:', subRes.error)
         setSubscriptions([])
       } else {
-        setSubscriptions((subRes.data as unknown as OrgSubscriptionRow[]) ?? [])
+        type SubRow = {
+          id: string
+          org_id: string
+          app_id: string
+          status: string
+          created_at: string | null
+        }
+        const subsData = (subRes.data ?? []) as SubRow[]
+        const appIds = [...new Set(subsData.map((s) => s.app_id))]
+        const appMap = new Map<string, { id: string; name: string }>()
+        if (appIds.length > 0) {
+          const { data: appsData, error: appsErr } = await supabase
+            .from('applications')
+            .select('id,name')
+            .in('id', appIds)
+          if (appsErr) {
+            console.error('[OrganizationDetail] applications:', appsErr)
+          } else {
+            for (const a of appsData ?? []) {
+              const row = a as { id: string; name: string }
+              appMap.set(row.id, row)
+            }
+          }
+        }
+        const stitchedSubs: OrgSubscriptionRow[] = subsData.map((s) => {
+          const app = appMap.get(s.app_id)
+          return {
+            ...s,
+            applications: app ? { name: app.name } : null,
+          }
+        })
+        setSubscriptions(stitchedSubs)
       }
 
       if (memRes.error) {
         console.error('[OrganizationDetail] memberships:', memRes.error)
         setMemberships([])
       } else {
-        type MemRow = {
+        const membershipsData = (memRes.data ?? []) as {
           id: string
           user_id: string
           role: string
-          profiles:
-            | {
+        }[]
+        const userIds = [...new Set(membershipsData.map((m) => m.user_id))]
+        const profileMap = new Map<
+          string,
+          { first_name: string | null; last_name: string | null; email: string | null }
+        >()
+        if (userIds.length > 0) {
+          const { data: profilesData, error: profErr } = await supabase
+            .from('profiles')
+            .select('id,first_name,last_name,email')
+            .in('id', userIds)
+          if (profErr) {
+            console.error('[OrganizationDetail] profiles:', profErr)
+          } else {
+            for (const p of profilesData ?? []) {
+              const row = p as {
+                id: string
                 first_name: string | null
                 last_name: string | null
                 email: string | null
               }
-            | {
-                first_name: string | null
-                last_name: string | null
-                email: string | null
-              }[]
-            | null
-        }
-        const rows = (memRes.data as MemRow[]) ?? []
-        const merged: MembershipWithProfile[] = rows.map((r) => {
-          const p = r.profiles
-          const profileObj = Array.isArray(p) ? p[0] ?? null : p
-          return {
-            id: r.id,
-            user_id: r.user_id,
-            role: r.role,
-            profiles: profileObj,
+              profileMap.set(row.id, {
+                first_name: row.first_name,
+                last_name: row.last_name,
+                email: row.email,
+              })
+            }
           }
-        })
+        }
+        const merged: MembershipWithProfile[] = membershipsData.map((r) => ({
+          id: r.id,
+          user_id: r.user_id,
+          role: r.role,
+          profiles: profileMap.get(r.user_id) ?? null,
+        }))
         setMemberships(merged)
       }
     } catch (e) {

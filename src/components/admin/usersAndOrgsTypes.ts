@@ -37,14 +37,14 @@ export type OrganizationDetailRow = {
   created_at: string
 }
 
-/** Supabase may return nested FK as object or single-element array depending on schema cache. */
+/** applications dołączane w kodzie po osobnym zapytaniu do tabeli applications */
 export type OrgSubscriptionRow = {
   id: string
   org_id: string
   app_id: string
   status: string
   created_at: string | null
-  applications: { name: string } | { name: string }[] | null
+  applications: { name: string } | null
 }
 
 export type MembershipWithProfile = {
@@ -61,8 +61,10 @@ export type MembershipWithProfile = {
 
 export type MembershipWithOrg = {
   id: string
+  org_id: string
   role: string
-  organizations: { name: string } | { name: string }[] | null
+  /** Uzupełniane po osobnym zapytaniu do organizations */
+  organizations: { name: string } | null
 }
 
 export type ProfileDetailRow = {

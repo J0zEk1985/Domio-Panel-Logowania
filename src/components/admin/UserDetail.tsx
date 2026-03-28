@@ -36,10 +36,7 @@ export default function UserDetail({ userId, onBack }: Props) {
           )
           .eq('id', userId)
           .maybeSingle(),
-        supabase
-          .from('memberships')
-          .select('*,organizations!memberships_org_id_fkey(name)')
-          .eq('user_id', userId),
+        supabase.from('memberships').select('*').eq('user_id', userId),
       ])
 
       if (profRes.error) {
@@ -61,7 +58,36 @@ export default function UserDetail({ userId, onBack }: Props) {
         console.error('[UserDetail] memberships:', memRes.error)
         setMemberships([])
       } else {
-        setMemberships((memRes.data as unknown as MembershipWithOrg[]) ?? [])
+        const membershipsData = (memRes.data ?? []) as {
+          id: string
+          org_id: string
+          role: string
+        }[]
+        const orgIds = [...new Set(membershipsData.map((m) => m.org_id))]
+        const orgMap = new Map<string, { id: string; name: string }>()
+        if (orgIds.length > 0) {
+          const { data: orgsData, error: orgsErr } = await supabase
+            .from('organizations')
+            .select('id,name')
+            .in('id', orgIds)
+          if (orgsErr) {
+            console.error('[UserDetail] organizations:', orgsErr)
+          } else {
+            for (const o of orgsData ?? []) {
+              orgMap.set(o.id, o as { id: string; name: string })
+            }
+          }
+        }
+        const stitched: MembershipWithOrg[] = membershipsData.map((m) => {
+          const org = orgMap.get(m.org_id)
+          return {
+            id: m.id,
+            org_id: m.org_id,
+            role: m.role,
+            organizations: org ? { name: org.name } : null,
+          }
+        })
+        setMemberships(stitched)
       }
 
       const logsRes = await supabase
