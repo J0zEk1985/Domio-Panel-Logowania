@@ -125,9 +125,12 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
           .maybeSingle(),
         supabase
           .from('org_subscriptions')
-          .select('id, org_id, app_id, status, created_at, applications(name)')
+          .select('*, applications(name)')
           .eq('org_id', organizationId),
-        supabase.from('memberships').select('id, role, user_id').eq('org_id', organizationId),
+        supabase
+          .from('memberships')
+          .select('*, profiles(first_name, last_name, full_name, email)')
+          .eq('org_id', organizationId),
       ])
 
       if (orgRes.error) {
@@ -157,36 +160,36 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
         console.error('[OrganizationDetail] memberships:', memRes.error)
         setMemberships([])
       } else {
-        const rows = (memRes.data as { id: string; role: string; user_id: string }[]) ?? []
-        const userIds = [...new Set(rows.map((r) => r.user_id))]
-        let profileMap = new Map<
-          string,
-          { first_name: string | null; last_name: string | null; full_name: string | null; email: string | null }
-        >()
-        if (userIds.length > 0) {
-          const profRes = await supabase
-            .from('profiles')
-            .select('id, first_name, last_name, full_name, email')
-            .in('id', userIds)
-          if (profRes.error) {
-            console.error('[OrganizationDetail] profiles for memberships:', profRes.error)
-          } else {
-            const plist = profRes.data as {
-              id: string
-              first_name: string | null
-              last_name: string | null
-              full_name: string | null
-              email: string | null
-            }[]
-            profileMap = new Map(plist.map((p) => [p.id, p]))
-          }
+        type MemRow = {
+          id: string
+          user_id: string
+          role: string
+          profiles:
+            | {
+                first_name: string | null
+                last_name: string | null
+                full_name: string | null
+                email: string | null
+              }
+            | {
+                first_name: string | null
+                last_name: string | null
+                full_name: string | null
+                email: string | null
+              }[]
+            | null
         }
-        const merged: MembershipWithProfile[] = rows.map((r) => ({
-          id: r.id,
-          user_id: r.user_id,
-          role: r.role,
-          profiles: profileMap.get(r.user_id) ?? null,
-        }))
+        const rows = (memRes.data as MemRow[]) ?? []
+        const merged: MembershipWithProfile[] = rows.map((r) => {
+          const p = r.profiles
+          const profileObj = Array.isArray(p) ? p[0] ?? null : p
+          return {
+            id: r.id,
+            user_id: r.user_id,
+            role: r.role,
+            profiles: profileObj,
+          }
+        })
         setMemberships(merged)
       }
     } catch (e) {

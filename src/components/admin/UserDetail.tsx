@@ -36,7 +36,10 @@ export default function UserDetail({ userId, onBack }: Props) {
           )
           .eq('id', userId)
           .maybeSingle(),
-        supabase.from('memberships').select('id, role, organizations(name)').eq('user_id', userId),
+        supabase
+          .from('memberships')
+          .select('*, organizations!memberships_org_id_fkey(name)')
+          .eq('user_id', userId),
       ])
 
       if (profRes.error) {
