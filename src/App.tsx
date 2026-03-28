@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
@@ -28,8 +28,12 @@ function isPublicPath(pathname: string): boolean {
 }
 
 function App() {
+  const location = useLocation()
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+
+  const currentPath = location.pathname
+  const isPublic = isPublicPath(currentPath)
 
   useEffect(() => {
     /** Simplified users must have at least one membership; otherwise signOut and redirect to login. */
@@ -170,7 +174,8 @@ function App() {
     }
   }, [])
 
-  if (loading) {
+  // Global loading only for protected routes — public pages render immediately while auth resolves in background
+  if (loading && !isPublic) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-lg">Ładowanie...</div>
