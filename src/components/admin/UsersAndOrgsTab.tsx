@@ -7,14 +7,30 @@ import OrganizationDetail from './OrganizationDetail'
 import UserDetail from './UserDetail'
 import type {
   OrganizationListRow,
+  OrgSortConfig,
   OrgSortKey,
   ProfileListRow,
+  UserSortConfig,
   UserSortKey,
   UsersOrgsSubTab,
 } from './usersAndOrgsTypes'
-import { displayPersonName, formatDateTime } from './usersAndOrgsUtils'
+import { formatDateTime } from './usersAndOrgsUtils'
 
-type SortConfig = { key: string; direction: 'asc' | 'desc' }
+/** Two kolumny Imię/Nazwisko; gdy brak obu pól — pokazujemy full_name w pierwszej komórce (stare konta). */
+function profileFirstCell(row: ProfileListRow): string {
+  const fn = row.first_name?.trim()
+  const ln = row.last_name?.trim()
+  if (fn) return fn
+  if (ln) return '—'
+  return row.full_name?.trim() || '—'
+}
+
+function profileLastCell(row: ProfileListRow): string {
+  const fn = row.first_name?.trim()
+  const ln = row.last_name?.trim()
+  if (fn || ln) return ln || '—'
+  return '—'
+}
 
 /** Surfaces PostgREST / Postgres details in UI and logs (not generic RLS text). */
 function formatSupabaseError(err: PostgrestError | Error | null | undefined): string {
@@ -27,16 +43,47 @@ function formatSupabaseError(err: PostgrestError | Error | null | undefined): st
   return parts.length > 0 ? parts.join(' · ') : String(err)
 }
 
-function SortableTh({
+function OrgSortableTh({
   label,
   sortKey,
   currentSort,
   onSort,
 }: {
   label: string
-  sortKey: string
-  currentSort: SortConfig
-  onSort: (k: string) => void
+  sortKey: OrgSortKey
+  currentSort: OrgSortConfig
+  onSort: (k: OrgSortKey) => void
+}) {
+  const active = currentSort.key === sortKey
+  return (
+    <th className="p-4 font-medium">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1.5 text-left hover:text-foreground text-muted-foreground hover:text-foreground"
+        onClick={() => onSort(sortKey)}
+      >
+        {label}
+        {active &&
+          (currentSort.direction === 'asc' ? (
+            <ArrowUp className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+          ) : (
+            <ArrowDown className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+          ))}
+      </button>
+    </th>
+  )
+}
+
+function UserSortableTh({
+  label,
+  sortKey,
+  currentSort,
+  onSort,
+}: {
+  label: string
+  sortKey: UserSortKey
+  currentSort: UserSortConfig
+  onSort: (k: UserSortKey) => void
 }) {
   const active = currentSort.key === sortKey
   return (
@@ -62,7 +109,8 @@ export default function UsersAndOrgsTab() {
   const [activeSubTab, setActiveSubTab] = useState<UsersOrgsSubTab>('orgs')
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'name', direction: 'asc' })
+  const [orgSort, setOrgSort] = useState<OrgSortConfig>({ key: 'name', direction: 'asc' })
+  const [userSort, setUserSort] = useState<UserSortConfig>({ key: 'last_login_at', direction: 'desc' })
   const [selectedOrg, setSelectedOrg] = useState<string | null>(null)
   const [selectedUser, setSelectedUser] = useState<string | null>(null)
 
@@ -76,8 +124,16 @@ export default function UsersAndOrgsTab() {
     return () => window.clearTimeout(id)
   }, [searchQuery])
 
-  const handleSort = useCallback((key: string) => {
-    setSortConfig((prev) =>
+  const handleOrgSort = useCallback((key: OrgSortKey) => {
+    setOrgSort((prev) =>
+      prev.key === key
+        ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: 'asc' },
+    )
+  }, [])
+
+  const handleUserSort = useCallback((key: UserSortKey) => {
+    setUserSort((prev) =>
       prev.key === key
         ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
         : { key, direction: 'asc' },
@@ -87,8 +143,8 @@ export default function UsersAndOrgsTab() {
   const loadOrgs = useCallback(async () => {
     setListError(null)
     try {
-      const key = sortConfig.key as OrgSortKey
-      const ascending = sortConfig.direction === 'asc'
+      const key = orgSort.key
+      const ascending = orgSort.direction === 'asc'
       let q = supabase
         .from('organizations')
         .select('id, name, nip, city, created_at')
@@ -114,13 +170,13 @@ export default function UsersAndOrgsTab() {
       setListError(e instanceof Error ? e.message : 'Wystąpił błąd podczas ładowania firm.')
       setOrgs([])
     }
-  }, [debouncedSearch, sortConfig])
+  }, [debouncedSearch, orgSort])
 
   const loadUsers = useCallback(async () => {
     setListError(null)
     try {
-      const key = sortConfig.key as UserSortKey
-      const ascending = sortConfig.direction === 'asc'
+      const key = userSort.key
+      const ascending = userSort.direction === 'asc'
       let q = supabase.from('profiles').select('*').order(key, { ascending }).limit(10)
 
       const term = debouncedSearch.trim()
@@ -142,7 +198,7 @@ export default function UsersAndOrgsTab() {
       setListError(e instanceof Error ? e.message : 'Wystąpił błąd podczas ładowania użytkowników.')
       setUsers([])
     }
-  }, [debouncedSearch, sortConfig])
+  }, [debouncedSearch, userSort])
 
   useEffect(() => {
     if (selectedOrg != null || selectedUser != null) return
@@ -160,7 +216,7 @@ export default function UsersAndOrgsTab() {
     return () => {
       cancelled = true
     }
-  }, [activeSubTab, debouncedSearch, sortConfig, selectedOrg, selectedUser, loadOrgs, loadUsers])
+  }, [activeSubTab, debouncedSearch, orgSort, userSort, selectedOrg, selectedUser, loadOrgs, loadUsers])
 
   if (selectedOrg) {
     return (
@@ -204,7 +260,7 @@ export default function UsersAndOrgsTab() {
           type="button"
           onClick={() => {
             setActiveSubTab('orgs')
-            setSortConfig({ key: 'name', direction: 'asc' })
+            setOrgSort({ key: 'name', direction: 'asc' })
           }}
           className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
             activeSubTab === 'orgs'
@@ -219,7 +275,7 @@ export default function UsersAndOrgsTab() {
           type="button"
           onClick={() => {
             setActiveSubTab('users')
-            setSortConfig({ key: 'updated_at', direction: 'desc' })
+            setUserSort({ key: 'last_login_at', direction: 'desc' })
           }}
           className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
             activeSubTab === 'users'
@@ -254,19 +310,19 @@ export default function UsersAndOrgsTab() {
           <table className="w-full text-sm min-w-[40rem]">
             <thead>
               <tr className="border-b border-border/60 text-left">
-                <SortableTh
+                <OrgSortableTh
                   label="Nazwa"
                   sortKey="name"
-                  currentSort={sortConfig}
-                  onSort={handleSort}
+                  currentSort={orgSort}
+                  onSort={handleOrgSort}
                 />
-                <SortableTh label="NIP" sortKey="nip" currentSort={sortConfig} onSort={handleSort} />
-                <SortableTh label="Miasto" sortKey="city" currentSort={sortConfig} onSort={handleSort} />
-                <SortableTh
+                <OrgSortableTh label="NIP" sortKey="nip" currentSort={orgSort} onSort={handleOrgSort} />
+                <OrgSortableTh label="Miasto" sortKey="city" currentSort={orgSort} onSort={handleOrgSort} />
+                <OrgSortableTh
                   label="Data utworzenia"
                   sortKey="created_at"
-                  currentSort={sortConfig}
-                  onSort={handleSort}
+                  currentSort={orgSort}
+                  onSort={handleOrgSort}
                 />
               </tr>
             </thead>
@@ -294,34 +350,40 @@ export default function UsersAndOrgsTab() {
             </tbody>
           </table>
         ) : (
-          <table className="w-full text-sm min-w-[44rem]">
+          <table className="w-full text-sm min-w-[48rem]">
             <thead>
               <tr className="border-b border-border/60 text-left">
-                <SortableTh
-                  label="Imię i nazwisko"
-                  sortKey="full_name"
-                  currentSort={sortConfig}
-                  onSort={handleSort}
+                <UserSortableTh
+                  label="Imię"
+                  sortKey="first_name"
+                  currentSort={userSort}
+                  onSort={handleUserSort}
                 />
-                <SortableTh label="Email" sortKey="email" currentSort={sortConfig} onSort={handleSort} />
-                <SortableTh
+                <UserSortableTh
+                  label="Nazwisko"
+                  sortKey="last_name"
+                  currentSort={userSort}
+                  onSort={handleUserSort}
+                />
+                <UserSortableTh label="Email" sortKey="email" currentSort={userSort} onSort={handleUserSort} />
+                <UserSortableTh
                   label="Rola platformowa"
                   sortKey="platform_role"
-                  currentSort={sortConfig}
-                  onSort={handleSort}
+                  currentSort={userSort}
+                  onSort={handleUserSort}
                 />
-                <SortableTh
-                  label="Ostatnia aktualizacja"
-                  sortKey="updated_at"
-                  currentSort={sortConfig}
-                  onSort={handleSort}
+                <UserSortableTh
+                  label="Ostatnie logowanie"
+                  sortKey="last_login_at"
+                  currentSort={userSort}
+                  onSort={handleUserSort}
                 />
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={4} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={5} className="p-8 text-center text-muted-foreground">
                     Ładowanie…
                   </td>
                 </tr>
@@ -333,10 +395,11 @@ export default function UsersAndOrgsTab() {
                     className="border-b border-border/40 last:border-0 cursor-pointer hover:bg-muted/40"
                     onClick={() => setSelectedUser(row.id)}
                   >
-                    <td className="p-4 font-medium">{displayPersonName(row)}</td>
+                    <td className="p-4 font-medium">{profileFirstCell(row)}</td>
+                    <td className="p-4 font-medium">{profileLastCell(row)}</td>
                     <td className="p-4 text-muted-foreground">{row.email?.trim() ?? '—'}</td>
                     <td className="p-4">{row.platform_role?.trim() ?? '—'}</td>
-                    <td className="p-4 text-muted-foreground">{formatDateTime(row.updated_at)}</td>
+                    <td className="p-4 text-muted-foreground">{formatDateTime(row.last_login_at)}</td>
                   </tr>
                 ))}
             </tbody>

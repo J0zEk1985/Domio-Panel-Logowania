@@ -4,7 +4,7 @@ export type SortDirection = 'asc' | 'desc'
 
 /** List view columns aligned with public schema (Supabase Snippet Public Schema Metadata Snapshot (9).csv). */
 export type OrgSortKey = 'name' | 'nip' | 'city' | 'created_at'
-export type UserSortKey = 'full_name' | 'email' | 'platform_role' | 'updated_at'
+export type UserSortKey = 'first_name' | 'last_name' | 'email' | 'platform_role' | 'last_login_at'
 
 export type OrgSortConfig = { key: OrgSortKey; direction: SortDirection }
 export type UserSortConfig = { key: UserSortKey; direction: SortDirection }
@@ -25,6 +25,7 @@ export type ProfileListRow = {
   email: string | null
   platform_role: string | null
   updated_at: string | null
+  last_login_at: string | null
 }
 
 export type OrganizationDetailRow = {
