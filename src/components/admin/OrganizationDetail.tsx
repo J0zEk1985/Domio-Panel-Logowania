@@ -193,12 +193,17 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
         const userIds = [...new Set(membershipsData.map((m) => m.user_id))]
         const profileMap = new Map<
           string,
-          { first_name: string | null; last_name: string | null; email: string | null }
+          {
+            first_name: string | null
+            last_name: string | null
+            email: string | null
+            full_name: string | null
+          }
         >()
         if (userIds.length > 0) {
           const { data: profilesData, error: profErr } = await supabase
             .from('profiles')
-            .select('id,first_name,last_name,email')
+            .select('id,first_name,last_name,email,full_name')
             .in('id', userIds)
           if (profErr) {
             console.error('[OrganizationDetail] profiles:', profErr)
@@ -209,11 +214,13 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
                 first_name: string | null
                 last_name: string | null
                 email: string | null
+                full_name: string | null
               }
               profileMap.set(row.id, {
                 first_name: row.first_name,
                 last_name: row.last_name,
                 email: row.email,
+                full_name: row.full_name,
               })
             }
           }

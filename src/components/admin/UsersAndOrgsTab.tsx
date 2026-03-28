@@ -121,18 +121,12 @@ export default function UsersAndOrgsTab() {
     try {
       const key = sortConfig.key as UserSortKey
       const ascending = sortConfig.direction === 'asc'
-      let q = supabase
-        .from('profiles')
-        .select('id, first_name, last_name, full_name, email, platform_role, updated_at')
-        .order(key, { ascending })
-        .limit(10)
+      let q = supabase.from('profiles').select('*').order(key, { ascending }).limit(10)
 
       const term = debouncedSearch.trim()
       if (term) {
         const pattern = `%${term.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
-        q = q.or(
-          `email.ilike.${pattern},full_name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern}`,
-        )
+        q = q.or(`email.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern}`)
       }
 
       const { data, error } = await q
