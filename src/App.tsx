@@ -11,6 +11,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
 import LandingPage from './pages/LandingPage'
+import ModuleDetail from './pages/ModuleDetail'
 
 /** Paths where we never force redirect to /login after auth edge cases (e.g. simplified account without org). */
 const PUBLIC_PATHS = new Set([
@@ -24,6 +25,7 @@ const PUBLIC_PATHS = new Set([
 ])
 
 function isPublicPath(pathname: string): boolean {
+  if (pathname.startsWith('/module/')) return true
   return PUBLIC_PATHS.has(pathname)
 }
 
@@ -208,6 +210,7 @@ function App() {
       />
       <Route path="/regulamin" element={<TermsPage />} />
       <Route path="/polityka-prywatnosci" element={<PrivacyPage />} />
+      <Route path="/module/:slug" element={<ModuleDetail />} />
       <Route path="/" element={<LandingPage />} />
     </Routes>
   )
