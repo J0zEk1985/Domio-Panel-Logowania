@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowDown, ArrowUp, Building2, Search, UserCircle } from 'lucide-react'
+import type { PostgrestError } from '@supabase/supabase-js'
 import { supabase } from '../../lib/supabase'
 import { inputClass } from './pricingAdminUtils'
 import OrganizationDetail from './OrganizationDetail'
@@ -14,6 +15,17 @@ import type {
 import { displayPersonName, formatDateTime } from './usersAndOrgsUtils'
 
 type SortConfig = { key: string; direction: 'asc' | 'desc' }
+
+/** Surfaces PostgREST / Postgres details in UI and logs (not generic RLS text). */
+function formatSupabaseError(err: PostgrestError | Error | null | undefined): string {
+  if (err == null) return 'Nieznany błąd'
+  const parts: string[] = []
+  if ('message' in err && err.message) parts.push(err.message)
+  if ('details' in err && err.details) parts.push(`Szczegóły: ${String(err.details)}`)
+  if ('hint' in err && err.hint) parts.push(`Podpowiedź: ${String(err.hint)}`)
+  if ('code' in err && err.code) parts.push(`Kod: ${String(err.code)}`)
+  return parts.length > 0 ? parts.join(' · ') : String(err)
+}
 
 function SortableTh({
   label,
@@ -80,7 +92,7 @@ export default function UsersAndOrgsTab() {
       let q = supabase
         .from('organizations')
         .select('id, name, nip, city, created_at')
-        .order(key, { ascending, nullsFirst: false })
+        .order(key, { ascending })
         .limit(10)
 
       const term = debouncedSearch.trim()
@@ -91,15 +103,15 @@ export default function UsersAndOrgsTab() {
 
       const { data, error } = await q
       if (error) {
-        console.error('[UsersAndOrgsTab] organizations:', error)
-        setListError('Nie udało się pobrać listy firm (sprawdź kolumny NIP/miasto po migracji i RLS).')
+        console.error('SUPABASE ERROR:', error)
+        setListError(formatSupabaseError(error))
         setOrgs([])
         return
       }
       setOrgs((data as OrganizationListRow[]) ?? [])
     } catch (e) {
       console.error('[UsersAndOrgsTab] loadOrgs:', e)
-      setListError('Wystąpił błąd podczas ładowania firm.')
+      setListError(e instanceof Error ? e.message : 'Wystąpił błąd podczas ładowania firm.')
       setOrgs([])
     }
   }, [debouncedSearch, sortConfig])
@@ -111,8 +123,8 @@ export default function UsersAndOrgsTab() {
       const ascending = sortConfig.direction === 'asc'
       let q = supabase
         .from('profiles')
-        .select('id, first_name, last_name, full_name, email, platform_role, last_login_at')
-        .order(key, { ascending, nullsFirst: false })
+        .select('id, first_name, last_name, full_name, email, platform_role, updated_at')
+        .order(key, { ascending })
         .limit(10)
 
       const term = debouncedSearch.trim()
@@ -125,15 +137,15 @@ export default function UsersAndOrgsTab() {
 
       const { data, error } = await q
       if (error) {
-        console.error('[UsersAndOrgsTab] profiles:', error)
-        setListError('Nie udało się pobrać listy użytkowników (sprawdź RLS).')
+        console.error('SUPABASE ERROR:', error)
+        setListError(formatSupabaseError(error))
         setUsers([])
         return
       }
       setUsers((data as ProfileListRow[]) ?? [])
     } catch (e) {
       console.error('[UsersAndOrgsTab] loadUsers:', e)
-      setListError('Wystąpił błąd podczas ładowania użytkowników.')
+      setListError(e instanceof Error ? e.message : 'Wystąpił błąd podczas ładowania użytkowników.')
       setUsers([])
     }
   }, [debouncedSearch, sortConfig])
@@ -213,7 +225,7 @@ export default function UsersAndOrgsTab() {
           type="button"
           onClick={() => {
             setActiveSubTab('users')
-            setSortConfig({ key: 'last_login_at', direction: 'desc' })
+            setSortConfig({ key: 'updated_at', direction: 'desc' })
           }}
           className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
             activeSubTab === 'users'
@@ -238,7 +250,7 @@ export default function UsersAndOrgsTab() {
       </div>
 
       {listError && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-xl text-sm">
+        <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-xl text-sm break-words">
           {listError}
         </div>
       )}
@@ -305,8 +317,8 @@ export default function UsersAndOrgsTab() {
                   onSort={handleSort}
                 />
                 <SortableTh
-                  label="Ostatnie logowanie"
-                  sortKey="last_login_at"
+                  label="Ostatnia aktualizacja"
+                  sortKey="updated_at"
                   currentSort={sortConfig}
                   onSort={handleSort}
                 />
@@ -330,7 +342,7 @@ export default function UsersAndOrgsTab() {
                     <td className="p-4 font-medium">{displayPersonName(row)}</td>
                     <td className="p-4 text-muted-foreground">{row.email?.trim() ?? '—'}</td>
                     <td className="p-4">{row.platform_role?.trim() ?? '—'}</td>
-                    <td className="p-4 text-muted-foreground">{formatDateTime(row.last_login_at)}</td>
+                    <td className="p-4 text-muted-foreground">{formatDateTime(row.updated_at)}</td>
                   </tr>
                 ))}
             </tbody>
