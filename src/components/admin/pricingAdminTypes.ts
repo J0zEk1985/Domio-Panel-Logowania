@@ -6,6 +6,10 @@ export type PricingPlanRow = {
   price_yearly: number
   features: unknown
   is_active: boolean
+  max_users?: number | null
+  max_locations?: number | null
+  max_storage_gb?: number | null
+  has_ai_features?: boolean
   created_at?: string
   updated_at?: string
   /** Supabase may return a single object or one-element array for the FK embed. */
@@ -37,6 +41,10 @@ export function emptyPlanForm() {
     priceMonthly: '',
     priceYearly: '',
     featuresString: '',
+    maxUsers: '',
+    maxLocations: '',
+    maxStorageGb: '',
+    hasAiFeatures: false,
   }
 }
 

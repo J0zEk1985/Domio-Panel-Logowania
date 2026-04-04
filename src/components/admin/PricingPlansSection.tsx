@@ -2,7 +2,13 @@ import { useState } from 'react'
 import { Check, Edit, Plus, Tag, Trash2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import type { Application } from '../../types/database'
-import { formatMoneyPln, inputClass, parseFeaturesFromDb } from './pricingAdminUtils'
+import {
+  formatMoneyPln,
+  formatPlanLimitsSummary,
+  inputClass,
+  parseFeaturesFromDb,
+  parseOptionalLimitInt,
+} from './pricingAdminUtils'
 import { applicationName, emptyPlanForm, type PricingPlanRow } from './pricingAdminTypes'
 
 type Props = {
@@ -41,6 +47,10 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
       priceMonthly: String(row.price_monthly ?? ''),
       priceYearly: String(row.price_yearly ?? ''),
       featuresString: parseFeaturesFromDb(row.features).join(', '),
+      maxUsers: row.max_users != null ? String(row.max_users) : '',
+      maxLocations: row.max_locations != null ? String(row.max_locations) : '',
+      maxStorageGb: row.max_storage_gb != null ? String(row.max_storage_gb) : '',
+      hasAiFeatures: row.has_ai_features === true,
     })
   }
 
@@ -62,6 +72,22 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
       .map((f) => f.trim())
       .filter(Boolean)
 
+    const maxUsersParsed = parseOptionalLimitInt(planForm.maxUsers, 'Limit użytkowników')
+    if (!maxUsersParsed.ok) {
+      setSectionError(maxUsersParsed.message)
+      return
+    }
+    const maxLocationsParsed = parseOptionalLimitInt(planForm.maxLocations, 'Limit lokalizacji')
+    if (!maxLocationsParsed.ok) {
+      setSectionError(maxLocationsParsed.message)
+      return
+    }
+    const maxStorageParsed = parseOptionalLimitInt(planForm.maxStorageGb, 'Limit pamięci (GB)')
+    if (!maxStorageParsed.ok) {
+      setSectionError(maxStorageParsed.message)
+      return
+    }
+
     setPlanSaving(true)
     try {
       const payload = {
@@ -70,6 +96,10 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
         price_monthly: monthly,
         price_yearly: yearly,
         features,
+        max_users: maxUsersParsed.value,
+        max_locations: maxLocationsParsed.value,
+        max_storage_gb: maxStorageParsed.value,
+        has_ai_features: planForm.hasAiFeatures,
         updated_at: new Date().toISOString(),
       }
 
@@ -204,6 +234,64 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
               />
             </label>
           </div>
+          <div className="border-t border-border/60 pt-4 space-y-4">
+            <p className="text-sm font-medium text-foreground">Limity systemowe</p>
+            <p className="text-xs text-muted-foreground -mt-2">
+              Pozostaw pole puste, aby oznaczyć brak limitu (nielimitowane).
+            </p>
+            <div className="grid sm:grid-cols-3 gap-4">
+              <label className="block space-y-1.5 text-sm">
+                <span className="text-muted-foreground">Limit użytkowników</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  className={inputClass}
+                  value={planForm.maxUsers}
+                  onChange={(e) => setPlanForm((f) => ({ ...f, maxUsers: e.target.value }))}
+                  placeholder="np. 10 lub puste"
+                />
+              </label>
+              <label className="block space-y-1.5 text-sm">
+                <span className="text-muted-foreground">Limit lokalizacji / obiektów</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  className={inputClass}
+                  value={planForm.maxLocations}
+                  onChange={(e) => setPlanForm((f) => ({ ...f, maxLocations: e.target.value }))}
+                  placeholder="np. 5 lub puste"
+                />
+              </label>
+              <label className="block space-y-1.5 text-sm">
+                <span className="text-muted-foreground">Limit pamięci (GB)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  className={inputClass}
+                  value={planForm.maxStorageGb}
+                  onChange={(e) => setPlanForm((f) => ({ ...f, maxStorageGb: e.target.value }))}
+                  placeholder="np. 100 lub puste"
+                />
+              </label>
+            </div>
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={planForm.hasAiFeatures}
+                onChange={(e) => setPlanForm((f) => ({ ...f, hasAiFeatures: e.target.checked }))}
+                className="mt-1 h-4 w-4 rounded border-input text-primary focus:ring-ring"
+              />
+              <span className="text-sm text-foreground">
+                Dostęp do funkcji AI
+                <span className="block text-xs text-muted-foreground mt-1">
+                  Włącza flagę planu dla modułów korzystających z funkcji sztucznej inteligencji.
+                </span>
+              </span>
+            </label>
+          </div>
           <label className="block space-y-1.5 text-sm">
             <span className="text-muted-foreground">Funkcje (features)</span>
             <textarea
@@ -243,6 +331,7 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
               <th className="p-4 font-medium">Nazwa planu</th>
               <th className="p-4 font-medium">Aplikacja</th>
               <th className="p-4 font-medium">Cena (miesiąc / rok)</th>
+              <th className="p-4 font-medium">Limity</th>
               <th className="p-4 font-medium">Status</th>
               <th className="p-4 font-medium text-right">Akcje</th>
             </tr>
@@ -254,6 +343,9 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
                 <td className="p-4 text-muted-foreground">{applicationName(row)}</td>
                 <td className="p-4 text-muted-foreground">
                   {formatMoneyPln(row.price_monthly)} / {formatMoneyPln(row.price_yearly)}
+                </td>
+                <td className="p-4 text-muted-foreground max-w-[14rem] whitespace-normal">
+                  {formatPlanLimitsSummary(row)}
                 </td>
                 <td className="p-4">
                   <span
