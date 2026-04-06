@@ -23,7 +23,7 @@ export default function PartnerOffersAdminTab() {
         supabase
           .from('partner_offers')
           .select(
-            'id, title, description, vendor_id, billing_model, action_type, action_value, is_active, target_locations, icon_emoji, bg_color, image_url',
+            'id, title, description, vendor_id, billing_model, action_type, action_value, is_active, target_locations, icon_emoji, bg_color, image_url, promote_on_board',
           )
           .order('title'),
         supabase.from('vendor_partners').select('id, name, service_type, contact_email, contact_phone, status').order('name'),

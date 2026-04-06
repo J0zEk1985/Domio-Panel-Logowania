@@ -16,6 +16,7 @@ type OfferFormState = {
   iconEmoji: string
   bgColor: string
   imageUrl: string
+  promoteOnBoard: boolean
 }
 
 const emptyForm: OfferFormState = {
@@ -30,6 +31,7 @@ const emptyForm: OfferFormState = {
   iconEmoji: '',
   bgColor: 'bg-gray-50',
   imageUrl: '',
+  promoteOnBoard: false,
 }
 
 const billingModelLabel: Record<BillingModel, string> = {
@@ -125,6 +127,7 @@ export default function PartnerOffersSubTab({
       iconEmoji: row.icon_emoji ?? '',
       bgColor: row.bg_color ?? 'bg-gray-50',
       imageUrl: row.image_url ?? '',
+      promoteOnBoard: Boolean(row.promote_on_board),
     })
     setIsDialogOpen(true)
   }
@@ -172,6 +175,7 @@ export default function PartnerOffersSubTab({
       icon_emoji: form.iconEmoji.trim() || null,
       bg_color: form.bgColor || 'bg-gray-50',
       image_url: form.imageUrl.trim() || null,
+      promote_on_board: form.promoteOnBoard,
     }
 
     setSaving(true)
@@ -433,6 +437,22 @@ export default function PartnerOffersSubTab({
                     Jeśli podasz link do logo, zastąpi ono ikonę emoji.
                   </span>
                 </label>
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-border p-4">
+                <h4 className="font-medium">Opcje Wyświetlania</h4>
+                <label className="inline-flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.promoteOnBoard}
+                    onChange={(e) => setForm((prev) => ({ ...prev, promoteOnBoard: e.target.checked }))}
+                  />
+                  <span>Promuj jako post sponsorowany na Tablicy Ogłoszeń</span>
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Zaznaczenie tej opcji sprawi, że oferta wyświetli się nie tylko w dziale Usługi, ale będzie również
+                  naturalnie wpleciona pomiędzy ogłoszenia mieszkańców jako Reklama Natywna.
+                </p>
               </div>
 
               <div className="space-y-2">

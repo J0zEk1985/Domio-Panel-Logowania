@@ -14,6 +14,7 @@ export type PartnerOfferRow = {
   icon_emoji: string | null
   bg_color: string | null
   image_url: string | null
+  promote_on_board: boolean | null
 }
 
 export type VendorPartnerRow = {
