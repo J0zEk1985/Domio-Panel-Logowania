@@ -4,6 +4,7 @@ import {
   CreditCard,
   DollarSign,
   FileText,
+  Handshake,
   LayoutDashboard,
   MonitorSmartphone,
   Server,
@@ -19,6 +20,7 @@ import LegalAdminTab from '../components/admin/LegalAdminTab'
 import UsersAndOrgsTab from '../components/admin/UsersAndOrgsTab'
 import SubscriptionsAdminTab from '../components/admin/SubscriptionsAdminTab'
 import CmsAdminTab from '../components/admin/CmsAdminTab'
+import PartnerOffersAdminTab from '../components/admin/PartnerOffersAdminTab'
 
 type ProfileRow = {
   id: string
@@ -48,13 +50,14 @@ function formatInt(n: number | null | undefined): string {
   return n.toLocaleString('pl-PL')
 }
 
-type AdminTab = 'dashboard' | 'users' | 'subscriptions' | 'pricing' | 'legal' | 'cms'
+type AdminTab = 'dashboard' | 'users' | 'subscriptions' | 'pricing' | 'partner-offers' | 'legal' | 'cms'
 
 const sidebarNav: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Pulpit', icon: LayoutDashboard },
   { id: 'users', label: 'Użytkownicy i Firmy', icon: Users },
   { id: 'subscriptions', label: 'Globalne subskrypcje', icon: CreditCard },
   { id: 'pricing', label: 'Cennik i Promocje', icon: Tag },
+  { id: 'partner-offers', label: 'Oferty Partnerskie', icon: Handshake },
   { id: 'legal', label: 'Dokumenty prawne', icon: FileText },
   { id: 'cms', label: 'Treści strony (CMS)', icon: MonitorSmartphone },
 ]
@@ -303,6 +306,8 @@ export default function AdminPage() {
             {activeTab === 'subscriptions' && <SubscriptionsAdminTab />}
 
             {activeTab === 'pricing' && <PricingAdminTab />}
+
+            {activeTab === 'partner-offers' && <PartnerOffersAdminTab />}
 
             {activeTab === 'legal' && <LegalAdminTab />}
 
