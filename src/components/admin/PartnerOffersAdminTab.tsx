@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Edit, Plus, X } from 'lucide-react'
+import { Edit, Image, Plus, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { inputClass } from './pricingAdminUtils'
 
@@ -16,11 +16,20 @@ type PartnerOfferRow = {
   action_value: string | null
   is_active: boolean
   target_locations: string[] | null
+  icon_emoji: string | null
+  bg_color: string | null
+  image_url: string | null
 }
 
 type VendorPartnerRow = {
   id: string
   name: string
+}
+
+type CleaningLocationRow = {
+  id: string
+  city: string | null
+  address: string | null
 }
 
 type OfferFormState = {
@@ -31,7 +40,10 @@ type OfferFormState = {
   actionType: ActionType
   actionValue: string
   isActive: boolean
-  targetLocations: string
+  targetLocations: string[]
+  iconEmoji: string
+  bgColor: string
+  imageUrl: string
 }
 
 const emptyForm: OfferFormState = {
@@ -42,11 +54,11 @@ const emptyForm: OfferFormState = {
   actionType: 'url',
   actionValue: '',
   isActive: true,
-  targetLocations: '',
+  targetLocations: [],
+  iconEmoji: '',
+  bgColor: 'bg-gray-50',
+  imageUrl: '',
 }
-
-const uuidRegex =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const billingModelLabel: Record<BillingModel, string> = {
   subscription: 'Abonament',
@@ -59,22 +71,19 @@ const actionTypeLabel: Record<ActionType, string> = {
   lead: 'Lead',
 }
 
-function parseTargetLocations(raw: string): { ok: true; value: string[] | null } | { ok: false; message: string } {
-  const normalized = raw
-    .split(/[,\s]+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-  if (normalized.length === 0) return { ok: true, value: null }
-  const invalid = normalized.find((id) => !uuidRegex.test(id))
-  if (invalid) {
-    return { ok: false, message: `Nieprawidłowy UUID w Target ID Lokacji: ${invalid}` }
-  }
-  return { ok: true, value: normalized }
-}
+const bentoColorOptions = [
+  { value: 'bg-gray-50', label: 'Domyślny' },
+  { value: 'bg-blue-50', label: 'Niebieski' },
+  { value: 'bg-green-50', label: 'Zielony' },
+  { value: 'bg-yellow-50', label: 'Żółty' },
+  { value: 'bg-purple-50', label: 'Fioletowy' },
+  { value: 'bg-pink-50', label: 'Różowy' },
+]
 
 export default function PartnerOffersAdminTab() {
   const [offers, setOffers] = useState<PartnerOfferRow[]>([])
   const [partners, setPartners] = useState<VendorPartnerRow[]>([])
+  const [locations, setLocations] = useState<CleaningLocationRow[]>([])
   const [interactionsCount, setInteractionsCount] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -84,22 +93,42 @@ export default function PartnerOffersAdminTab() {
   const [form, setForm] = useState<OfferFormState>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [isPreviewImageBroken, setIsPreviewImageBroken] = useState(false)
 
   const partnerNameById = useMemo(
     () => Object.fromEntries(partners.map((partner) => [partner.id, partner.name])),
     [partners],
   )
 
+  const locationsByCity = useMemo(() => {
+    const grouped = locations.reduce<Record<string, CleaningLocationRow[]>>((acc, location) => {
+      const city = location.city?.trim() || 'Inne'
+      if (!acc[city]) acc[city] = []
+      acc[city].push(location)
+      return acc
+    }, {})
+
+    return Object.entries(grouped)
+      .sort(([cityA], [cityB]) => cityA.localeCompare(cityB, 'pl-PL'))
+      .map(([city, cityLocations]) => ({
+        city,
+        locations: cityLocations.sort((a, b) => (a.address ?? '').localeCompare(b.address ?? '', 'pl-PL')),
+      }))
+  }, [locations])
+
   const loadAll = useCallback(async () => {
     setLoadError(null)
     try {
-      const [offersRes, partnersRes, interactionsRes] = await Promise.all([
+      const [offersRes, partnersRes, interactionsRes, locationsRes] = await Promise.all([
         supabase
           .from('partner_offers')
-          .select('id, title, description, vendor_id, billing_model, action_type, action_value, is_active, target_locations')
+          .select(
+            'id, title, description, vendor_id, billing_model, action_type, action_value, is_active, target_locations, icon_emoji, bg_color, image_url',
+          )
           .order('title'),
         supabase.from('vendor_partners').select('id, name').order('name'),
         supabase.from('offer_interactions').select('*', { count: 'exact', head: true }),
+        supabase.from('cleaning_locations').select('id, city, address').order('city').order('address'),
       ])
 
       if (offersRes.error) {
@@ -125,6 +154,14 @@ export default function PartnerOffersAdminTab() {
       } else {
         setInteractionsCount(interactionsRes.count ?? 0)
       }
+
+      if (locationsRes.error) {
+        console.error('[PartnerOffersAdminTab] cleaning_locations:', locationsRes.error)
+        setLoadError((prev) => prev ?? 'Nie udało się pobrać lokalizacji.')
+        setLocations([])
+      } else {
+        setLocations((locationsRes.data as CleaningLocationRow[] | null) ?? [])
+      }
     } catch (e) {
       console.error('[PartnerOffersAdminTab] loadAll:', e)
       setLoadError('Wystąpił nieoczekiwany błąd podczas ładowania danych ofert.')
@@ -136,6 +173,10 @@ export default function PartnerOffersAdminTab() {
   useEffect(() => {
     void loadAll()
   }, [loadAll])
+
+  useEffect(() => {
+    setIsPreviewImageBroken(false)
+  }, [form.imageUrl, isDialogOpen])
 
   const openCreateDialog = () => {
     setFormError(null)
@@ -155,7 +196,10 @@ export default function PartnerOffersAdminTab() {
       actionType: row.action_type,
       actionValue: row.action_value ?? '',
       isActive: row.is_active,
-      targetLocations: row.target_locations?.join(', ') ?? '',
+      targetLocations: row.target_locations ?? [],
+      iconEmoji: row.icon_emoji ?? '',
+      bgColor: row.bg_color ?? 'bg-gray-50',
+      imageUrl: row.image_url ?? '',
     })
     setIsDialogOpen(true)
   }
@@ -180,12 +224,6 @@ export default function PartnerOffersAdminTab() {
       return
     }
 
-    const targetLocationsParsed = parseTargetLocations(form.targetLocations)
-    if (!targetLocationsParsed.ok) {
-      setFormError(targetLocationsParsed.message)
-      return
-    }
-
     const payload = {
       title,
       description: form.description.trim() || null,
@@ -194,7 +232,10 @@ export default function PartnerOffersAdminTab() {
       action_type: form.actionType,
       action_value: form.actionValue.trim() || null,
       is_active: form.isActive,
-      target_locations: targetLocationsParsed.value,
+      target_locations: form.targetLocations.length > 0 ? form.targetLocations : null,
+      icon_emoji: form.iconEmoji.trim() || null,
+      bg_color: form.bgColor || 'bg-gray-50',
+      image_url: form.imageUrl.trim() || null,
     }
 
     setSaving(true)
@@ -217,6 +258,18 @@ export default function PartnerOffersAdminTab() {
   }
 
   const activeOffers = useMemo(() => offers.filter((offer) => offer.is_active).length, [offers])
+
+  const toggleLocation = (locationId: string) => {
+    setForm((prev) => {
+      const exists = prev.targetLocations.includes(locationId)
+      return {
+        ...prev,
+        targetLocations: exists
+          ? prev.targetLocations.filter((id) => id !== locationId)
+          : [...prev.targetLocations, locationId],
+      }
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -402,15 +455,98 @@ export default function PartnerOffersAdminTab() {
                 </label>
               </div>
 
-              <label className="block space-y-1.5 text-sm">
-                <span className="text-muted-foreground">Target ID Lokacji (opcjonalnie)</span>
-                <input
-                  className={inputClass}
-                  value={form.targetLocations}
-                  onChange={(e) => setForm((prev) => ({ ...prev, targetLocations: e.target.value }))}
-                  placeholder="UUID lub kilka UUID rozdzielonych przecinkiem"
-                />
-              </label>
+              <div className="space-y-3 rounded-xl border border-border p-4">
+                <h4 className="font-medium">Wygląd kafelka (Bento UI)</h4>
+                <div className="flex justify-center sm:justify-start">
+                  <div
+                    className={`w-28 h-28 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-center ${form.bgColor}`}
+                  >
+                    {form.imageUrl.trim() && !isPreviewImageBroken ? (
+                      <img
+                        src={form.imageUrl.trim()}
+                        alt="Podgląd logo oferty"
+                        className="h-16 w-16 object-contain"
+                        onError={() => setIsPreviewImageBroken(true)}
+                      />
+                    ) : form.iconEmoji.trim() ? (
+                      <span className="text-5xl leading-none">{form.iconEmoji.trim()}</span>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1 text-muted-foreground/60">
+                        <Image className="h-7 w-7" />
+                        <span className="text-[11px]">Podgląd</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <label className="block space-y-1.5 text-sm">
+                    <span className="text-muted-foreground">Ikona (Emoji)</span>
+                    <input
+                      className={inputClass}
+                      value={form.iconEmoji}
+                      onChange={(e) => setForm((prev) => ({ ...prev, iconEmoji: e.target.value }))}
+                      placeholder="Wklej emoji, np. 🔧, 🥗, 🐶"
+                    />
+                  </label>
+
+                  <label className="block space-y-1.5 text-sm">
+                    <span className="text-muted-foreground">Kolor tła</span>
+                    <select
+                      className={inputClass}
+                      value={form.bgColor}
+                      onChange={(e) => setForm((prev) => ({ ...prev, bgColor: e.target.value }))}
+                    >
+                      {bentoColorOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <label className="block space-y-1.5 text-sm">
+                  <span className="text-muted-foreground">Link do logo (dla dużych marek)</span>
+                  <input
+                    className={inputClass}
+                    value={form.imageUrl}
+                    onChange={(e) => setForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
+                    placeholder="https://..."
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    Jeśli podasz link do logo, zastąpi ono ikonę emoji.
+                  </span>
+                </label>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-medium">Targetowanie lokalizacji (opcjonalnie)</h4>
+                <p className="text-xs text-muted-foreground">
+                  Brak zaznaczonych lokalizacji oznacza ofertę globalną.
+                </p>
+                <div className="rounded-xl border border-border p-3 max-h-[200px] overflow-y-auto space-y-3">
+                  {locationsByCity.length === 0 && (
+                    <div className="text-sm text-muted-foreground">Brak lokalizacji do wyboru.</div>
+                  )}
+                  {locationsByCity.map((group) => (
+                    <div key={group.city} className="space-y-2">
+                      <div className="text-sm font-semibold">{group.city}</div>
+                      <div className="space-y-1.5">
+                        {group.locations.map((location) => (
+                          <label key={location.id} className="flex items-start gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={form.targetLocations.includes(location.id)}
+                              onChange={() => toggleLocation(location.id)}
+                            />
+                            <span>{location.address?.trim() || 'Brak adresu'}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               <label className="inline-flex items-center gap-2 text-sm">
                 <input
