@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import PartnerOffersSubTab from './PartnerOffersSubTab'
 import VendorPartnersSubTab from './VendorPartnersSubTab'
+import ReportsSubTab from './partner-offers/ReportsSubTab'
 import type { CleaningLocationRow, PartnerOfferRow, VendorPartnerRow } from './partnerOffersTypes'
 
-type AdminPartnerOffersTab = 'offers' | 'vendors'
+type AdminPartnerOffersTab = 'offers' | 'vendors' | 'reports'
 
 export default function PartnerOffersAdminTab() {
   const [offers, setOffers] = useState<PartnerOfferRow[]>([])
@@ -102,6 +103,17 @@ export default function PartnerOffersAdminTab() {
         >
           Katalog Firm
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('reports')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === 'reports'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          Raporty i Statystyki
+        </button>
       </div>
 
       {activeTab === 'offers' && (
@@ -122,6 +134,8 @@ export default function PartnerOffersAdminTab() {
           onRefresh={loadAll}
         />
       )}
+
+      {activeTab === 'reports' && <ReportsSubTab vendors={partners} />}
     </div>
   )
 }
