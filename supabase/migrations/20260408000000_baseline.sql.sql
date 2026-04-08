@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 2qzKlVdO8kdH08ebX1EVKjrbqBbnlsOo81MH1dvAZDBtC0a2RX0rPIE4j6OAJgK
+\restrict wCQuFbydvZNkDaTRWN7IjxQ2UJqXA6DFMSTdbaKjaMhdGxUxyND6rduWtPHHmVj
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.9 (Debian 17.9-1.pgdg13+1)
@@ -6768,42 +6768,6 @@ PARTITION BY RANGE (inserted_at);
 ALTER TABLE realtime.messages OWNER TO supabase_realtime_admin;
 
 --
--- Name: messages_2026_04_03; Type: TABLE; Schema: realtime; Owner: supabase_admin
---
-
-CREATE TABLE realtime.messages_2026_04_03 (
-    topic text NOT NULL,
-    extension text NOT NULL,
-    payload jsonb,
-    event text,
-    private boolean DEFAULT false,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL,
-    inserted_at timestamp without time zone DEFAULT now() NOT NULL,
-    id uuid DEFAULT gen_random_uuid() NOT NULL
-);
-
-
-ALTER TABLE realtime.messages_2026_04_03 OWNER TO supabase_admin;
-
---
--- Name: messages_2026_04_04; Type: TABLE; Schema: realtime; Owner: supabase_admin
---
-
-CREATE TABLE realtime.messages_2026_04_04 (
-    topic text NOT NULL,
-    extension text NOT NULL,
-    payload jsonb,
-    event text,
-    private boolean DEFAULT false,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL,
-    inserted_at timestamp without time zone DEFAULT now() NOT NULL,
-    id uuid DEFAULT gen_random_uuid() NOT NULL
-);
-
-
-ALTER TABLE realtime.messages_2026_04_04 OWNER TO supabase_admin;
-
---
 -- Name: messages_2026_04_05; Type: TABLE; Schema: realtime; Owner: supabase_admin
 --
 
@@ -6892,6 +6856,42 @@ CREATE TABLE realtime.messages_2026_04_09 (
 
 
 ALTER TABLE realtime.messages_2026_04_09 OWNER TO supabase_admin;
+
+--
+-- Name: messages_2026_04_10; Type: TABLE; Schema: realtime; Owner: supabase_admin
+--
+
+CREATE TABLE realtime.messages_2026_04_10 (
+    topic text NOT NULL,
+    extension text NOT NULL,
+    payload jsonb,
+    event text,
+    private boolean DEFAULT false,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    inserted_at timestamp without time zone DEFAULT now() NOT NULL,
+    id uuid DEFAULT gen_random_uuid() NOT NULL
+);
+
+
+ALTER TABLE realtime.messages_2026_04_10 OWNER TO supabase_admin;
+
+--
+-- Name: messages_2026_04_11; Type: TABLE; Schema: realtime; Owner: supabase_admin
+--
+
+CREATE TABLE realtime.messages_2026_04_11 (
+    topic text NOT NULL,
+    extension text NOT NULL,
+    payload jsonb,
+    event text,
+    private boolean DEFAULT false,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    inserted_at timestamp without time zone DEFAULT now() NOT NULL,
+    id uuid DEFAULT gen_random_uuid() NOT NULL
+);
+
+
+ALTER TABLE realtime.messages_2026_04_11 OWNER TO supabase_admin;
 
 --
 -- Name: schema_migrations; Type: TABLE; Schema: realtime; Owner: supabase_admin
@@ -7100,20 +7100,6 @@ CREATE TABLE storage.vector_indexes (
 ALTER TABLE storage.vector_indexes OWNER TO supabase_storage_admin;
 
 --
--- Name: messages_2026_04_03; Type: TABLE ATTACH; Schema: realtime; Owner: supabase_admin
---
-
-ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_04_03 FOR VALUES FROM ('2026-04-03 00:00:00') TO ('2026-04-04 00:00:00');
-
-
---
--- Name: messages_2026_04_04; Type: TABLE ATTACH; Schema: realtime; Owner: supabase_admin
---
-
-ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_04_04 FOR VALUES FROM ('2026-04-04 00:00:00') TO ('2026-04-05 00:00:00');
-
-
---
 -- Name: messages_2026_04_05; Type: TABLE ATTACH; Schema: realtime; Owner: supabase_admin
 --
 
@@ -7146,6 +7132,20 @@ ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_04_08
 --
 
 ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_04_09 FOR VALUES FROM ('2026-04-09 00:00:00') TO ('2026-04-10 00:00:00');
+
+
+--
+-- Name: messages_2026_04_10; Type: TABLE ATTACH; Schema: realtime; Owner: supabase_admin
+--
+
+ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_04_10 FOR VALUES FROM ('2026-04-10 00:00:00') TO ('2026-04-11 00:00:00');
+
+
+--
+-- Name: messages_2026_04_11; Type: TABLE ATTACH; Schema: realtime; Owner: supabase_admin
+--
+
+ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_04_11 FOR VALUES FROM ('2026-04-11 00:00:00') TO ('2026-04-12 00:00:00');
 
 
 --
@@ -8004,22 +8004,6 @@ ALTER TABLE ONLY realtime.messages
 
 
 --
--- Name: messages_2026_04_03 messages_2026_04_03_pkey; Type: CONSTRAINT; Schema: realtime; Owner: supabase_admin
---
-
-ALTER TABLE ONLY realtime.messages_2026_04_03
-    ADD CONSTRAINT messages_2026_04_03_pkey PRIMARY KEY (id, inserted_at);
-
-
---
--- Name: messages_2026_04_04 messages_2026_04_04_pkey; Type: CONSTRAINT; Schema: realtime; Owner: supabase_admin
---
-
-ALTER TABLE ONLY realtime.messages_2026_04_04
-    ADD CONSTRAINT messages_2026_04_04_pkey PRIMARY KEY (id, inserted_at);
-
-
---
 -- Name: messages_2026_04_05 messages_2026_04_05_pkey; Type: CONSTRAINT; Schema: realtime; Owner: supabase_admin
 --
 
@@ -8057,6 +8041,22 @@ ALTER TABLE ONLY realtime.messages_2026_04_08
 
 ALTER TABLE ONLY realtime.messages_2026_04_09
     ADD CONSTRAINT messages_2026_04_09_pkey PRIMARY KEY (id, inserted_at);
+
+
+--
+-- Name: messages_2026_04_10 messages_2026_04_10_pkey; Type: CONSTRAINT; Schema: realtime; Owner: supabase_admin
+--
+
+ALTER TABLE ONLY realtime.messages_2026_04_10
+    ADD CONSTRAINT messages_2026_04_10_pkey PRIMARY KEY (id, inserted_at);
+
+
+--
+-- Name: messages_2026_04_11 messages_2026_04_11_pkey; Type: CONSTRAINT; Schema: realtime; Owner: supabase_admin
+--
+
+ALTER TABLE ONLY realtime.messages_2026_04_11
+    ADD CONSTRAINT messages_2026_04_11_pkey PRIMARY KEY (id, inserted_at);
 
 
 --
@@ -8596,6 +8596,13 @@ CREATE INDEX idx_cleaning_locations_community ON public.cleaning_locations USING
 
 
 --
+-- Name: idx_cleaning_locations_org_community_vps; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_cleaning_locations_org_community_vps ON public.cleaning_locations USING btree (org_id, community_id);
+
+
+--
 -- Name: idx_cleaning_locations_org_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -8624,6 +8631,20 @@ CREATE INDEX idx_cleaning_locations_status ON public.cleaning_locations USING bt
 
 
 --
+-- Name: idx_cleaning_staff_org_vps; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_cleaning_staff_org_vps ON public.cleaning_staff USING btree (org_id);
+
+
+--
+-- Name: idx_cleaning_tasks_actual_performer_vps; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_cleaning_tasks_actual_performer_vps ON public.cleaning_tasks USING btree (actual_performer_id);
+
+
+--
 -- Name: idx_cleaning_tasks_assigned_staff_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -8642,6 +8663,13 @@ CREATE INDEX idx_cleaning_tasks_assigned_staff_location ON public.cleaning_tasks
 --
 
 CREATE INDEX idx_cleaning_tasks_location_id ON public.cleaning_tasks USING btree (location_id);
+
+
+--
+-- Name: idx_cleaning_tasks_org_assigned_sched_vps; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_cleaning_tasks_org_assigned_sched_vps ON public.cleaning_tasks USING btree (org_id, assigned_staff_id, scheduled_at);
 
 
 --
@@ -8799,6 +8827,13 @@ CREATE INDEX idx_location_access_user_id ON public.location_access USING btree (
 
 
 --
+-- Name: idx_location_access_user_location_type_vps; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_location_access_user_location_type_vps ON public.location_access USING btree (user_id, location_id, access_type);
+
+
+--
 -- Name: idx_location_holidays_date; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -8876,6 +8911,13 @@ CREATE INDEX idx_memberships_org_id ON public.memberships USING btree (org_id);
 
 
 --
+-- Name: idx_memberships_org_user_active_vps; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_memberships_org_user_active_vps ON public.memberships USING btree (org_id, user_id, is_active);
+
+
+--
 -- Name: idx_memberships_user_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -8918,6 +8960,13 @@ CREATE INDEX idx_partner_offers_org ON public.partner_offers USING btree (org_id
 
 
 --
+-- Name: idx_partner_offers_org_active_vps; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_partner_offers_org_active_vps ON public.partner_offers USING btree (org_id, is_active);
+
+
+--
 -- Name: idx_policies_community; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -8943,6 +8992,13 @@ CREATE INDEX idx_profiles_account_type ON public.profiles USING btree (account_t
 --
 
 CREATE INDEX idx_profiles_preferences ON public.profiles USING gin (preferences);
+
+
+--
+-- Name: idx_property_checklists_loc_active; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_property_checklists_loc_active ON public.property_checklists USING btree (location_id, is_active);
 
 
 --
@@ -8995,6 +9051,13 @@ CREATE INDEX idx_property_inspections_valid_until ON public.property_inspections
 
 
 --
+-- Name: idx_property_issues_assigned_staff_vps; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_property_issues_assigned_staff_vps ON public.property_issues USING btree (assigned_staff_id);
+
+
+--
 -- Name: idx_property_issues_location_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -9006,6 +9069,13 @@ CREATE INDEX idx_property_issues_location_id ON public.property_issues USING btr
 --
 
 CREATE INDEX idx_property_issues_org_id ON public.property_issues USING btree (org_id);
+
+
+--
+-- Name: idx_property_issues_org_status_created_vps; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_property_issues_org_status_created_vps ON public.property_issues USING btree (org_id, status, created_at DESC);
 
 
 --
@@ -9034,6 +9104,13 @@ CREATE INDEX idx_property_policies_location_id ON public.property_policies USING
 --
 
 CREATE INDEX idx_property_sections_assigned_staff_location ON public.property_sections USING btree (assigned_staff_id, location_id) WHERE ((assigned_staff_id IS NOT NULL) AND (location_id IS NOT NULL));
+
+
+--
+-- Name: idx_property_sections_location_assigned_vps; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_property_sections_location_assigned_vps ON public.property_sections USING btree (location_id, assigned_staff_id);
 
 
 --
@@ -9156,6 +9233,13 @@ CREATE INDEX idx_task_execution_logs_task_id ON public.task_execution_logs USING
 
 
 --
+-- Name: idx_task_execution_logs_user_created_vps; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_task_execution_logs_user_created_vps ON public.task_execution_logs USING btree (user_id, created_at DESC);
+
+
+--
 -- Name: idx_task_execution_logs_user_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -9174,6 +9258,13 @@ CREATE INDEX idx_task_step_logs_created_at ON public.task_step_logs USING btree 
 --
 
 CREATE INDEX idx_task_step_logs_task_id ON public.task_step_logs USING btree (task_id);
+
+
+--
+-- Name: idx_task_step_logs_user_created_vps; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_task_step_logs_user_created_vps ON public.task_step_logs USING btree (user_id, created_at DESC);
 
 
 --
@@ -9254,20 +9345,6 @@ CREATE INDEX messages_inserted_at_topic_index ON ONLY realtime.messages USING bt
 
 
 --
--- Name: messages_2026_04_03_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: supabase_admin
---
-
-CREATE INDEX messages_2026_04_03_inserted_at_topic_idx ON realtime.messages_2026_04_03 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
-
-
---
--- Name: messages_2026_04_04_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: supabase_admin
---
-
-CREATE INDEX messages_2026_04_04_inserted_at_topic_idx ON realtime.messages_2026_04_04 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
-
-
---
 -- Name: messages_2026_04_05_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: supabase_admin
 --
 
@@ -9300,6 +9377,20 @@ CREATE INDEX messages_2026_04_08_inserted_at_topic_idx ON realtime.messages_2026
 --
 
 CREATE INDEX messages_2026_04_09_inserted_at_topic_idx ON realtime.messages_2026_04_09 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
+
+
+--
+-- Name: messages_2026_04_10_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: supabase_admin
+--
+
+CREATE INDEX messages_2026_04_10_inserted_at_topic_idx ON realtime.messages_2026_04_10 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
+
+
+--
+-- Name: messages_2026_04_11_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: supabase_admin
+--
+
+CREATE INDEX messages_2026_04_11_inserted_at_topic_idx ON realtime.messages_2026_04_11 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
 
 
 --
@@ -9363,34 +9454,6 @@ CREATE INDEX name_prefix_search ON storage.objects USING btree (name text_patter
 --
 
 CREATE UNIQUE INDEX vector_indexes_name_bucket_id_idx ON storage.vector_indexes USING btree (name, bucket_id);
-
-
---
--- Name: messages_2026_04_03_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: supabase_realtime_admin
---
-
-ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_04_03_inserted_at_topic_idx;
-
-
---
--- Name: messages_2026_04_03_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: supabase_realtime_admin
---
-
-ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_04_03_pkey;
-
-
---
--- Name: messages_2026_04_04_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: supabase_realtime_admin
---
-
-ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_04_04_inserted_at_topic_idx;
-
-
---
--- Name: messages_2026_04_04_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: supabase_realtime_admin
---
-
-ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_04_04_pkey;
 
 
 --
@@ -9461,6 +9524,34 @@ ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.
 --
 
 ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_04_09_pkey;
+
+
+--
+-- Name: messages_2026_04_10_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: supabase_realtime_admin
+--
+
+ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_04_10_inserted_at_topic_idx;
+
+
+--
+-- Name: messages_2026_04_10_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: supabase_realtime_admin
+--
+
+ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_04_10_pkey;
+
+
+--
+-- Name: messages_2026_04_11_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: supabase_realtime_admin
+--
+
+ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_04_11_inserted_at_topic_idx;
+
+
+--
+-- Name: messages_2026_04_11_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: supabase_realtime_admin
+--
+
+ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_04_11_pkey;
 
 
 --
@@ -11157,13 +11248,6 @@ CREATE POLICY "Users can insert own interactions" ON public.offer_interactions F
 
 
 --
--- Name: profiles Users can update own profile; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING ((auth.uid() = id));
-
-
---
 -- Name: staff_financial_adjustments Users see own adjustments; Type: POLICY; Schema: public; Owner: postgres
 --
 
@@ -11206,10 +11290,40 @@ CREATE POLICY "Vendors can view delegated issues" ON public.property_issues FOR 
 ALTER TABLE public.applications ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: cleaning_catalog; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.cleaning_catalog ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: cleaning_clients; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
 ALTER TABLE public.cleaning_clients ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cleaning_inventory; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.cleaning_inventory ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cleaning_locations; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.cleaning_locations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cleaning_staff; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.cleaning_staff ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cleaning_tasks; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.cleaning_tasks ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: cleaning_tasks cleaning_tasks_policy_final; Type: POLICY; Schema: public; Owner: postgres
@@ -11227,6 +11341,12 @@ CREATE POLICY cleaning_tasks_policy_final ON public.cleaning_tasks TO authentica
 --
 
 ALTER TABLE public.communities ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: community_board; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.community_board ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: community_comments; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -11265,13 +11385,6 @@ COMMENT ON POLICY companies_org_membership_all ON public.companies IS 'Authentic
 ALTER TABLE public.e_board_messages ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: task_execution_logs execution_logs_insert; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY execution_logs_insert ON public.task_execution_logs FOR INSERT TO authenticated WITH CHECK (true);
-
-
---
 -- Name: fuel_logs; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -11282,6 +11395,24 @@ ALTER TABLE public.fuel_logs ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.inspection_campaigns ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: inspections; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.inspections ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: inspections_hybrid; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.inspections_hybrid ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: internal_tasks; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.internal_tasks ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: legal_documents; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -11373,11 +11504,16 @@ CREATE POLICY logs_final ON public.task_step_logs TO authenticated USING ((task_
 
 
 --
--- Name: task_step_logs logs_master_policy; Type: POLICY; Schema: public; Owner: postgres
+-- Name: material_requests; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY logs_master_policy ON public.task_step_logs TO authenticated USING (true) WITH CHECK (true);
+ALTER TABLE public.material_requests ENABLE ROW LEVEL SECURITY;
 
+--
+-- Name: memberships; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.memberships ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: memberships memberships_final; Type: POLICY; Schema: public; Owner: postgres
@@ -11405,10 +11541,22 @@ ALTER TABLE public.offer_interactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.org_subscriptions ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: organizations; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: page_content; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
 ALTER TABLE public.page_content ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: partner_offers; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.partner_offers ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: pricing_plans; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -11423,10 +11571,17 @@ ALTER TABLE public.pricing_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: profiles profiles_final; Type: POLICY; Schema: public; Owner: postgres
+-- Name: profiles profiles_select_own; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY profiles_final ON public.profiles FOR SELECT TO authenticated USING (true);
+CREATE POLICY profiles_select_own ON public.profiles FOR SELECT TO authenticated USING ((auth.uid() = id));
+
+
+--
+-- Name: profiles profiles_update_own; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY profiles_update_own ON public.profiles FOR UPDATE TO authenticated USING ((auth.uid() = id)) WITH CHECK ((auth.uid() = id));
 
 
 --
@@ -11434,6 +11589,12 @@ CREATE POLICY profiles_final ON public.profiles FOR SELECT TO authenticated USIN
 --
 
 ALTER TABLE public.promo_codes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: property_checklists; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.property_checklists ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: property_contracts; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -11453,6 +11614,12 @@ CREATE POLICY property_contracts_all_location_access ON public.property_contract
 --
 
 ALTER TABLE public.property_inspections ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: property_issues; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.property_issues ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: property_issues property_issues_all_for_management; Type: POLICY; Schema: public; Owner: postgres
@@ -11504,6 +11671,12 @@ CREATE POLICY property_policies_all_location_access ON public.property_policies 
 
 
 --
+-- Name: property_sections; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.property_sections ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: property_tasks; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -11544,6 +11717,12 @@ CREATE POLICY property_tasks_update_access ON public.property_tasks FOR UPDATE T
 ALTER TABLE public.repair_logs ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: resident_configs; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.resident_configs ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: property_sections sections_final; Type: POLICY; Schema: public; Owner: postgres
 --
 
@@ -11574,13 +11753,6 @@ ALTER TABLE public.staff_payouts ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.staff_rate_history ENABLE ROW LEVEL SECURITY;
-
---
--- Name: task_step_logs step_logs_insert; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY step_logs_insert ON public.task_step_logs FOR INSERT TO authenticated WITH CHECK (true);
-
 
 --
 -- Name: task_comments; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -11617,10 +11789,43 @@ CREATE POLICY task_comments_update_access ON public.task_comments FOR UPDATE TO 
 
 
 --
--- Name: task_step_logs task_step_logs_policy_final; Type: POLICY; Schema: public; Owner: postgres
+-- Name: task_execution_logs; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY task_step_logs_policy_final ON public.task_step_logs TO authenticated USING (true) WITH CHECK (true);
+ALTER TABLE public.task_execution_logs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: task_execution_logs task_execution_logs_insert_own; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY task_execution_logs_insert_own ON public.task_execution_logs FOR INSERT TO authenticated WITH CHECK ((user_id = auth.uid()));
+
+
+--
+-- Name: task_execution_logs task_execution_logs_select_own; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY task_execution_logs_select_own ON public.task_execution_logs FOR SELECT TO authenticated USING ((user_id = auth.uid()));
+
+
+--
+-- Name: task_step_logs; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.task_step_logs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: task_step_logs task_step_logs_insert_own; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY task_step_logs_insert_own ON public.task_step_logs FOR INSERT TO authenticated WITH CHECK ((user_id = auth.uid()));
+
+
+--
+-- Name: task_step_logs task_step_logs_select_own; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY task_step_logs_select_own ON public.task_step_logs FOR SELECT TO authenticated USING ((user_id = auth.uid()));
 
 
 --
@@ -11634,6 +11839,12 @@ ALTER TABLE public.unit_inspection_records ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.vehicles ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: vendor_partners; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.vendor_partners ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: cleaning_tasks worker_tasks_master_policy; Type: POLICY; Schema: public; Owner: postgres
@@ -21269,22 +21480,6 @@ GRANT SELECT,INSERT,UPDATE ON TABLE realtime.messages TO service_role;
 
 
 --
--- Name: TABLE messages_2026_04_03; Type: ACL; Schema: realtime; Owner: supabase_admin
---
-
-GRANT ALL ON TABLE realtime.messages_2026_04_03 TO postgres;
-GRANT ALL ON TABLE realtime.messages_2026_04_03 TO dashboard_user;
-
-
---
--- Name: TABLE messages_2026_04_04; Type: ACL; Schema: realtime; Owner: supabase_admin
---
-
-GRANT ALL ON TABLE realtime.messages_2026_04_04 TO postgres;
-GRANT ALL ON TABLE realtime.messages_2026_04_04 TO dashboard_user;
-
-
---
 -- Name: TABLE messages_2026_04_05; Type: ACL; Schema: realtime; Owner: supabase_admin
 --
 
@@ -21322,6 +21517,22 @@ GRANT ALL ON TABLE realtime.messages_2026_04_08 TO dashboard_user;
 
 GRANT ALL ON TABLE realtime.messages_2026_04_09 TO postgres;
 GRANT ALL ON TABLE realtime.messages_2026_04_09 TO dashboard_user;
+
+
+--
+-- Name: TABLE messages_2026_04_10; Type: ACL; Schema: realtime; Owner: supabase_admin
+--
+
+GRANT ALL ON TABLE realtime.messages_2026_04_10 TO postgres;
+GRANT ALL ON TABLE realtime.messages_2026_04_10 TO dashboard_user;
+
+
+--
+-- Name: TABLE messages_2026_04_11; Type: ACL; Schema: realtime; Owner: supabase_admin
+--
+
+GRANT ALL ON TABLE realtime.messages_2026_04_11 TO postgres;
+GRANT ALL ON TABLE realtime.messages_2026_04_11 TO dashboard_user;
 
 
 --
@@ -21753,5 +21964,5 @@ ALTER EVENT TRIGGER pgrst_drop_watch OWNER TO supabase_admin;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 2qzKlVdO8kdH08ebX1EVKjrbqBbnlsOo81MH1dvAZDBtC0a2RX0rPIE4j6OAJgK
+\unrestrict wCQuFbydvZNkDaTRWN7IjxQ2UJqXA6DFMSTdbaKjaMhdGxUxyND6rduWtPHHmVj
 
