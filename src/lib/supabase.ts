@@ -36,10 +36,8 @@ const createCookieStorage = () => {
     const parts = value.split(`; ${name}=`)
     if (parts.length === 2) {
       const cookieValue = parts.pop()?.split(';').shift() || null
-      console.log(`[SSO DEBUG] Storage: getCookie(${name}):`, cookieValue ? 'Znaleziono' : 'Brak')
       return cookieValue
     }
-    console.log(`[SSO DEBUG] Storage: getCookie(${name}): Brak`)
     return null
   }
 
@@ -53,11 +51,9 @@ const createCookieStorage = () => {
       const secureFlag = isSecure ? ';Secure' : ''
       const cookieString = `${name}=${value};expires=${expires.toUTCString()};path=${cookieOptions.path};domain=${cookieOptions.domain};SameSite=${cookieOptions.sameSite}${secureFlag}`
       document.cookie = cookieString
-      console.log(`[SSO DEBUG] Storage: setCookie(${name}) - Production mode, domain: ${cookieOptions.domain}`)
     } else {
       // Development: Use regular cookie without domain restriction
       document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Lax`
-      console.log(`[SSO DEBUG] Storage: setCookie(${name}) - Development mode, no domain restriction`)
     }
   }
 
@@ -67,17 +63,14 @@ const createCookieStorage = () => {
       const isSecure = window.location.protocol === 'https:'
       const secureFlag = isSecure ? ';Secure' : ''
       document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=${cookieOptions.path};domain=${cookieOptions.domain};SameSite=${cookieOptions.sameSite}${secureFlag}`
-      console.log(`[SSO DEBUG] Storage: removeCookie(${name}) - Production mode`)
     } else {
       // Development: Remove cookie without domain restriction
       document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;SameSite=Lax`
-      console.log(`[SSO DEBUG] Storage: removeCookie(${name}) - Development mode`)
     }
   }
 
   if (useCookies) {
     // Use cookies for production (SSO) - identical to Cleaning
-    console.log('[SSO DEBUG] Storage: Używanie ciastek dla SSO (Production mode)')
     return {
       getItem: (key: string): string | null => {
         return getCookie(key)
@@ -91,7 +84,6 @@ const createCookieStorage = () => {
     }
   } else {
     // Fallback to localStorage for local development
-    console.log('[SSO DEBUG] Storage: Używanie localStorage (Development mode)')
     return {
       getItem: (key: string): string | null => {
         try {

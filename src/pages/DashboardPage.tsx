@@ -92,12 +92,9 @@ export default function DashboardPage() {
           return
         }
 
-        console.log('[SSO DEBUG] User verified:', user.id)
-
         // Check if returnTo parameter exists (must match LoginPage.tsx which uses 'returnTo')
         const returnTo = searchParams.get('returnTo')
         if (returnTo) {
-          console.log('[SSO DEBUG] Redirecting to returnTo:', returnTo)
           window.location.href = returnTo
           return
         }
@@ -111,14 +108,13 @@ export default function DashboardPage() {
           .maybeSingle()
 
         if (profileError) {
-          console.log('[SSO DEBUG] Profile fetch error (fleet_role):', profileError.message)
+          console.error('[SSO] Profile fetch error (fleet_role):', profileError.message)
         }
         if (profile?.is_first_login === true) {
           navigate('/change-password')
           return
         }
         const fleetRole = profile?.fleet_role ?? null
-        console.log('[SSO DEBUG] fleet_role:', fleetRole ?? '(empty)')
 
         // 2. Fetch memberships (cleaning system roles)
         const { data: membershipsData, error: membershipsError } = await supabase
@@ -127,27 +123,18 @@ export default function DashboardPage() {
           .eq('user_id', user.id)
 
         if (membershipsError) {
-          console.log('[SSO DEBUG] Memberships fetch error:', membershipsError.message)
+          console.error('[SSO] Memberships fetch error:', membershipsError.message)
         }
         const membershipCount = membershipsData?.length ?? 0
-        console.log(
-          '[SSO DEBUG] memberships count:',
-          membershipCount,
-          membershipCount ? `(roles: ${membershipsData!.map((m) => m.role).join(', ')})` : '',
-        )
 
         // 3. Dispatcher condition
         const hasFleetAccess = fleetRole === 'admin' || fleetRole === 'driver'
         const hasCleaningAccess = membershipCount > 0
-        console.log('[SSO DEBUG] hasFleetAccess:', hasFleetAccess, '| hasCleaningAccess:', hasCleaningAccess)
 
         if (hasFleetAccess && !hasCleaningAccess) {
-          console.log('[SSO DEBUG] Redirecting fleet-only user to flota.domio.com.pl')
           window.location.href = 'https://flota.domio.com.pl'
           return
         }
-
-        console.log('[SSO DEBUG] User has dashboard access, loading applications')
 
         // 4. Fetch applications (only when not redirected)
         const { data: appsData, error: appsError } = await supabase

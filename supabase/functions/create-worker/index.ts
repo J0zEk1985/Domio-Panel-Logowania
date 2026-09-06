@@ -93,6 +93,22 @@ Deno.serve(async (req) => {
       },
     })
 
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader?.toLowerCase().startsWith('bearer ')) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+    const callerJwt = authHeader.slice(7).trim()
+    const { data: callerData, error: callerError } = await supabaseAdmin.auth.getUser(callerJwt)
+    if (callerError || !callerData.user?.id) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     // Parse request body
     let body: CreateWorkerRequest
     try {
@@ -152,6 +168,23 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'Organization not found', details: 'Invalid orgId' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const { data: callerMembership, error: callerMembershipError } = await supabaseAdmin
+      .from('memberships')
+      .select('role, is_active')
+      .eq('user_id', callerData.user.id)
+      .eq('org_id', body.orgId)
+      .maybeSingle()
+
+    const callerRole = String(callerMembership?.role ?? '').toLowerCase()
+    const callerActive = callerMembership?.is_active !== false
+    const canManageWorkers = ['owner', 'admin', 'coordinator', 'manager'].includes(callerRole)
+    if (callerMembershipError || !callerMembership || !callerActive || !canManageWorkers) {
+      return new Response(
+        JSON.stringify({ error: 'Forbidden' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 

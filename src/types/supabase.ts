@@ -101,6 +101,165 @@ export type Database = {
         }
         Relationships: []
       }
+      building_inspections: {
+        Row: {
+          ckob_document_ref: string | null
+          created_at: string
+          execution_date: string | null
+          id: string
+          inspection_type: string
+          internal_notes: string | null
+          location_id: string
+          org_id: string
+          planned_date: string
+          source: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          ckob_document_ref?: string | null
+          created_at?: string
+          execution_date?: string | null
+          id?: string
+          inspection_type: string
+          internal_notes?: string | null
+          location_id: string
+          org_id: string
+          planned_date: string
+          source: string
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          ckob_document_ref?: string | null
+          created_at?: string
+          execution_date?: string | null
+          id?: string
+          inspection_type?: string
+          internal_notes?: string | null
+          location_id?: string
+          org_id?: string
+          planned_date?: string
+          source?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "building_inspections_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "cleaning_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "building_inspections_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ckob_credentials: {
+        Row: {
+          api_key_encrypted: string
+          created_at: string
+          id: string
+          is_active: boolean
+          org_id: string
+          updated_at: string
+        }
+        Insert: {
+          api_key_encrypted: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          org_id: string
+          updated_at?: string
+        }
+        Update: {
+          api_key_encrypted?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          org_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ckob_credentials_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ckob_property_mappings: {
+        Row: {
+          ckob_building_id: string
+          created_at: string
+          id: string
+          location_id: string
+        }
+        Insert: {
+          ckob_building_id: string
+          created_at?: string
+          id?: string
+          location_id: string
+        }
+        Update: {
+          ckob_building_id?: string
+          created_at?: string
+          id?: string
+          location_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ckob_property_mappings_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "cleaning_locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ckob_sync_logs: {
+        Row: {
+          created_at: string
+          error_details: Json | null
+          id: string
+          org_id: string
+          records_processed: number
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          error_details?: Json | null
+          id?: string
+          org_id: string
+          records_processed?: number
+          status: string
+        }
+        Update: {
+          created_at?: string
+          error_details?: Json | null
+          id?: string
+          org_id?: string
+          records_processed?: number
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ckob_sync_logs_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cleaning_catalog: {
         Row: {
           created_at: string | null
@@ -2237,6 +2396,7 @@ export type Database = {
           created_at: string | null
           delegated_vendor_id: string | null
           description: string | null
+          email_message_id: string | null
           estimated_hours: number | null
           estimated_resolution_date: string | null
           id: string
@@ -2281,6 +2441,7 @@ export type Database = {
           created_at?: string | null
           delegated_vendor_id?: string | null
           description?: string | null
+          email_message_id?: string | null
           estimated_hours?: number | null
           estimated_resolution_date?: string | null
           id?: string
@@ -2325,6 +2486,7 @@ export type Database = {
           created_at?: string | null
           delegated_vendor_id?: string | null
           description?: string | null
+          email_message_id?: string | null
           estimated_hours?: number | null
           estimated_resolution_date?: string | null
           id?: string
@@ -3589,6 +3751,7 @@ export type Database = {
           o_id: string
         }[]
       }
+      get_ckob_api_key: { Args: { p_org_id: string }; Returns: string }
       get_fleet_analytics: {
         Args: { p_org_id: string }
         Returns: {
