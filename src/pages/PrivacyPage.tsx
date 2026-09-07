@@ -1,47 +1,80 @@
-
-import { Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { ArrowLeft } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 
 const PrivacyPage = () => {
+  const [content, setContent] = useState<string | null>(null)
+  const [version, setVersion] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const loadPrivacy = async () => {
+      try {
+        const { data, error: fetchError } = await supabase
+          .from('legal_documents')
+          .select('version, content, published_at')
+          .eq('document_type', 'privacy')
+          .eq('is_active', true)
+          .single()
+
+        if (fetchError) {
+          console.error('[PrivacyPage] fetch error:', fetchError)
+          setError('Nie udało się załadować polityki prywatności.')
+          return
+        }
+
+        if (data) {
+          setVersion(data.version)
+          setContent(data.content)
+        } else {
+          setError('Brak opublikowanej polityki prywatności.')
+        }
+      } catch (e) {
+        console.error('[PrivacyPage] error:', e)
+        setError('Wystąpił błąd podczas ładowania polityki prywatności.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    void loadPrivacy()
+  }, [])
+
   return (
     <div className="min-h-screen bg-[#1a1f2c] text-white p-8">
       <div className="max-w-3xl mx-auto">
         <Link to="/signup" className="flex items-center text-gray-400 hover:text-white mb-8 transition-colors">
           <ArrowLeft className="w-4 h-4 mr-2" /> Powrót do rejestracji
         </Link>
-        
-        <h1 className="text-3xl font-bold mb-6">Polityka Prywatności i RODO</h1>
-        <p className="text-gray-400 mb-8">Obowiązuje od: 13.01.2026</p>
 
-        <section className="space-y-6 text-gray-300">
-          <div>
-            <h2 className="text-xl font-semibold text-white mb-2">1. Administrator Danych</h2>
-            <p>Administratorem danych osobowych jest DOMIO Sp. z o.o. Kontakt w sprawach ochrony danych możliwy jest drogą elektroniczną.</p>
+        {loading && (
+          <div className="text-center py-12">
+            <p className="text-gray-400">Ładowanie polityki prywatności…</p>
           </div>
+        )}
 
-          <div>
-            <h2 className="text-xl font-semibold text-white mb-2">2. Zakres zbieranych danych</h2>
-            <ul className="list-disc ml-6 space-y-2">
-              <li>Adres e-mail (do logowania i komunikacji).</li>
-              <li>Adres IP (zbierany podczas rejestracji dla celów audytu i bezpieczeństwa).</li>
-              <li>Dane personelu: Imię, nazwisko, numer telefonu (wprowadzane ręcznie przez Administratorów Firm).</li>
-              <li>Dane lokalizacji (w tym współrzędne geograficzne pobierane przez Google Places API).</li>
-            </ul>
+        {error && (
+          <div className="bg-red-900/50 border border-red-700 text-red-200 px-6 py-4 rounded-lg">
+            {error}
           </div>
+        )}
 
-          <div>
-            <h2 className="text-xl font-semibold text-white mb-2">3. Cel przetwarzania</h2>
-            <p>Dane są przetwarzane w celu świadczenia usługi SaaS, zapewnienia bezpieczeństwa (logi systemowe) oraz, za opcjonalną zgodą, w celach marketingowych.</p>
-          </div>
-
-          <div>
-            <h2 className="text-xl font-semibold text-white mb-2">4. Prawa Użytkownika</h2>
-            <p>Każdy użytkownik ma prawo do wglądu w swoje dane, ich poprawiania, usunięcia ("prawo do bycia zapomnianym") oraz wycofania zgód marketingowych w dowolnym momencie.</p>
-          </div>
-        </section>
+        {!loading && !error && content && (
+          <>
+            <h1 className="text-3xl font-bold mb-6">Polityka Prywatności i RODO</h1>
+            {version && (
+              <p className="text-gray-400 mb-8">Wersja {version}</p>
+            )}
+            <section className="space-y-6 text-gray-300 whitespace-pre-wrap">
+              {content}
+            </section>
+          </>
+        )}
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default PrivacyPage;
+export default PrivacyPage

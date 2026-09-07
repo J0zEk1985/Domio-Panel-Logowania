@@ -62,6 +62,13 @@ export default function LegalAdminTab() {
     return newest?.version ?? null
   }, [documentHistory])
 
+  const useAsBase = (row: LegalDocumentRow) => {
+    setNewVersion(row.version)
+    setNewContent(row.content)
+    setIsRequired(row.is_required)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const publishNewVersion = async () => {
     setPublishError(null)
     const version = newVersion.trim()
@@ -278,7 +285,7 @@ export default function LegalAdminTab() {
                     )}
                   </td>
                   <td className="p-4 text-right">
-                    {!row.is_active && (
+                    <div className="flex items-center justify-end gap-3">
                       <button
                         type="button"
                         onClick={() => setPreviewRow(row)}
@@ -287,7 +294,15 @@ export default function LegalAdminTab() {
                         <Eye className="h-4 w-4" />
                         Podgląd
                       </button>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => useAsBase(row)}
+                        className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground hover:underline text-sm font-medium"
+                        title="Skopiuj treść i wersję do formularza"
+                      >
+                        Użyj jako bazę
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 ))}
@@ -300,7 +315,11 @@ export default function LegalAdminTab() {
       </section>
 
       {previewRow && (
-        <LegalDocumentPreviewModal row={previewRow} onClose={() => setPreviewRow(null)} />
+        <LegalDocumentPreviewModal 
+          row={previewRow} 
+          onClose={() => setPreviewRow(null)}
+          onUseAsBase={useAsBase}
+        />
       )}
     </div>
   )

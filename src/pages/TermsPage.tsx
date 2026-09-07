@@ -1,44 +1,80 @@
-
-import { Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { ArrowLeft } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 
 const TermsPage = () => {
+  const [content, setContent] = useState<string | null>(null)
+  const [version, setVersion] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const loadTerms = async () => {
+      try {
+        const { data, error: fetchError } = await supabase
+          .from('legal_documents')
+          .select('version, content, published_at')
+          .eq('document_type', 'terms')
+          .eq('is_active', true)
+          .single()
+
+        if (fetchError) {
+          console.error('[TermsPage] fetch error:', fetchError)
+          setError('Nie udało się załadować regulaminu.')
+          return
+        }
+
+        if (data) {
+          setVersion(data.version)
+          setContent(data.content)
+        } else {
+          setError('Brak opublikowanego regulaminu.')
+        }
+      } catch (e) {
+        console.error('[TermsPage] error:', e)
+        setError('Wystąpił błąd podczas ładowania regulaminu.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    void loadTerms()
+  }, [])
+
   return (
     <div className="min-h-screen bg-[#1a1f2c] text-white p-8">
       <div className="max-w-3xl mx-auto">
         <Link to="/signup" className="flex items-center text-gray-400 hover:text-white mb-8 transition-colors">
           <ArrowLeft className="w-4 h-4 mr-2" /> Powrót do rejestracji
         </Link>
-        
-        <h1 className="text-3xl font-bold mb-6">Regulamin świadczenia usług drogą elektroniczną</h1>
-        <p className="text-gray-400 mb-8">Ostatnia aktualizacja: 13.01.2026 (Wersja 1.0)</p>
 
-        <section className="space-y-6 text-gray-300">
-          <div>
-            <h2 className="text-xl font-semibold text-white mb-2">1. Postanowienia ogólne</h2>
-            <p>Właścicielem serwisu DOMIO jest spółka DOMIO Sp. z o.o. z siedzibą w Polsce. Serwis działa w modelu SaaS (Software as a Service) i służy do zarządzania organizacjami, personelem oraz lokalizacjami.</p>
+        {loading && (
+          <div className="text-center py-12">
+            <p className="text-gray-400">Ładowanie regulaminu…</p>
           </div>
+        )}
 
-          <div>
-            <h2 className="text-xl font-semibold text-white mb-2">2. Rodzaje i zakres usług</h2>
-            <p>DOMIO świadczy usługi w zakresie udostępniania platformy DOMIO do autentykacji, zarządzania subskrypcjami aplikacji dedykowanych (np. sprzątanie, technika) oraz prowadzenia centralnego rejestru lokalizacji.</p>
+        {error && (
+          <div className="bg-red-900/50 border border-red-700 text-red-200 px-6 py-4 rounded-lg">
+            {error}
           </div>
+        )}
 
-          <div>
-            <h2 className="text-xl font-semibold text-white mb-2">3. Rejestracja i Bezpieczeństwo</h2>
-            <p>Użytkownik zobowiązany jest do podania prawdziwych danych podczas rejestracji. System odnotowuje adres IP oraz wersję zaakceptowanego regulaminu w celu audytu bezpieczeństwa.</p>
-            <p className="mt-2 font-semibold">Izolacja danych:</p>
-            <p>Każda organizacja posiada osobną strukturę danych, co gwarantuje poufność informacji między różnymi subskrybentami serwisu.</p>
-          </div>
-
-          <div>
-            <h2 className="text-xl font-semibold text-white mb-2">4. Odpowiedzialność</h2>
-            <p>DOMIO Sp. z o.o. dokłada wszelkich starań w celu zapewnienia ciągłości działania serwisu i monitorowania zasobów. Firma nie odpowiada za treść danych wprowadzanych przez użytkowników końcowych.</p>
-          </div>
-        </section>
+        {!loading && !error && content && (
+          <>
+            <h1 className="text-3xl font-bold mb-6">Regulamin świadczenia usług drogą elektroniczną</h1>
+            {version && (
+              <p className="text-gray-400 mb-8">Wersja {version}</p>
+            )}
+            <section className="space-y-6 text-gray-300 whitespace-pre-wrap">
+              {content}
+            </section>
+          </>
+        )}
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default TermsPage;
+export default TermsPage
