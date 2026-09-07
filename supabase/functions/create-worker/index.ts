@@ -38,21 +38,57 @@ function json(corsHeaders, status, body) {
   })
 }
 
-async function ensureMembership(client, userId, orgId) {
+function resolveMembershipRole(raw) {
+  const allowed = new Set([
+    'cleaner',
+    'technik',
+    'koordynator',
+    'wlasciciel',
+    'coordinator',
+    'owner',
+    'admin',
+    'administrator',
+    'manager',
+  ])
+  const role = String(raw ?? '').trim().toLowerCase()
+  if (allowed.has(role)) return role
+  return 'cleaner'
+}
+
+async function ensureMembership(client, userId, orgId, extras) {
+  const role = resolveMembershipRole(extras && extras.role)
+  const specializations = Array.isArray(extras && extras.specializations) ? extras.specializations : []
+  const requireGps = extras && extras.requireGpsValidation === true
   const { data: existing } = await client
     .from('memberships')
     .select('id')
     .eq('user_id', userId)
     .eq('org_id', orgId)
     .maybeSingle()
-  if (existing?.id) return { error: null }
-  const { error } = await client
-    .from('memberships')
-    .insert({ user_id: userId, org_id: orgId, role: 'cleaner' })
+  if (existing?.id) {
+    const { error } = await client
+      .from('memberships')
+      .update({
+        role,
+        is_active: true,
+        specializations,
+        require_gps_validation: requireGps,
+      })
+      .eq('id', existing.id)
+    return { error: error ?? null }
+  }
+  const { error } = await client.from('memberships').insert({
+    user_id: userId,
+    org_id: orgId,
+    role,
+    is_active: true,
+    specializations,
+    require_gps_validation: requireGps,
+  })
   return { error: error ?? null }
 }
 
-Deno.serve(async (req) => {
+Deno.serve(async function (req) {
   const corsHeaders = getCorsHeaders(req)
   console.log('[create-worker]', req.method, req.headers.get('Origin'))
 
@@ -126,7 +162,7 @@ Deno.serve(async (req) => {
       'wlasciciel',
       'właściciel',
     ])
-    const canManageWorkers = (callerMemberships ?? []).some((m) => {
+    const canManageWorkers = (callerMemberships ?? []).some(function (m) {
       const role = String(m.role ?? '').trim().toLowerCase()
       return m.is_active !== false && managementRoles.has(role)
     })
@@ -136,6 +172,14 @@ Deno.serve(async (req) => {
 
     const technicalEmail = `${String(body.slug).toLowerCase()}@staff.domio.com.pl`
     const fullName = `${body.firstName} ${body.lastName}`
+
+    const membershipExtras = {
+      role: body.membershipRole || body.role || 'cleaner',
+      specializations: body.specializations,
+      requireGpsValidation: body.requireGpsValidation === true || body.require_gps_validation === true,
+    }
+    const phone =
+      typeof body.phone === 'string' && body.phone.trim() ? body.phone.trim() : null
 
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: technicalEmail,
@@ -183,7 +227,7 @@ Deno.serve(async (req) => {
             details: 'Could not retrieve user ID from auth',
           })
         }
-        const existingUser = usersList?.users?.find((u) => u.email === technicalEmail)
+        const existingUser = usersList?.users?.find(function (u) { return u.email === technicalEmail })
         if (!existingUser?.id) {
           return json(corsHeaders, 500, {
             error: 'User exists but user ID not found',
@@ -204,7 +248,7 @@ Deno.serve(async (req) => {
       if (!profileTypeError && existingProfileFull?.account_type) {
         const at = String(existingProfileFull.account_type).toLowerCase()
         if (at === 'standard' || at === 'hub') {
-          const { error: membErr } = await ensureMembership(supabaseAdmin, userId, body.orgId)
+          const { error: membErr } = await ensureMembership(supabaseAdmin, userId, body.orgId, membershipExtras)
           if (membErr) {
             return json(corsHeaders, 500, { error: 'Failed to ensure membership', details: membErr.message })
           }
@@ -228,6 +272,7 @@ Deno.serve(async (req) => {
         id: userId,
         full_name: fullName,
         email: technicalEmail,
+        phone,
         accepted_terms_at: acceptedTermsAt,
         terms_version: '1.0',
         account_type: 'simplified',
@@ -247,7 +292,7 @@ Deno.serve(async (req) => {
       return json(corsHeaders, 500, { error: 'Failed to create user profile', details: profileError.message })
     }
 
-    const { error: membErr } = await ensureMembership(supabaseAdmin, userId, body.orgId)
+    const { error: membErr } = await ensureMembership(supabaseAdmin, userId, body.orgId, membershipExtras)
     if (membErr) {
       if (isNewUser) await supabaseAdmin.auth.admin.deleteUser(userId)
       return json(corsHeaders, 500, { error: 'Failed to create membership', details: membErr.message })
