@@ -2,31 +2,43 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 
 /**
  * Edge Function: create-worker
- * Creates simplified worker accounts in the Panel-Logowania database
- * 
  * Accepts: slug, pin, firstName, lastName, orgId
  * Returns: userId, email
+ * Gateway verify_jwt stays false. Caller JWT is required inside.
  */
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': 'https://cleaning.domio.com.pl',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+const ALLOWED_ORIGINS = [
+  'https://cleaning.domio.com.pl',
+  'https://test.cleaning.domio.com.pl',
+  'https://serwis.domio.com.pl',
+  'https://test.serwis.domio.com.pl',
+  'https://admin.domio.com.pl',
+  'https://test.admin.domio.com.pl',
+  'http://localhost:5173',
+  'http://localhost:8080',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:8080',
+]
+
+function getCorsHeaders(req) {
+  const origin = req.headers.get('Origin') ?? ''
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Vary': 'Origin',
+  }
 }
 
-interface CreateWorkerRequest {
-  slug: string
-  pin: string
-  firstName: string
-  lastName: string
-  orgId: string
+function json(corsHeaders, status, body) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
 }
 
-async function ensureMembership(
-  client: ReturnType<typeof createClient>,
-  userId: string,
-  orgId: string
-): Promise<{ error: { message: string } | null }> {
+async function ensureMembership(client, userId, orgId) {
   const { data: existing } = await client
     .from('memberships')
     .select('id')
@@ -41,115 +53,50 @@ async function ensureMembership(
 }
 
 Deno.serve(async (req) => {
-  // CRITICAL: Logowanie na samym początku funkcji - sprawdza, czy zapytanie dotarło do serwera
-  console.log('[create-worker] ===== REQUEST RECEIVED =====')
-  console.log('[create-worker] Method:', req.method)
-  console.log('[create-worker] URL:', req.url)
-  console.log('[create-worker] Headers:', Object.fromEntries(req.headers.entries()))
-  
-  // Handle CORS preflight
+  const corsHeaders = getCorsHeaders(req)
+  console.log('[create-worker]', req.method, req.headers.get('Origin'))
+
   if (req.method === 'OPTIONS') {
-    console.log('[create-worker] CORS preflight request - returning OK')
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Get environment variables
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-
-    // CRITICAL: Szczegółowa walidacja Service Role Key
-    if (!supabaseUrl) {
-      console.error('[create-worker] Missing SUPABASE_URL environment variable')
-      return new Response(
-        JSON.stringify({ error: 'Missing SUPABASE_URL' }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+    if (!supabaseUrl || !serviceRoleKey) {
+      return json(corsHeaders, 500, { error: 'Missing server configuration' })
     }
 
-    if (!serviceRoleKey) {
-      console.error('[create-worker] Missing SUPABASE_SERVICE_ROLE_KEY environment variable')
-      return new Response(
-        JSON.stringify({ error: 'Missing Service Role Key' }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
-    }
-
-    console.log('[create-worker] Environment variables loaded successfully')
-    console.log('[create-worker] Supabase URL:', supabaseUrl)
-    console.log('[create-worker] Service Role Key present:', serviceRoleKey ? 'YES' : 'NO')
-
-    // Create admin client with service role key
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
+      auth: { autoRefreshToken: false, persistSession: false },
     })
 
     const authHeader = req.headers.get('Authorization')
     if (!authHeader?.toLowerCase().startsWith('bearer ')) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return json(corsHeaders, 401, { error: 'Unauthorized' })
     }
     const callerJwt = authHeader.slice(7).trim()
     const { data: callerData, error: callerError } = await supabaseAdmin.auth.getUser(callerJwt)
     if (callerError || !callerData.user?.id) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return json(corsHeaders, 401, { error: 'Unauthorized' })
     }
 
-    // Parse request body
-    let body: CreateWorkerRequest
+    let body
     try {
       body = await req.json()
-      console.log('[create-worker] Request body parsed successfully:', {
-        slug: body.slug,
-        firstName: body.firstName,
-        lastName: body.lastName,
-        orgId: body.orgId,
-        pin: '***' // Nie logujemy PIN-u ze względów bezpieczeństwa
-      })
     } catch (parseError) {
-      console.error('[create-worker] Error parsing request body:', parseError)
-      return new Response(
-        JSON.stringify({ error: 'Invalid request body', details: parseError instanceof Error ? parseError.message : 'Unknown error' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
-    }
-
-    // Validate required fields
-    if (!body.slug || !body.pin || !body.firstName || !body.lastName || !body.orgId) {
-      console.error('[create-worker] Missing required fields:', {
-        hasSlug: !!body.slug,
-        hasPin: !!body.pin,
-        hasFirstName: !!body.firstName,
-        hasLastName: !!body.lastName,
-        hasOrgId: !!body.orgId
+      return json(corsHeaders, 400, {
+        error: 'Invalid request body',
+        details: parseError instanceof Error ? parseError.message : 'Unknown error',
       })
-      return new Response(
-        JSON.stringify({ error: 'Missing required fields: slug, pin, firstName, lastName, orgId' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
     }
 
-    // Validate orgId exists in organizations (before user creation)
+    if (!body.slug || !body.pin || !body.firstName || !body.lastName || !body.orgId) {
+      return json(corsHeaders, 400, {
+        error: 'Missing required fields: slug, pin, firstName, lastName, orgId',
+      })
+    }
+
     const { data: orgRow, error: orgCheckError } = await supabaseAdmin
       .from('organizations')
       .select('id')
@@ -157,45 +104,39 @@ Deno.serve(async (req) => {
       .maybeSingle()
 
     if (orgCheckError) {
-      console.error('[create-worker] Error checking organization:', orgCheckError)
-      return new Response(
-        JSON.stringify({ error: 'Organization lookup failed', details: orgCheckError.message }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return json(corsHeaders, 500, { error: 'Organization lookup failed', details: orgCheckError.message })
     }
     if (!orgRow?.id) {
-      console.error('[create-worker] Organization not found:', body.orgId)
-      return new Response(
-        JSON.stringify({ error: 'Organization not found', details: 'Invalid orgId' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return json(corsHeaders, 400, { error: 'Organization not found', details: 'Invalid orgId' })
     }
 
-    const { data: callerMembership, error: callerMembershipError } = await supabaseAdmin
+    const { data: callerMemberships, error: callerMembershipError } = await supabaseAdmin
       .from('memberships')
       .select('role, is_active')
       .eq('user_id', callerData.user.id)
       .eq('org_id', body.orgId)
-      .maybeSingle()
 
-    const callerRole = String(callerMembership?.role ?? '').toLowerCase()
-    const callerActive = callerMembership?.is_active !== false
-    const canManageWorkers = ['owner', 'admin', 'coordinator', 'manager'].includes(callerRole)
-    if (callerMembershipError || !callerMembership || !callerActive || !canManageWorkers) {
-      return new Response(
-        JSON.stringify({ error: 'Forbidden' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+    const managementRoles = new Set([
+      'owner',
+      'admin',
+      'administrator',
+      'coordinator',
+      'koordynator',
+      'manager',
+      'wlasciciel',
+      'właściciel',
+    ])
+    const canManageWorkers = (callerMemberships ?? []).some((m) => {
+      const role = String(m.role ?? '').trim().toLowerCase()
+      return m.is_active !== false && managementRoles.has(role)
+    })
+    if (callerMembershipError || !canManageWorkers) {
+      return json(corsHeaders, 403, { error: 'Forbidden' })
     }
 
-    // Generate technical email
-    const technicalEmail = `${body.slug.toLowerCase()}@staff.domio.com.pl`
+    const technicalEmail = `${String(body.slug).toLowerCase()}@staff.domio.com.pl`
     const fullName = `${body.firstName} ${body.lastName}`
 
-    console.log(`[create-worker] Creating worker account for: ${technicalEmail}`)
-    console.log(`[create-worker] Full name: ${fullName}`)
-
-    // Attempt to create auth user (idempotent approach)
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: technicalEmail,
       password: body.pin,
@@ -207,170 +148,87 @@ Deno.serve(async (req) => {
       },
     })
 
-    let userId: string
-    let isNewUser = false // Track if we just created the user (for cleanup on error)
+    let userId
+    let isNewUser = false
 
-    // Handle existing user case (idempotent behavior)
-    // CRITICAL: Jeśli admin.createUser zwróci błąd o istniejącym mailu, nie przerywaj funkcji
-    // Pobierz id istniejącego użytkownika z tabeli profiles
     if (authError) {
       const errorMessage = authError.message?.toLowerCase() || ''
-      
-      // Check if user already exists (common error messages)
-      if (
+      const exists =
         errorMessage.includes('already registered') ||
         errorMessage.includes('user already exists') ||
         errorMessage.includes('already exists') ||
         errorMessage.includes('email address is already registered')
-      ) {
-        console.log(`[create-worker] User ${technicalEmail} already exists, fetching ID from profiles (idempotent behavior)`)
-        
-        // Fetch existing user ID from profiles table
-        const { data: existingProfile, error: profileFetchError } = await supabaseAdmin
-          .from('profiles')
-          .select('id')
-          .eq('email', technicalEmail)
-          .maybeSingle()
+      if (!exists) {
+        return json(corsHeaders, 500, { error: 'Failed to create user account', details: authError.message })
+      }
 
-        if (profileFetchError) {
-          console.error('[create-worker] Error fetching existing profile:', profileFetchError)
-          return new Response(
-            JSON.stringify({ 
-              error: 'User exists but profile lookup failed',
-              details: profileFetchError?.message || 'Profile lookup failed'
-            }),
-            {
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            }
-          )
+      const { data: existingProfile, error: profileFetchError } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('email', technicalEmail)
+        .maybeSingle()
+
+      if (profileFetchError) {
+        return json(corsHeaders, 500, {
+          error: 'User exists but profile lookup failed',
+          details: profileFetchError?.message || 'Profile lookup failed',
+        })
+      }
+
+      if (!existingProfile?.id) {
+        const { data: usersList, error: listError } = await supabaseAdmin.auth.admin.listUsers()
+        if (listError) {
+          return json(corsHeaders, 500, {
+            error: 'User exists but profile lookup failed',
+            details: 'Could not retrieve user ID from auth',
+          })
         }
-
-        if (!existingProfile?.id) {
-          // User exists in auth but profile not found - try to get ID from auth.users
-          console.log('[create-worker] Profile not found, attempting to fetch user ID from auth.users by email')
-          
-          const { data: usersList, error: listError } = await supabaseAdmin.auth.admin.listUsers()
-          
-          if (listError) {
-            console.error('[create-worker] Error listing users:', listError)
-            return new Response(
-              JSON.stringify({ 
-                error: 'User exists but profile lookup failed',
-                details: 'Could not retrieve user ID from auth'
-              }),
-              {
-                status: 500,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-              }
-            )
-          }
-          
-          const existingUser = usersList?.users?.find(u => u.email === technicalEmail)
-          
-          if (!existingUser?.id) {
-            console.error('[create-worker] User exists in auth but could not find user ID')
-            return new Response(
-              JSON.stringify({ 
-                error: 'User exists but user ID not found',
-                details: 'Profile record missing for existing user'
-              }),
-              {
-                status: 500,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-              }
-            )
-          }
-          
-          userId = existingUser.id
-          console.log(`[create-worker] Found existing user ID from auth.users: ${userId} (profile will be created by upsert)`)
-        } else {
-          userId = existingProfile.id
-          console.log(`[create-worker] Found existing user ID from profiles: ${userId}`)
+        const existingUser = usersList?.users?.find((u) => u.email === technicalEmail)
+        if (!existingUser?.id) {
+          return json(corsHeaders, 500, {
+            error: 'User exists but user ID not found',
+            details: 'Profile record missing for existing user',
+          })
         }
-        
-        isNewUser = false // User already existed
-
-        // Protect standard/hub accounts: do not overwrite profile or preferences; only ensure membership
-        const { data: existingProfileFull, error: profileTypeError } = await supabaseAdmin
-          .from('profiles')
-          .select('id, account_type')
-          .eq('id', userId)
-          .maybeSingle()
-
-        if (!profileTypeError && existingProfileFull?.account_type) {
-          const at = String(existingProfileFull.account_type).toLowerCase()
-          if (at === 'standard' || at === 'hub') {
-            console.log(`[create-worker] Existing user has account_type=${existingProfileFull.account_type}; skipping profile upsert, ensuring membership only`)
-            const { error: membErr } = await ensureMembership(supabaseAdmin, userId, body.orgId)
-            if (membErr) {
-              console.error('[create-worker] Error ensuring membership for standard user:', membErr)
-              return new Response(
-                JSON.stringify({ error: 'Failed to ensure membership', details: membErr.message }),
-                { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-              )
-            }
-            return new Response(
-              JSON.stringify({ userId, email: technicalEmail, message: 'Membership ensured for existing standard account' }),
-              { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            )
-          }
-        }
-        
-        console.log(`[create-worker] Continuing with upsert for existing user: ${userId} (idempotent behavior)`)
+        userId = existingUser.id
       } else {
-        // Other error - not related to existing user
-        console.error('[create-worker] Error creating auth user:', authError)
-        return new Response(
-          JSON.stringify({ 
-            error: 'Failed to create user account',
-            details: authError.message 
-          }),
-          {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        userId = existingProfile.id
+      }
+
+      const { data: existingProfileFull, error: profileTypeError } = await supabaseAdmin
+        .from('profiles')
+        .select('id, account_type')
+        .eq('id', userId)
+        .maybeSingle()
+
+      if (!profileTypeError && existingProfileFull?.account_type) {
+        const at = String(existingProfileFull.account_type).toLowerCase()
+        if (at === 'standard' || at === 'hub') {
+          const { error: membErr } = await ensureMembership(supabaseAdmin, userId, body.orgId)
+          if (membErr) {
+            return json(corsHeaders, 500, { error: 'Failed to ensure membership', details: membErr.message })
           }
-        )
+          return json(corsHeaders, 200, {
+            userId,
+            email: technicalEmail,
+            message: 'Membership ensured for existing standard account',
+          })
+        }
       }
     } else if (!authUser?.user) {
-      console.error('[create-worker] Auth user creation returned no user data')
-      return new Response(
-        JSON.stringify({ 
-          error: 'Failed to create user account',
-          details: 'No user data returned'
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      return json(corsHeaders, 500, { error: 'Failed to create user account', details: 'No user data returned' })
     } else {
       userId = authUser.user.id
-      isNewUser = true // User was just created
-      console.log(`[create-worker] Auth user created successfully: ${userId}`)
+      isNewUser = true
     }
 
-    // Upsert profile in Panel-Logowania database
-    // CRITICAL: Gwarancja NOT NULL - upewnij się, że funkcja przy każdym wywołaniu wysyła accepted_terms_at
-    // Format ISO String dla spójności z VPS
-    // To zapobiegnie błędom 500 z Postgresa (NOT NULL constraint violation)
     const acceptedTermsAt = new Date().toISOString()
-    console.log(`[create-worker] Upserting profile with accepted_terms_at: ${acceptedTermsAt} (NOT NULL guarantee)`)
-    console.log(`[create-worker] Profile data:`, {
-      userId,
-      fullName,
-      technicalEmail,
-      acceptedTermsAt,
-      isNewUser,
-    })
-    
-    const { error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .upsert({
+    const { error: profileError } = await supabaseAdmin.from('profiles').upsert(
+      {
         id: userId,
         full_name: fullName,
         email: technicalEmail,
-        accepted_terms_at: acceptedTermsAt, // CRITICAL: Zawsze ustawione - NOT NULL constraint
+        accepted_terms_at: acceptedTermsAt,
         terms_version: '1.0',
         account_type: 'simplified',
         is_first_login: true,
@@ -380,80 +238,30 @@ Deno.serve(async (req) => {
           orgId: body.orgId,
           is_simplified: true,
         },
-      }, {
-        onConflict: 'id',
-      })
+      },
+      { onConflict: 'id' },
+    )
 
     if (profileError) {
-      console.error('[create-worker] Error upserting profile:', profileError)
-      
-      // Only attempt to clean up auth user if we just created it (idempotent behavior)
-      if (isNewUser) {
-        await supabaseAdmin.auth.admin.deleteUser(userId)
-        console.log(`[create-worker] Cleaned up auth user ${userId} due to profile creation failure`)
-      }
-
-      return new Response(
-        JSON.stringify({ 
-          error: 'Failed to create user profile',
-          details: profileError.message 
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
+      if (isNewUser) await supabaseAdmin.auth.admin.deleteUser(userId)
+      return json(corsHeaders, 500, { error: 'Failed to create user profile', details: profileError.message })
     }
 
-    // CRITICAL: Always create membership (required for RLS)
     const { error: membErr } = await ensureMembership(supabaseAdmin, userId, body.orgId)
     if (membErr) {
-      console.error('[create-worker] Error ensuring membership:', membErr)
-      if (isNewUser) {
-        await supabaseAdmin.auth.admin.deleteUser(userId)
-        console.log(`[create-worker] Cleaned up auth user ${userId} due to membership failure`)
-      }
-      return new Response(
-        JSON.stringify({ error: 'Failed to create membership', details: membErr.message }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      if (isNewUser) await supabaseAdmin.auth.admin.deleteUser(userId)
+      return json(corsHeaders, 500, { error: 'Failed to create membership', details: membErr.message })
     }
 
-    console.log(`[create-worker] Profile and membership created successfully for user: ${userId}`)
-    console.log(`[create-worker] ===== SUCCESS - RETURNING RESPONSE =====`)
-
-    // Return success response
-    const response = {
+    return json(corsHeaders, 201, {
       userId,
       email: technicalEmail,
       message: 'Worker account created successfully',
-    }
-    
-    console.log('[create-worker] Response data:', { userId, email: technicalEmail })
-    
-    return new Response(
-      JSON.stringify(response),
-      {
-        status: 201,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
-
+    })
   } catch (error) {
-    console.error('[create-worker] ===== UNEXPECTED ERROR =====')
-    console.error('[create-worker] Error type:', error instanceof Error ? error.constructor.name : typeof error)
-    console.error('[create-worker] Error message:', error instanceof Error ? error.message : String(error))
-    console.error('[create-worker] Error stack:', error instanceof Error ? error.stack : 'No stack trace')
-    
-    return new Response(
-      JSON.stringify({ 
-        error: 'Internal server error',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
+    return json(corsHeaders, 500, {
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    })
   }
 })
