@@ -8,6 +8,7 @@ import SignupPage from './pages/SignupPage'
 import DashboardPage from './pages/DashboardPage'
 import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
+import MarketingPage from './pages/MarketingPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
@@ -25,6 +26,7 @@ const PUBLIC_PATHS = new Set([
   '/reset-password',
   '/regulamin',
   '/polityka-prywatnosci',
+  '/zgody-marketingowe',
 ])
 
 function isPublicPath(pathname: string): boolean {
@@ -223,6 +225,7 @@ function App() {
       />
       <Route path="/regulamin" element={<TermsPage />} />
       <Route path="/polityka-prywatnosci" element={<PrivacyPage />} />
+      <Route path="/zgody-marketingowe" element={<MarketingPage />} />
       <Route path="/module/:slug" element={<ModuleDetail />} />
       <Route path="/" element={<LandingPage />} />
     </Routes>

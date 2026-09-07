@@ -207,7 +207,9 @@ export default function SignupPage() {
         ? '/regulamin'
         : doc.document_type === 'privacy'
           ? '/polityka-prywatnosci'
-          : null
+          : doc.document_type === 'marketing'
+            ? '/zgody-marketingowe'
+            : null
 
     if (href) {
       return (
