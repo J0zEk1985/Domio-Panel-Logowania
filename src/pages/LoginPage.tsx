@@ -1,30 +1,7 @@
 import { useState, FormEvent, useEffect, useRef } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-
-const isValidDomioSubdomain = (url: string): boolean => {
-  try {
-    const urlObj = new URL(url)
-    const hostname = urlObj.hostname
-    return hostname === 'domio.com.pl' || hostname.endsWith('.domio.com.pl')
-  } catch {
-    return false
-  }
-}
-
-/** Same-origin SPA paths after login (e.g. /admin). Rejects open redirects. */
-const isSafeInternalReturnPath = (path: string): boolean => {
-  if (!path.startsWith('/') || path.startsWith('//')) return false
-  const [pathname] = path.split('?')
-  return /^\/[a-zA-Z0-9/_-]*$/.test(pathname) && !pathname.includes('..')
-}
-
-const resolvePostLoginTarget = (returnToParam: string | null): string => {
-  if (!returnToParam) return '/dashboard'
-  if (isValidDomioSubdomain(returnToParam)) return returnToParam
-  if (isSafeInternalReturnPath(returnToParam)) return returnToParam
-  return '/dashboard'
-}
+import { navigateToHref, resolveAuthLanding, resolvePostLoginTarget } from '../lib/postLoginRedirect'
 
 /**
  * Hard reset function - completely clears session, cookies, and localStorage
@@ -149,15 +126,15 @@ export default function LoginPage() {
         const userId = userData.user.id
         if (userId && lastRedirectedUserIdRef.current !== userId) {
           const returnToParam = searchParams.get('returnTo') || returnTo
-          const target = resolvePostLoginTarget(returnToParam)
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('is_first_login')
+            .eq('id', userId)
+            .maybeSingle()
+          const landing = resolveAuthLanding(profile?.is_first_login === true, returnToParam)
 
           lastRedirectedUserIdRef.current = userId
-          
-          if (target.startsWith('http')) {
-            window.location.replace(target)
-          } else {
-            navigate(target, { replace: true })
-          }
+          navigateToHref(landing.href, landing.external, navigate)
         } else {
           setIsChecking(false)
         }
@@ -209,7 +186,7 @@ export default function LoginPage() {
       const targetOrgId = searchParams.get('orgId') ?? null
       const { data: profile } = await supabase
         .from('profiles')
-        .select('account_type')
+        .select('account_type, is_first_login')
         .eq('id', userId)
         .maybeSingle()
       const accountType = (profile?.account_type ?? '').toString().toLowerCase()
@@ -233,14 +210,9 @@ export default function LoginPage() {
         }
       }
 
-      // Get returnTo from search params and redirect accordingly
-      const returnTo = searchParams.get('returnTo')
-      const target = resolvePostLoginTarget(returnTo)
-      if (target.startsWith('http')) {
-        window.location.replace(target)
-      } else {
-        navigate(target, { replace: true })
-      }
+      const returnToParam = searchParams.get('returnTo')
+      const landing = resolveAuthLanding(profile?.is_first_login === true, returnToParam)
+      navigateToHref(landing.href, landing.external, navigate)
     } catch (err: unknown) {
       // Translate Supabase errors to Polish messages
       let errorMessage = 'Wystąpił nieoczekiwany błąd podczas logowania.'

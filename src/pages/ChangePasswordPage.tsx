@@ -1,6 +1,7 @@
 import { useState, FormEvent, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { navigateToHref, resolvePostLoginTarget } from '../lib/postLoginRedirect'
 import { validatePassword, validatePIN, isPasswordHistoryValid } from '../lib/validation'
 import ValidationChecklist from '../components/ValidationChecklist'
 
@@ -120,13 +121,8 @@ export default function ChangePasswordPage() {
       setSuccess(true)
 
       // Redirect only after successful database update
-      const returnTo = searchParams.get('returnTo')
-      if (returnTo) {
-        // Use window.location.replace() to force full page reload and prevent back navigation
-        window.location.replace(returnTo)
-      } else {
-        navigate('/dashboard', { replace: true })
-      }
+      const target = resolvePostLoginTarget(searchParams.get('returnTo'))
+      navigateToHref(target, target.startsWith('http'), navigate)
     } catch (err) {
       setError(
         err instanceof Error 

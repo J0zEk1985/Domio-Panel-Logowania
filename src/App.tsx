@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { Toaster } from 'sonner'
 import { supabase } from './lib/supabase'
+import { buildChangePasswordPath } from './lib/postLoginRedirect'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
 import DashboardPage from './pages/DashboardPage'
@@ -90,7 +91,8 @@ function App() {
           const currentPath = window.location.pathname
           // Landing at `/` always stays visible; DashboardPage enforces password change when entering the panel.
           if (currentPath !== '/change-password' && currentPath !== '/') {
-            window.location.href = '/change-password'
+            const returnTo = new URLSearchParams(window.location.search).get('returnTo')
+            window.location.href = buildChangePasswordPath(returnTo)
           }
         }
       } catch (error) {

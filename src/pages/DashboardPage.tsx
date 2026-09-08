@@ -17,6 +17,8 @@ import { supabase } from '../lib/supabase'
 import { Application } from '../types/database'
 import { Navbar } from '../components/landing/Navbar'
 import { Footer } from '../components/landing/Footer'
+import { buildChangePasswordPath, resolvePostLoginTarget } from '../lib/postLoginRedirect'
+import { filterHubApplications } from '../lib/moduleAccess'
 
 /** Map application name/URLs to icons (fallback: LayoutGrid). */
 function iconForApplication(app: Application): LucideIcon {
@@ -92,15 +94,7 @@ export default function DashboardPage() {
           return
         }
 
-        // Check if returnTo parameter exists (must match LoginPage.tsx which uses 'returnTo')
-        const returnTo = searchParams.get('returnTo')
-        if (returnTo) {
-          window.location.href = returnTo
-          return
-        }
-
-        // --- Dispatcher: fleet vs cleaning access ---
-        // 1. Fetch profile (fleet_role, first-login flag)
+        // Check first-login before following returnTo — otherwise Cleaning bounces to Hub without returnTo.
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('fleet_role, is_first_login')
@@ -110,10 +104,24 @@ export default function DashboardPage() {
         if (profileError) {
           console.error('[SSO] Profile fetch error (fleet_role):', profileError.message)
         }
+
+        const returnTo = searchParams.get('returnTo')
         if (profile?.is_first_login === true) {
-          navigate('/change-password')
+          navigate(buildChangePasswordPath(returnTo))
           return
         }
+
+        if (returnTo) {
+          const target = resolvePostLoginTarget(returnTo)
+          if (target.startsWith('http')) {
+            window.location.href = target
+          } else {
+            navigate(target, { replace: true })
+          }
+          return
+        }
+
+        // --- Dispatcher: fleet vs cleaning access ---
         const fleetRole = profile?.fleet_role ?? null
 
         // 2. Fetch memberships (cleaning system roles)
@@ -145,7 +153,12 @@ export default function DashboardPage() {
 
         if (appsError) throw appsError
 
-        setApps(appsData || [])
+        setApps(
+          filterHubApplications(appsData || [], {
+            membershipRoles: (membershipsData ?? []).map((row) => row.role),
+            fleetRole,
+          })
+        )
       } catch (err) {
         // Ignore AbortError from tab suspension
         if (err instanceof Error && err.name === 'AbortError') {
