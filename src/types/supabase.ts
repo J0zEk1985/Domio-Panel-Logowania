@@ -415,6 +415,7 @@ export type Database = {
           serwis_notes: string | null
           snow_removal_rate: number | null
           square_meters: number | null
+          skip_cleaning_issue_approval: boolean
           status: string | null
           ticket_routing_preference: string | null
           validation_config: Json | null
@@ -467,6 +468,7 @@ export type Database = {
           snow_removal_rate?: number | null
           square_meters?: number | null
           status?: string | null
+          skip_cleaning_issue_approval?: boolean
           ticket_routing_preference?: string | null
           validation_config?: Json | null
           visibility_config?: Json | null
@@ -518,6 +520,7 @@ export type Database = {
           snow_removal_rate?: number | null
           square_meters?: number | null
           status?: string | null
+          skip_cleaning_issue_approval?: boolean
           ticket_routing_preference?: string | null
           validation_config?: Json | null
           visibility_config?: Json | null
@@ -2424,8 +2427,9 @@ export type Database = {
           resolution_notes: string | null
           resolved_at: string | null
           scheduled_at: string | null
+          released_from_cleaning_at: string | null
           signed_by: string | null
-          source: string | null
+          source: Database["public"]["Enums"]["issue_source_enum"]
           started_at: string | null
           status: Database["public"]["Enums"]["issue_status_enum"] | null
           total_material_cost: number | null
@@ -2469,8 +2473,9 @@ export type Database = {
           resolution_notes?: string | null
           resolved_at?: string | null
           scheduled_at?: string | null
+          released_from_cleaning_at?: string | null
           signed_by?: string | null
-          source?: string | null
+          source?: Database["public"]["Enums"]["issue_source_enum"]
           started_at?: string | null
           status?: Database["public"]["Enums"]["issue_status_enum"] | null
           total_material_cost?: number | null
@@ -2514,8 +2519,9 @@ export type Database = {
           resolution_notes?: string | null
           resolved_at?: string | null
           scheduled_at?: string | null
+          released_from_cleaning_at?: string | null
           signed_by?: string | null
-          source?: string | null
+          source?: Database["public"]["Enums"]["issue_source_enum"]
           started_at?: string | null
           status?: Database["public"]["Enums"]["issue_status_enum"] | null
           total_material_cost?: number | null
@@ -3781,6 +3787,10 @@ export type Database = {
         }[]
       }
       get_my_org_id_safe: { Args: never; Returns: string }
+      release_cleaning_property_issue: {
+        Args: { p_issue_id: string }
+        Returns: undefined
+      }
       get_my_org_ids: {
         Args: never
         Returns: {
@@ -4548,15 +4558,26 @@ export type Database = {
         | "co_lpg_detectors"
         | "other"
       issue_priority_enum: "low" | "medium" | "high" | "critical"
+      issue_source_enum:
+        | "cleaning"
+        | "admin_ui"
+        | "dispatcher"
+        | "serwis"
+        | "tenant_qr"
+        | "public_qr"
+        | "email_ai"
+        | "manual"
       issue_status_enum:
         | "new"
         | "open"
         | "pending_admin_approval"
+        | "pending_cleaning_review"
         | "in_progress"
         | "waiting_for_parts"
         | "delegated"
         | "resolved"
         | "rejected"
+        | "cancelled"
       policy_scope_enum: "maj─ůtkowe" | "oc_ogolne" | "oc_zarzadu"
       priority_level: "low" | "medium" | "high" | "emergency"
       property_contract_type:
@@ -4746,15 +4767,27 @@ export const Constants = {
         "other",
       ],
       issue_priority_enum: ["low", "medium", "high", "critical"],
+      issue_source_enum: [
+        "cleaning",
+        "admin_ui",
+        "dispatcher",
+        "serwis",
+        "tenant_qr",
+        "public_qr",
+        "email_ai",
+        "manual",
+      ],
       issue_status_enum: [
         "new",
         "open",
         "pending_admin_approval",
+        "pending_cleaning_review",
         "in_progress",
         "waiting_for_parts",
         "delegated",
         "resolved",
         "rejected",
+        "cancelled",
       ],
       policy_scope_enum: ["maj─ůtkowe", "oc_ogolne", "oc_zarzadu"],
       priority_level: ["low", "medium", "high", "emergency"],
