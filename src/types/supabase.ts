@@ -1390,18 +1390,18 @@ export type Database = {
           created_at: string | null
           expires_at: string | null
           id: string
-          location_id: string | null
+          location_id: string
           unit_number: string | null
-          user_id: string | null
+          user_id: string
         }
         Insert: {
           access_type?: string | null
           created_at?: string | null
           expires_at?: string | null
           id?: string
-          location_id?: string | null
+          location_id: string
           unit_number?: string | null
-          user_id?: string | null
+          user_id: string
         }
         Update: {
           access_type?: string | null
