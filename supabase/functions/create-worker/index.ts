@@ -38,6 +38,56 @@ function json(corsHeaders, status, body) {
   })
 }
 
+function buildSlug(firstName, lastName) {
+  const normalize = (s) =>
+    String(s || '')
+      .toLowerCase()
+      .replace(/ą/g, 'a')
+      .replace(/ć/g, 'c')
+      .replace(/ę/g, 'e')
+      .replace(/ł/g, 'l')
+      .replace(/ń/g, 'n')
+      .replace(/ó/g, 'o')
+      .replace(/ś/g, 's')
+      .replace(/ź|ż/g, 'z')
+      .replace(/[^a-z0-9]+/g, '')
+  const initial = normalize(firstName)[0] || ''
+  const lastPart = normalize(lastName)
+  return initial && lastPart ? `${initial}.${lastPart}` : ''
+}
+
+function splitFullName(fullName) {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return { firstName: '', lastName: '' }
+  if (parts.length === 1) return { firstName: parts[0], lastName: parts[0] }
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') }
+}
+
+function normalizeCreateWorkerBody(raw) {
+  const orgId = raw.orgId || raw.org_id
+  const pin = raw.pin
+  const fromFull = splitFullName(raw.full_name || raw.fullName)
+  const firstName = String(raw.firstName || raw.first_name || fromFull.firstName || '').trim()
+  const lastName = String(raw.lastName || raw.last_name || fromFull.lastName || '').trim()
+  const slug = String(raw.slug || raw.login || '').trim() || buildSlug(firstName, lastName)
+  return Object.assign({}, raw, { orgId, pin, firstName, lastName, slug })
+}
+
+async function resolveUniqueSlug(client, baseSlug) {
+  const normalized =
+    String(baseSlug || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9.]/g, '')
+      .replace(/^\.+|\.+$/g, '') || 'user'
+  for (let n = 0; n < 100; n++) {
+    const candidate = n === 0 ? normalized : `${normalized}${n}`
+    const { data, error } = await client.rpc('check_slug_available', { p_slug: candidate })
+    if (error) return `${normalized}${Math.floor(Math.random() * 9000) + 1000}`
+    if (data === true) return candidate
+  }
+  return `${normalized}${Date.now().toString().slice(-4)}`
+}
+
 function resolveMembershipRole(raw) {
   const allowed = new Set([
     'cleaner',
@@ -127,6 +177,8 @@ Deno.serve(async function (req) {
       })
     }
 
+    body = normalizeCreateWorkerBody(body)
+
     if (!body.slug || !body.pin || !body.firstName || !body.lastName || !body.orgId) {
       return json(corsHeaders, 400, {
         error: 'Missing required fields: slug, pin, firstName, lastName, orgId',
@@ -145,6 +197,8 @@ Deno.serve(async function (req) {
     if (!orgRow?.id) {
       return json(corsHeaders, 400, { error: 'Organization not found', details: 'Invalid orgId' })
     }
+
+    body.slug = await resolveUniqueSlug(supabaseAdmin, body.slug)
 
     const { data: callerMemberships, error: callerMembershipError } = await supabaseAdmin
       .from('memberships')
@@ -255,6 +309,7 @@ Deno.serve(async function (req) {
           return json(corsHeaders, 200, {
             userId,
             email: technicalEmail,
+            login: String(body.slug).toLowerCase(),
             message: 'Membership ensured for existing standard account',
           })
         }
@@ -299,8 +354,10 @@ Deno.serve(async function (req) {
     }
 
     return json(corsHeaders, 201, {
+      success: true,
       userId,
       email: technicalEmail,
+      login: String(body.slug).toLowerCase(),
       message: 'Worker account created successfully',
     })
   } catch (error) {
