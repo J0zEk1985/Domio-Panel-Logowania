@@ -3791,6 +3791,10 @@ export type Database = {
         Args: { p_issue_id: string }
         Returns: undefined
       }
+      resolve_cleaning_released_property_issue: {
+        Args: { p_issue_id: string }
+        Returns: undefined
+      }
       get_my_org_ids: {
         Args: never
         Returns: {
