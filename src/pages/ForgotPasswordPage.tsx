@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { AuthContactSlot } from '../components/landing/ContactDetails'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -43,8 +44,8 @@ export default function ForgotPasswordPage() {
   const returnTo = searchParams.get('returnTo')
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white px-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-white px-4 py-8">
+      <div className="w-full max-w-md space-y-6">
         <div className="bg-white rounded-lg shadow-lg p-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Resetowanie hasła</h1>
           <p className="text-gray-600 mb-8">Podaj swój adres e-mail, aby otrzymać link do resetowania hasła</p>
@@ -104,6 +105,7 @@ export default function ForgotPasswordPage() {
             </Link>
           </p>
         </div>
+        <AuthContactSlot />
       </div>
     </div>
   )

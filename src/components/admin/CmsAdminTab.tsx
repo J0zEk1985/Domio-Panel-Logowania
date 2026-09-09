@@ -3,6 +3,7 @@ import { Loader2, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '../../lib/supabase'
 import { inputClass } from './pricingAdminUtils'
+import { PLATFORM_CONTACT_KEY_SET } from '../../lib/platformContact'
 
 const SHORT_TEXT_MAX_LEN = 100
 
@@ -68,7 +69,9 @@ export default function CmsAdminTab() {
         return
       }
 
-      const list = (data as PageContentRow[]) ?? []
+      const list = ((data as PageContentRow[]) ?? []).filter(
+        (row) => !PLATFORM_CONTACT_KEY_SET.has(row.content_key),
+      )
       setRows(list)
       setEditedContent(Object.fromEntries(list.map((r) => [r.content_key, r.content_value])))
     } catch (e) {
@@ -175,7 +178,9 @@ export default function CmsAdminTab() {
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-muted-foreground text-sm">Brak rekordów w tabeli page_content.</p>
+        <p className="text-muted-foreground text-sm">
+          Brak treści marketingowych do edycji. Dane kontaktowe edytujesz w zakładce Ustawienia.
+        </p>
       ) : (
         <div className="space-y-8">
           {sectionOrder.map((sectionName) => {

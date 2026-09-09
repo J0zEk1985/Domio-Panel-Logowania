@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   MonitorSmartphone,
   Server,
+  Settings,
   Shield,
   Tag,
   Users,
@@ -24,6 +25,7 @@ import SubscriptionsAdminTab from '../components/admin/SubscriptionsAdminTab'
 import CmsAdminTab from '../components/admin/CmsAdminTab'
 import PartnerOffersAdminTab from '../components/admin/PartnerOffersAdminTab'
 import EntityVerificationAdminTab from '../components/admin/EntityVerificationAdminTab'
+import PlatformContactAdminCard from '../components/admin/PlatformContactAdminCard'
 
 type ProfileRow = {
   id: string
@@ -53,7 +55,7 @@ function formatInt(n: number | null | undefined): string {
   return n.toLocaleString('pl-PL')
 }
 
-type AdminTab = 'dashboard' | 'users' | 'subscriptions' | 'pricing' | 'partner-offers' | 'legal' | 'cms' | 'entity-verification'
+type AdminTab = 'dashboard' | 'users' | 'subscriptions' | 'pricing' | 'partner-offers' | 'legal' | 'cms' | 'settings' | 'entity-verification'
 
 const sidebarNav: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Pulpit', icon: LayoutDashboard },
@@ -64,6 +66,7 @@ const sidebarNav: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[
   { id: 'partner-offers', label: 'Oferty Partnerskie', icon: Handshake },
   { id: 'legal', label: 'Dokumenty prawne', icon: FileText },
   { id: 'cms', label: 'Treści strony (CMS)', icon: MonitorSmartphone },
+  { id: 'settings', label: 'Ustawienia', icon: Settings },
 ]
 
 export default function AdminPage() {
@@ -332,6 +335,8 @@ export default function AdminPage() {
             {activeTab === 'legal' && <LegalAdminTab />}
 
             {activeTab === 'cms' && <CmsAdminTab />}
+
+            {activeTab === 'settings' && <PlatformContactAdminCard />}
           </main>
         </div>
       </div>
