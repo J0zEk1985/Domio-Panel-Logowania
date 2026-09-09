@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, Link, Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Layers, CheckCircle2 } from 'lucide-react'
 import { Navbar } from '../components/landing/Navbar'
 import { Footer } from '../components/landing/Footer'
-import { getModuleBySlug } from '../data/modules'
+import { audienceHeading, getModuleBySlug } from '../data/modules'
 import { PricingSection, type PricingPlan } from '../components/module/PricingSection'
 import { CheckoutDrawer } from '../components/module/CheckoutDrawer'
 
@@ -23,6 +23,10 @@ export default function ModuleDetail() {
     setSelectedYearly(yearly)
     setCheckoutOpen(true)
   }
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [slug])
 
   if (!mod) return <Navigate to="/" replace />
   if (mod.comingSoon) return <Navigate to="/" replace />
@@ -134,9 +138,7 @@ export default function ModuleDetail() {
                       <div className={`p-3 rounded-xl bg-muted ${mod.color} w-fit mb-4`}>
                         <UcIcon className="h-7 w-7" />
                       </div>
-                      <h3 className="font-display text-2xl font-bold mb-4">
-                        Dla {uc.audience === 'Mieszkańcy' ? 'Mieszkańców' : uc.audience}
-                      </h3>
+                      <h3 className="font-display text-2xl font-bold mb-4">Dla {audienceHeading(uc.audience)}</h3>
                       <ul className="space-y-3">
                         {uc.benefits.map((b) => (
                           <li key={b} className="flex items-start gap-2 text-muted-foreground">

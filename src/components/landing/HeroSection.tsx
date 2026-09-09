@@ -3,9 +3,9 @@ import { ArrowDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import domioLogo from '../../../lovable-design/src/assets/domio-logo.jpg'
 
-const FALLBACK_HEADLINE = 'Zarządzaj swoją firmą z DOMIO'
+const FALLBACK_HEADLINE = 'Porządek w operacjach. Spokój w budynku.'
 const FALLBACK_SUBHEADLINE =
-  'Jeden system do wszystkiego: mieszkania, biura i cała Twoja firma w jednym miejscu.'
+  'Sprzątanie, serwis, flota i administracja dla firm. Komunikaty, usterki i tablica sąsiedzka dla mieszkańców.'
 const FALLBACK_PRIMARY_CTA = 'Rozpocznij darmowy test'
 
 type HeroSectionProps = {

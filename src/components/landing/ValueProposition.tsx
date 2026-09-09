@@ -26,7 +26,7 @@ export function ValueProposition({ aboutText }: ValuePropositionProps) {
             <div className="relative">
               <h3 className="font-display text-2xl font-bold mb-3">Dla Mieszkańców</h3>
               <p className="text-muted-foreground mb-6">
-                Zarządzaj swoim mieszkaniem, zgłaszaj usterki, rezerwuj usługi - wszystko w jednej aplikacji. Prostota, która oszczędza Twój czas.
+                W aplikacji DOMIO Home czytasz komunikaty administracji, zgłaszasz usterki i śledzisz ich status. Korzystasz też z tablicy sąsiedzkiej i ofert lokalnych partnerów.
               </p>
             </div>
           </article>
@@ -36,7 +36,7 @@ export function ValueProposition({ aboutText }: ValuePropositionProps) {
             <div className="relative">
               <h3 className="font-display text-2xl font-bold mb-3">Dla Firm</h3>
               <p className="text-muted-foreground mb-6">
-                Skaluj swoje usługi, zarządzaj zespołami i klientami. Gotowe moduły biznesowe, które rosną razem z Tobą.
+                Prowadź sprzątanie, serwis i flotę w dedykowanych modułach: zespoły, zgłoszenia, protokoły i pojazdy. Zarządcy w Administracji obsługują budynki, triage zgłoszeń i komunikację z mieszkańcami.
               </p>
             </div>
           </article>

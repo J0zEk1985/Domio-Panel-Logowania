@@ -1,50 +1,10 @@
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import { Building2, CarFront, Sparkles, Wrench } from 'lucide-react'
-
-const modules: {
-  slug: string
-  name: string
-  description: string
-  cta: string
-  icon: typeof Sparkles
-  iconClass: string
-}[] = [
-  {
-    slug: 'cleaning',
-    name: 'Domio Cleaning',
-    description: 'Planowanie i kontrola usług porządkowych dla nieruchomości, osiedli i klientów biznesowych.',
-    cta: 'Więcej o Cleaning',
-    icon: Sparkles,
-    iconClass: 'text-primary',
-  },
-  {
-    slug: 'flota',
-    name: 'Domio Flota',
-    description: 'Zarządzanie pojazdami, kierowcami i harmonogramami serwisowymi bez rozproszonych narzędzi.',
-    cta: 'Zarządzaj Flotą',
-    icon: CarFront,
-    iconClass: 'text-accent',
-  },
-  {
-    slug: 'serwis',
-    name: 'Domio Serwis',
-    description: 'Obsługa zgłoszeń, usterek i zadań technicznych z pełną historią i statusem realizacji.',
-    cta: 'Poznaj Serwis',
-    icon: Wrench,
-    iconClass: 'text-primary',
-  },
-  {
-    slug: 'biznes',
-    name: 'Domio Biznes',
-    description: 'Rozwijaj obsługę klientów, automatyzuj procesy i skaluj operacje w jednej platformie.',
-    cta: 'Sprawdź Moduł',
-    icon: Building2,
-    iconClass: 'text-accent',
-  },
-]
+import { getLandingModules } from '../../data/modules'
 
 export function BentoGrid() {
+  const modules = getLandingModules()
+
   return (
     <section id="domio-modules" className="py-24 px-4">
       <div className="container mx-auto max-w-6xl">
@@ -76,14 +36,14 @@ export function BentoGrid() {
                   className="block bento-card hover:shadow-2xl hover:shadow-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-2xl"
                 >
                   <div className="flex items-start gap-4">
-                    <div className={`p-3 rounded-xl bg-muted ${mod.iconClass}`}>
+                    <div className={`p-3 rounded-xl bg-muted ${mod.color}`}>
                       <Icon className="h-6 w-6" />
                     </div>
                     <div className="flex-1">
                       <h3 className="font-display font-semibold text-lg mb-2">{mod.name}</h3>
-                      <p className="text-sm text-muted-foreground mb-5">{mod.description}</p>
+                      <p className="text-sm text-muted-foreground mb-5">{mod.shortDescription ?? mod.description}</p>
                       <span className="inline-block rounded-md border border-border px-3 py-2 text-sm group-hover:bg-muted/60 transition-colors">
-                        {mod.cta}
+                        {mod.cta ?? 'Dowiedz się więcej'}
                       </span>
                     </div>
                   </div>

@@ -88,9 +88,11 @@ function matchesModuleApplication(appName: string, moduleName: string, moduleSlu
   const slugHints: Record<string, string[]> = {
     cleaning: ['cleaning'],
     flota: ['flota'],
+    serwis: ['serwis'],
+    administracja: ['administrac', 'nieruchomo'],
+    home: ['home', 'mieszkan'],
     nieruchomosci: ['nieruchomo'],
     biznes: ['biznes'],
-    serwis: ['serwis'],
     bezpieczenstwo: ['bezpiecze'],
     'smart-home': ['smart'],
     eko: ['eko'],

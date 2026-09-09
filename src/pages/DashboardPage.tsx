@@ -5,6 +5,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   Building2,
   Car,
+  Home,
   LayoutGrid,
   ShieldCheck,
   ShoppingCart,
@@ -26,7 +27,8 @@ function iconForApplication(app: Application): LucideIcon {
   if (blob.includes('clean')) return Sparkles
   if (blob.includes('flot') || blob.includes('fleet') || blob.includes('car')) return Car
   if (blob.includes('serwis') || blob.includes('service')) return Wrench
-  if (blob.includes('nieruchom') || blob.includes('biznes') || blob.includes('building')) return Building2
+  if (blob.includes('home') || blob.includes('mieszkan')) return Home
+  if (blob.includes('administr') || blob.includes('nieruchom') || blob.includes('building')) return Building2
   if (blob.includes('bezpiecz') || blob.includes('security') || blob.includes('shield')) return ShieldCheck
   return LayoutGrid
 }

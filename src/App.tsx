@@ -44,6 +44,12 @@ function App() {
   const isPublic = isPublicPath(currentPath)
 
   useEffect(() => {
+    if (currentPath.startsWith('/module/')) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    }
+  }, [currentPath])
+
+  useEffect(() => {
     /** Simplified users must have at least one membership; otherwise signOut and redirect to login. */
     const checkSimplifiedMembership = async (userId: string): Promise<boolean> => {
       try {

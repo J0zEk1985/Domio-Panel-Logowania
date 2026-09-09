@@ -15,11 +15,13 @@ import {
   Fuel,
   Users,
   FileText,
-  Key,
   Home,
-  Zap,
-  Settings,
-  Shield,
+  Warehouse,
+  QrCode,
+  Megaphone,
+  MessageSquare,
+  ClipboardCheck,
+  Package,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -40,8 +42,11 @@ export interface ModuleData {
   name: string
   tagline: string
   description: string
+  shortDescription?: string
+  cta?: string
   icon: LucideIcon
   color: string
+  listedOnLanding?: boolean
   comingSoon?: boolean
   features: ModuleFeature[]
   useCases: ModuleUseCase[]
@@ -51,92 +56,362 @@ export interface ModuleData {
 export const modules: ModuleData[] = [
   {
     slug: 'cleaning',
-    name: 'Cleaning DOMIO',
-    tagline: 'Profesjonalne sprzątanie pod pełną kontrolą.',
+    name: 'Domio Cleaning',
+    tagline: 'Sprzątanie nieruchomości pod pełną kontrolą.',
     description:
-      'Kompleksowe zarządzanie usługami sprzątania dla budynków, przestrzeni wspólnych i mieszkań prywatnych. Automatyzacja harmonogramów, raportowanie w czasie rzeczywistym i pełna transparentność.',
+      'Planuj pracę zespołu, śledź postęp na mapie i rozliczaj godziny — od checklisty na obiekcie po magazyn środków i zgłoszenia usterek.',
+    shortDescription: 'Planowanie i kontrola usług porządkowych: harmonogramy, mapa obiektów, zespół i magazyn.',
+    cta: 'Więcej o Cleaning',
     icon: Sparkles,
     color: 'text-primary',
+    listedOnLanding: true,
     features: [
-      { title: 'Harmonogramy w czasie rzeczywistym', description: 'Automatyczne planowanie zadań z dynamicznym przydzielaniem zespołów.', icon: Calendar },
-      { title: 'Śledzenie postępów', description: 'Monitoruj status każdego zlecenia na żywo z poziomu aplikacji.', icon: MapPin },
-      { title: 'Automatyczne rozliczenia', description: 'Fakturowanie i płatności generowane automatycznie po wykonaniu usługi.', icon: BarChart3 },
-      { title: 'Zarządzanie zadaniami', description: 'Twórz, przydzielaj i zarządzaj zadaniami dla zespołów sprzątających.', icon: ClipboardList },
-      { title: 'Powiadomienia push', description: 'Natychmiastowe alerty o statusie zleceń i zmianach w harmonogramie.', icon: Bell },
-      { title: 'Raporty i analizy', description: 'Szczegółowe raporty efektywności, kosztów i satysfakcji klientów.', icon: FileText },
+      {
+        title: 'Centrum dowodzenia z mapą',
+        description: 'Status obiektów na żywo, alerty i aktywność zespołu w jednym widoku.',
+        icon: MapPin,
+      },
+      {
+        title: 'Harmonogramy SOP i zadania',
+        description: 'Sekcje, personel, dni wolne oraz automatyczne planowanie pracy z wyprzedzeniem.',
+        icon: Calendar,
+      },
+      {
+        title: 'Aplikacja terenowa z checklistą',
+        description: 'Dzisiejsze obiekty, odhaczanie czynności, start i koniec wizyty oraz notatki.',
+        icon: ClipboardList,
+      },
+      {
+        title: 'Weryfikacja obecności',
+        description: 'Check-in i check-out z GPS oraz opcjonalnym kodem QR na obiekcie.',
+        icon: QrCode,
+      },
+      {
+        title: 'Zgłoszenia usterek ze zdjęciem',
+        description: 'Pracownik zgłasza usterkę z terenu; koordynator przekazuje ją dalej, rozwiązuje lub odrzuca.',
+        icon: ClipboardCheck,
+      },
+      {
+        title: 'Magazyn i ewidencja sprzętu',
+        description: 'Katalog środków, zapotrzebowania z obiektów oraz zdawanie i przyjmowanie sprzętu.',
+        icon: Warehouse,
+      },
     ],
     useCases: [
       {
-        audience: 'Mieszkańcy',
-        icon: Home,
+        audience: 'Firmy sprzątające',
+        icon: Building2,
         benefits: [
-          'Zamawiaj sprzątanie jednym kliknięciem',
-          'Śledź postęp usługi w aplikacji',
-          'Oceniaj i dawaj feedback zespołom',
-          'Automatyczne przypomnienia o zaplanowanych usługach',
+          'Widzisz postęp sprzątania na mapie bez dzwonienia do zespołu',
+          'Konfigurujesz budynki, sekcje, pracowników i harmonogramy w jednym miejscu',
+          'Obsługujesz usterki z terenu i zapotrzebowania magazynowe',
+          'Rozliczasz godziny i wypłaty pracowników',
         ],
       },
       {
-        audience: 'Firmy',
-        icon: Building2,
+        audience: 'Pracownicy terenowi',
+        icon: Users,
         benefits: [
-          'Zarządzaj wieloma zespołami i lokalizacjami',
-          'Automatyzuj harmonogramy i rozliczenia',
-          'Analizuj efektywność z dashboardami KPI',
-          'Skaluj operacje bez dodatkowej administracji',
+          'Widzisz tylko przypisane obiekty i zadania na dziś',
+          'Odhaczasz listę czynności i kończysz wizytę',
+          'Potwierdzasz obecność GPS lub QR i zgłaszasz usterkę ze zdjęciem',
+          'Zamawiasz środki i w sezonie rejestrujesz odśnieżanie',
         ],
       },
     ],
     integrations: [
-      'Single Sign-On (SSO) z DOMIO Panel',
-      'Synchronizacja z Serwis DOMIO',
-      'Integracja z Nieruchomości DOMIO',
-      'API do systemów zewnętrznych',
+      'Single Sign-On z Panelem DOMIO',
+      'Usterki przekazywane do Serwis DOMIO',
+      'Wspólny rejestr budynków z Administracją',
+      'Opcjonalny status sprzątania w Domio Home',
     ],
   },
   {
     slug: 'flota',
-    name: 'Flota DOMIO',
-    tagline: 'Inteligentne zarządzanie flotą pojazdów.',
+    name: 'Domio Flota',
+    tagline: 'Pojazdy, kierowcy i koszty w jednym panelu.',
     description:
-      'Pełna kontrola nad flotą pojazdów — od rezerwacji po monitoring GPS w czasie rzeczywistym. Optymalizacja kosztów paliwa, automatyczne raporty i zarządzanie serwisem.',
+      'Rejestr pojazdów, tankowania, terminy przeglądów i ubezpieczeń oraz koszty paliwa i napraw — bez rozproszonych arkuszy.',
+    shortDescription: 'Zarządzanie pojazdami, kierowcami, paliwem i terminami serwisowymi.',
+    cta: 'Zarządzaj Flotą',
     icon: Car,
     color: 'text-accent',
+    listedOnLanding: true,
     features: [
-      { title: 'Monitoring GPS na żywo', description: 'Śledź lokalizację każdego pojazdu w czasie rzeczywistym na mapie.', icon: MapPin },
-      { title: 'System rezerwacji', description: 'Intuicyjny kalendarz rezerwacji pojazdów dla pracowników i mieszkańców.', icon: Calendar },
-      { title: 'Zarządzanie paliwem', description: 'Automatyczne śledzenie zużycia paliwa i optymalizacja kosztów.', icon: Fuel },
-      { title: 'Serwis i konserwacja', description: 'Planowanie przeglądów, historia napraw i alerty o terminach.', icon: Wrench },
-      { title: 'Zarządzanie kierowcami', description: 'Profile kierowców, uprawnienia i historia użytkowania pojazdów.', icon: Users },
-      { title: 'Raporty flotowe', description: 'Kompleksowe raporty kosztów, przebiegów i efektywności floty.', icon: BarChart3 },
+      {
+        title: 'Rejestr pojazdów',
+        description: 'Numery, przebieg, przypisany kierowca oraz terminy przeglądu i ubezpieczenia.',
+        icon: Car,
+      },
+      {
+        title: 'Tankowania',
+        description: 'Logi paliwa z kosztami — kierowca dodaje tankowanie z poziomu aplikacji.',
+        icon: Fuel,
+      },
+      {
+        title: 'Koszty i spalanie',
+        description: 'Podsumowanie wydatków na paliwo i naprawy oraz średnie spalanie w wybranym okresie.',
+        icon: BarChart3,
+      },
+      {
+        title: 'Terminy i alerty',
+        description: 'Przypomnienia o przeglądzie, OC/AC i oponach zbliżających się do deadline’u.',
+        icon: Bell,
+      },
+      {
+        title: 'Dokumenty pojazdu',
+        description: 'Polisa i dowód rejestracyjny dostępne do podglądu w karcie pojazdu.',
+        icon: FileText,
+      },
+      {
+        title: 'Kierowcy',
+        description: 'Przypisanie pojazdu, aktualizacja przebiegu i wgląd we własne terminy oraz dokumenty.',
+        icon: Users,
+      },
+    ],
+    useCases: [
+      {
+        audience: 'Administratorzy floty',
+        icon: Building2,
+        benefits: [
+          'Masz rejestr pojazdów, kierowców i dokumentów w jednym miejscu',
+          'Śledzisz koszty paliwa i napraw w wybranym okresie',
+          'Dostajesz alerty o zbliżających się przeglądach i ubezpieczeniach',
+          'Przypisujesz pojazdy i kontrolujesz przebiegi',
+        ],
+      },
+      {
+        audience: 'Kierowcy',
+        icon: Users,
+        benefits: [
+          'Widzisz przypisany pojazd, terminy i dokumenty',
+          'Dodajesz tankowanie i aktualizujesz przebieg',
+          'Otrzymujesz przypomnienia o przeglądzie i ubezpieczeniu',
+          'Nie potrzebujesz osobnych arkuszy ani maili',
+        ],
+      },
+    ],
+    integrations: [
+      'Single Sign-On z Panelem DOMIO',
+      'Wspólna sesja organizacji DOMIO',
+      'Przechowywanie dokumentów pojazdu',
+      'Szablony powiadomień o terminach',
+    ],
+  },
+  {
+    slug: 'serwis',
+    name: 'Domio Serwis',
+    tagline: 'Zgłoszenia, naprawy i protokoły bez opóźnień.',
+    description:
+      'Jedna skrzynka zgłoszeń z QR, administracji i sprzątania. Dyspozytor przydziela prace, technik raportuje ze zdjęciami, a rozliczenie zamyka protokół.',
+    shortDescription: 'Obsługa zgłoszeń, usterek i zadań technicznych z historią, zdjęciami i protokołem.',
+    cta: 'Poznaj Serwis',
+    icon: Wrench,
+    color: 'text-primary',
+    listedOnLanding: true,
+    features: [
+      {
+        title: 'Skrzynka zgłoszeń',
+        description: 'Kolejka z QR mieszkańca, administracji, sprzątania i dyspozytora — z przypisaniem lub giełdą wewnętrzną.',
+        icon: ClipboardList,
+      },
+      {
+        title: 'Panel technika',
+        description: 'Zlecenia dostępne, aktywne i zakończone; sortowanie m.in. po odległości; raport ze zdjęciami.',
+        icon: Wrench,
+      },
+      {
+        title: 'Mapa budynków i zleceń',
+        description: 'Podgląd aktywnych obiektów i pracy zespołu na mapie.',
+        icon: MapPin,
+      },
+      {
+        title: 'Protokół i rozliczenia',
+        description: 'Protokół PDF, materiały i dopłaty — pod rozliczenie usługi, nie czynszu.',
+        icon: FileText,
+      },
+      {
+        title: 'Przeglądy lokalowe',
+        description: 'Kampanie przeglądów oraz wykonanie w terenie z potwierdzeniem obecności mieszkańca.',
+        icon: ClipboardCheck,
+      },
+      {
+        title: 'Publiczne zgłoszenie QR',
+        description: 'Formularz usterki ze zdjęciami bez logowania, gdy budynek ma włączony dostęp.',
+        icon: QrCode,
+      },
+    ],
+    useCases: [
+      {
+        audience: 'Firmy serwisowe',
+        icon: Building2,
+        benefits: [
+          'Jedna skrzynka zgłoszeń z wielu źródeł',
+          'Mapa, zespół i historia zleceń w jednym panelu',
+          'Protokoły PDF pod rozliczenie wykonanej usługi',
+          'Przeglądy lokalowe planowane i rozliczane w terenie',
+        ],
+      },
+      {
+        audience: 'Technicy',
+        icon: Users,
+        benefits: [
+          'Jasna kolejka dnia i giełda dostępnych zleceń',
+          'Raport naprawy ze zdjęciami i notatką głosową',
+          'Sortowanie zleceń m.in. po odległości',
+          'Weryfikacja GPS przy starcie pracy',
+        ],
+      },
+    ],
+    integrations: [
+      'Single Sign-On z Panelem DOMIO',
+      'Zgłoszenia z Administracji i Cleaning',
+      'Formularz QR i statusy w Domio Home',
+      'Mapy i adresy Google Places',
+    ],
+  },
+  {
+    slug: 'administracja',
+    name: 'Domio Administracja',
+    tagline: 'Wspólnoty, budynki i zgłoszenia w jednym miejscu.',
+    description:
+      'Zarządzaj wspólnotami i nieruchomościami: triage usterek, umowy, przeglądy c-KOB, zadania zespołu oraz komunikaty dla mieszkańców.',
+    shortDescription: 'Zarządzanie wspólnotami i budynkami: zgłoszenia, umowy, przeglądy i komunikacja z mieszkańcami.',
+    cta: 'Poznaj Administrację',
+    icon: Building2,
+    color: 'text-accent',
+    listedOnLanding: true,
+    features: [
+      {
+        title: 'Pulpit zgodności',
+        description: 'Zaległe usterki, pominięte sprzątanie, wygasające przeglądy i umowy oraz alerty weryfikacji podmiotów.',
+        icon: BarChart3,
+      },
+      {
+        title: 'Triage zgłoszeń',
+        description: 'Akceptacja, odrzucenie, przypisanie personelu lub delegacja do partnera — ze zdjęciami.',
+        icon: ClipboardList,
+      },
+      {
+        title: 'Budynki i wspólnoty',
+        description: 'Karty nieruchomości: zespół, zadania, umowy, automatyzacje, QR Serwisu i przeglądy lokalowe.',
+        icon: Building2,
+      },
+      {
+        title: 'Umowy i firmy',
+        description: 'Rejestr umów z kontrahentami oraz dane firm powiązanych z organizacją.',
+        icon: FileText,
+      },
+      {
+        title: 'Przeglądy c-KOB',
+        description: 'Globalny rejestr protokołów oraz synchronizacja z c-KOB.',
+        icon: ClipboardCheck,
+      },
+      {
+        title: 'Tablica ogłoszeń i kiosk',
+        description: 'Publikacja komunikatów dla mieszkańców oraz wyświetlanie na ekranie / portalu zarządu.',
+        icon: Megaphone,
+      },
+    ],
+    useCases: [
+      {
+        audience: 'Zarządcy',
+        icon: Building2,
+        benefits: [
+          'Widzisz ryzyka budynku: usterki, sprzątanie, umowy i przeglądy',
+          'Obsługujesz triage zgłoszeń i delegujesz je do partnerów',
+          'Prowadzisz umowy, zespół i automatyzacje per nieruchomość',
+          'Komunikujesz się z mieszkańcami przez tablicę ogłoszeń',
+        ],
+      },
+      {
+        audience: 'Zespół administracji',
+        icon: Users,
+        benefits: [
+          'Masz wspólny rejestr wspólnot, budynków i zadań',
+          'Szybko tworzysz zgłoszenia i ogłoszenia z terenu',
+          'Korzystasz z QR Serwisu bez osobnego procesu papierowego',
+          'Śledzisz przeglądy i terminy w jednym kalendarzu',
+        ],
+      },
+    ],
+    integrations: [
+      'Single Sign-On z Panelem DOMIO',
+      'Cykl zgłoszeń z Serwis DOMIO',
+      'Statusy sprzątania z Cleaning DOMIO',
+      'Komunikaty e-board w Domio Home',
+    ],
+  },
+  {
+    slug: 'home',
+    name: 'Domio Home',
+    tagline: 'Życie budynku w jednej aplikacji mieszkańca.',
+    description:
+      'Komunikaty administracji, zgłaszanie i śledzenie usterek, tablica sąsiedzka oraz oferty lokalnych partnerów — bez rezerwacji usług i bez panelu czynszowego.',
+    shortDescription: 'Aplikacja mieszkańca: komunikaty, usterki, tablica sąsiedzka i oferty partnerów.',
+    cta: 'Poznaj Home',
+    icon: Home,
+    color: 'text-primary',
+    listedOnLanding: true,
+    features: [
+      {
+        title: 'Pulpit mieszkańca',
+        description: 'Komunikaty administracji, skróty tablicy sąsiedzkiej, ostatnie usterki i przeglądy lokalu.',
+        icon: Home,
+      },
+      {
+        title: 'Zgłoszenia usterek',
+        description: 'Formularz Serwisu oraz lista własnych i widocznych usterek budynku.',
+        icon: Wrench,
+      },
+      {
+        title: 'Tablica sąsiedzka',
+        description: 'Ogłoszenia, pomoc, wydarzenia i oferty z komentarzami.',
+        icon: MessageSquare,
+      },
+      {
+        title: 'Oferty partnerów',
+        description: 'Lokalne promocje z kodem i linkiem zewnętrznym — bez rezerwacji w aplikacji.',
+        icon: Package,
+      },
+      {
+        title: 'Status sprzątania',
+        description: 'Data ostatniego zakończonego sprzątania, gdy zarządca włączy podgląd dla budynku.',
+        icon: Sparkles,
+      },
+      {
+        title: 'Przeglądy lokalu',
+        description: 'Harmonogram przeglądu oraz zgłoszenie obecności „Jestem w domu”.',
+        icon: Calendar,
+      },
     ],
     useCases: [
       {
         audience: 'Mieszkańcy',
         icon: Home,
         benefits: [
-          'Rezerwuj pojazdy wspólnotowe online',
-          'Sprawdzaj dostępność w czasie rzeczywistym',
-          'Automatyczne rozliczenia za użytkowanie',
-          'Historia swoich rezerwacji i przejazdów',
+          'Czytasz komunikaty administracji w jednym miejscu',
+          'Zgłaszasz usterki i śledzisz ich status',
+          'Korzystasz z tablicy sąsiedzkiej i ofert partnerów',
+          'Potwierdzasz obecność przy zaplanowanym przeglądzie lokalu',
         ],
       },
       {
-        audience: 'Firmy',
+        audience: 'Zarządcy',
         icon: Building2,
         benefits: [
-          'Zarządzaj całą flotą z jednego panelu',
-          'Optymalizuj koszty paliwa i serwisu',
-          'Kontroluj uprawnienia i dostęp do pojazdów',
-          'Generuj raporty dla księgowości automatycznie',
+          'Publikujesz komunikaty, które mieszkaniec widzi na pulpicie',
+          'Mieszkańcy zgłaszają usterki bez papieru i maili',
+          'Możesz pokazać status ostatniego sprzątania',
+          'Ułatwiasz obecność przy przeglądach lokali',
         ],
       },
     ],
     integrations: [
-      'Single Sign-On (SSO) z DOMIO Panel',
-      'Synchronizacja z Serwis DOMIO',
-      'Integracja z Bezpieczeństwo DOMIO',
-      'API do systemów telematycznych',
+      'Single Sign-On z Panelem DOMIO',
+      'Zgłoszenia w Serwis DOMIO',
+      'Komunikaty z Administracji DOMIO',
+      'Opcjonalny status sprzątania z Cleaning',
     ],
   },
   {
@@ -145,102 +420,23 @@ export const modules: ModuleData[] = [
     tagline: 'Kompleksowe zarządzanie nieruchomościami.',
     description: 'Kompleksowe zarządzanie nieruchomościami i najemcami.',
     icon: Building2,
-    color: 'text-primary',
-    features: [
-      { title: 'Zarządzanie najemcami', description: 'Kompletna baza danych najemców z historią umów.', icon: Users },
-      { title: 'Rozliczenia czynszu', description: 'Automatyczne generowanie faktur i śledzenie płatności.', icon: BarChart3 },
-      { title: 'Dokumentacja', description: 'Cyfrowe archiwum umów, protokołów i dokumentów.', icon: FileText },
-      { title: 'Kalendarz wydarzeń', description: 'Planowanie spotkań, przeglądów i terminów.', icon: Calendar },
-      { title: 'Kontrola dostępu', description: 'Zarządzanie kluczami i uprawnieniami do budynków.', icon: Key },
-      { title: 'Raporty finansowe', description: 'Szczegółowe analizy przychodów i kosztów nieruchomości.', icon: BarChart3 },
-    ],
-    useCases: [
-      {
-        audience: 'Mieszkańcy',
-        icon: Home,
-        benefits: ['Dostęp do dokumentów online', 'Zgłaszanie usterek', 'Historia płatności', 'Komunikacja z zarządcą'],
-      },
-      {
-        audience: 'Firmy',
-        icon: Building2,
-        benefits: ['Zarządzanie portfolio nieruchomości', 'Automatyzacja rozliczeń', 'Raporty dla inwestorów', 'Optymalizacja kosztów'],
-      },
-    ],
-    integrations: [
-      'Single Sign-On (SSO) z DOMIO Panel',
-      'Synchronizacja z Serwis DOMIO',
-      'Integracja z Cleaning DOMIO',
-      'API do systemów księgowych',
-    ],
+    color: 'text-muted-foreground',
+    comingSoon: true,
+    features: [],
+    useCases: [],
+    integrations: [],
   },
   {
     slug: 'biznes',
     name: 'Domio Biznes',
     tagline: 'Skaluj operacje i obsługę klientów.',
-    description:
-      'Rozwijaj obsługę klientów, automatyzuj procesy i skaluj operacje w jednej platformie — od CRM po analizy.',
+    description: 'Rozwijaj obsługę klientów, automatyzuj procesy i skaluj operacje w jednej platformie.',
     icon: Building2,
-    color: 'text-accent',
-    features: [
-      { title: 'Lejek sprzedażowy', description: 'Śledź leady i konwersje w jednym widoku.', icon: BarChart3 },
-      { title: 'Automatyzacja procesów', description: 'Szablony zadań i przypomnienia dla zespołu.', icon: Zap },
-      { title: 'Baza klientów', description: 'Pełna historia kontaktów i dokumentów.', icon: Users },
-      { title: 'Raporty operacyjne', description: 'KPI i efektywność zespołów w czasie rzeczywistym.', icon: FileText },
-      { title: 'Integracje', description: 'API i eksporty do narzędzi księgowych.', icon: ClipboardList },
-      { title: 'Uprawnienia', description: 'Role i dostęp do danych dla całej organizacji.', icon: Shield },
-    ],
-    useCases: [
-      {
-        audience: 'Mieszkańcy',
-        icon: Home,
-        benefits: ['Dostęp do usług dodatkowych', 'Historia zgłoszeń', 'Powiadomienia o ofertach', 'Kontakt z administracją'],
-      },
-      {
-        audience: 'Firmy',
-        icon: Building2,
-        benefits: ['Zarządzanie portfolio klientów', 'Automatyzacja rozliczeń', 'Raporty dla zarządu', 'Skalowanie bez chaosu'],
-      },
-    ],
-    integrations: [
-      'Single Sign-On (SSO) z DOMIO Panel',
-      'Synchronizacja z Serwis DOMIO',
-      'Integracja z Cleaning DOMIO',
-      'API do systemów księgowych',
-    ],
-  },
-  {
-    slug: 'serwis',
-    name: 'Serwis DOMIO',
-    tagline: 'Zgłoszenia serwisowe bez opóźnień.',
-    description: 'Zgłoszenia serwisowe, naprawy i konserwacja techniczna.',
-    icon: Wrench,
-    color: 'text-accent',
-    features: [
-      { title: 'System ticketów', description: 'Intuicyjne zgłaszanie i śledzenie usterek.', icon: ClipboardList },
-      { title: 'Priorytetyzacja', description: 'Automatyczne nadawanie priorytetów zgłoszeniom.', icon: Zap },
-      { title: 'Przydzielanie techników', description: 'Inteligentne dopasowanie specjalistów do zadań.', icon: Users },
-      { title: 'Historia serwisowa', description: 'Pełna dokumentacja wszystkich napraw i przeglądów.', icon: FileText },
-      { title: 'Powiadomienia statusu', description: 'Aktualizacje w czasie rzeczywistym o postępie napraw.', icon: Bell },
-      { title: 'Raporty techniczne', description: 'Analizy awaryjności i kosztów utrzymania.', icon: BarChart3 },
-    ],
-    useCases: [
-      {
-        audience: 'Mieszkańcy',
-        icon: Home,
-        benefits: ['Szybkie zgłaszanie usterek', 'Śledzenie statusu naprawy', 'Ocena wykonanej pracy', 'Historia zgłoszeń'],
-      },
-      {
-        audience: 'Firmy',
-        icon: Building2,
-        benefits: ['Zarządzanie zespołami serwisowymi', 'Optymalizacja czasu reakcji', 'Analiza kosztów utrzymania', 'Planowanie konserwacji'],
-      },
-    ],
-    integrations: [
-      'Single Sign-On (SSO) z DOMIO Panel',
-      'Synchronizacja z Nieruchomości DOMIO',
-      'Integracja z Cleaning DOMIO',
-      'API do systemów CMMS',
-    ],
+    color: 'text-muted-foreground',
+    comingSoon: true,
+    features: [],
+    useCases: [],
+    integrations: [],
   },
   {
     slug: 'bezpieczenstwo',
@@ -248,33 +444,11 @@ export const modules: ModuleData[] = [
     tagline: 'Kontrola dostępu i monitoring 24/7.',
     description: 'System kontroli dostępu i monitoring bezpieczeństwa.',
     icon: ShieldCheck,
-    color: 'text-primary',
-    features: [
-      { title: 'Kontrola dostępu', description: 'Zarządzanie kartami, kodami i uprawnieniami.', icon: Key },
-      { title: 'Monitoring wideo', description: 'Integracja z systemami CCTV i podgląd na żywo.', icon: Shield },
-      { title: 'Alarmy i alerty', description: 'Natychmiastowe powiadomienia o zdarzeniach.', icon: Bell },
-      { title: 'Logi dostępu', description: 'Pełna historia wejść i wyjść.', icon: FileText },
-      { title: 'Zarządzanie uprawnieniami', description: 'Granularne ustawienia dostępu per użytkownik.', icon: Settings },
-      { title: 'Raporty bezpieczeństwa', description: 'Analizy incydentów i statystyki dostępu.', icon: BarChart3 },
-    ],
-    useCases: [
-      {
-        audience: 'Mieszkańcy',
-        icon: Home,
-        benefits: ['Cyfrowy klucz w telefonie', 'Historia dostępu', 'Zarządzanie gośćmi', 'Powiadomienia o wejściach'],
-      },
-      {
-        audience: 'Firmy',
-        icon: Building2,
-        benefits: ['Centralne zarządzanie dostępem', 'Integracja z CCTV', 'Audyt bezpieczeństwa', 'Raportowanie incydentów'],
-      },
-    ],
-    integrations: [
-      'Single Sign-On (SSO) z DOMIO Panel',
-      'Synchronizacja z Smart Home DOMIO',
-      'Integracja z Nieruchomości DOMIO',
-      'API do systemów SKD',
-    ],
+    color: 'text-muted-foreground',
+    comingSoon: true,
+    features: [],
+    useCases: [],
+    integrations: [],
   },
   {
     slug: 'smart-home',
@@ -316,4 +490,24 @@ export const modules: ModuleData[] = [
 
 export function getModuleBySlug(slug: string): ModuleData | undefined {
   return modules.find((m) => m.slug === slug)
+}
+
+export function getLandingModules(): ModuleData[] {
+  return modules.filter((m) => m.listedOnLanding)
+}
+
+export function audienceHeading(audience: string): string {
+  const map: Record<string, string> = {
+    Mieszkańcy: 'Mieszkańców',
+    Firmy: 'Firm',
+    Zarządcy: 'Zarządców',
+    Technicy: 'Techników',
+    Kierowcy: 'Kierowców',
+    'Firmy sprzątające': 'Firm sprzątających',
+    'Firmy serwisowe': 'Firm serwisowych',
+    'Pracownicy terenowi': 'Pracowników terenowych',
+    'Administratorzy floty': 'Administratorów floty',
+    'Zespół administracji': 'Zespołu administracji',
+  }
+  return map[audience] ?? audience
 }
