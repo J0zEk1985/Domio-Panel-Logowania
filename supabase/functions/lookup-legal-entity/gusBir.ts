@@ -23,9 +23,21 @@ export type GusPreview = {
   endedAt: string | null
 }
 
+/** Public GUS BIR test key from the official instruction. Production key: GUS_BIR_KEY. */
+const GUS_BIR_PUBLIC_TEST_KEY = 'abcde12345abcde12345'
+
+function birEnv(): 'test' | 'prod' {
+  const explicit = (Deno.env.get('GUS_BIR_ENV') ?? '').toLowerCase()
+  if (explicit === 'test' || explicit === 'prod') return explicit
+  return Deno.env.get('GUS_BIR_KEY')?.trim() ? 'prod' : 'test'
+}
+
+function birKey(): string {
+  return Deno.env.get('GUS_BIR_KEY')?.trim() || GUS_BIR_PUBLIC_TEST_KEY
+}
+
 function endpoint(): string {
-  const env = (Deno.env.get('GUS_BIR_ENV') ?? 'prod').toLowerCase()
-  if (env === 'test') {
+  if (birEnv() === 'test') {
     return 'https://wyszukiwarkaregontest.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc'
   }
   return 'https://wyszukiwarkaregon.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc'
@@ -146,10 +158,7 @@ function toPreview(searchXml: string, reportXml: string | null): GusPreview | nu
 }
 
 export async function fetchGusByNip(nip: string): Promise<{ preview: GusPreview | null; suggestedKind: ReturnType<typeof mapKind> }> {
-  const key = Deno.env.get('GUS_BIR_KEY')
-  if (!key) {
-    throw new Error('GUS_NOT_CONFIGURED')
-  }
+  const key = birKey()
 
   const loginXml = await soapCall(
     'Zaloguj',
