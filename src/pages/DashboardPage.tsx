@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -13,22 +13,25 @@ import {
   Wrench,
   Zap,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
 import { Application } from '../types/database'
 import { Navbar } from '../components/landing/Navbar'
 import { Footer } from '../components/landing/Footer'
-import { buildChangePasswordPath, resolvePostLoginTarget } from '../lib/postLoginRedirect'
+import { DashboardModuleCard } from '../components/dashboard/DashboardModuleCard'
+import { ModulePlanDialog } from '../components/dashboard/ModulePlanDialog'
 import {
-  filterAppsByOrgAccess,
-  filterHubApplications,
   applicationMatchesModuleSlug,
-  isSubscriptionCurrent,
   catalogModuleForApplication,
   sortApplicationsByCatalog,
 } from '../lib/moduleAccess'
 import { getLandingModules } from '../data/modules'
+import { useDashboardApps } from '../hooks/useDashboardApps'
+import {
+  currentPlanForApp,
+  isOrgSubscriptionActive,
+  type OrgSubscriptionView,
+} from '../lib/orgBilling'
+import { planPriceLabel } from '../lib/pricingDisplay'
 
-/** Map application name/URLs to icons (fallback: LayoutGrid). */
 function iconForApplication(app: Application): LucideIcon {
   const catalogIcon = catalogModuleForApplication(app)?.icon
   if (catalogIcon) return catalogIcon
@@ -63,13 +66,23 @@ const statusLabel: Record<'free' | 'paid', string> = {
 }
 
 export default function DashboardPage() {
-  const [apps, setApps] = useState<Application[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [noAdminBanner, setNoAdminBanner] = useState(false)
+  const [planDialogApp, setPlanDialogApp] = useState<Application | null>(null)
   const navigate = useNavigate()
   const location = useLocation()
-  const [searchParams] = useSearchParams()
+  const {
+    apps,
+    setApps,
+    allProductApps,
+    loading,
+    error,
+    isPlatformAdmin,
+    billingOrgId,
+    canManageBilling,
+    subsByAppId,
+    setSubsByAppId,
+    plansByAppId,
+  } = useDashboardApps()
 
   useEffect(() => {
     const st = location.state as { noAdminAccess?: boolean } | undefined
@@ -79,121 +92,6 @@ export default function DashboardPage() {
     }
   }, [location.pathname, location.state, navigate])
 
-  useEffect(() => {
-    const loadUserApps = async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-
-        if (!user) {
-          navigate('/login')
-          return
-        }
-
-        // Check first-login before following returnTo — otherwise Cleaning bounces to Hub without returnTo.
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('fleet_role, is_first_login, platform_role')
-          .eq('id', user.id)
-          .maybeSingle()
-
-        if (profileError) {
-          console.error('[SSO] Profile fetch error (fleet_role):', profileError.message)
-        }
-
-        const returnTo = searchParams.get('returnTo')
-        if (profile?.is_first_login === true) {
-          navigate(buildChangePasswordPath(returnTo))
-          return
-        }
-
-        if (returnTo) {
-          const target = resolvePostLoginTarget(returnTo)
-          if (target.startsWith('http')) {
-            window.location.href = target
-          } else {
-            navigate(target, { replace: true })
-          }
-          return
-        }
-
-        // --- Dispatcher: fleet vs cleaning access ---
-        const fleetRole = profile?.fleet_role ?? null
-
-        // 2. Fetch memberships (cleaning system roles)
-        const { data: membershipsData, error: membershipsError } = await supabase
-          .from('memberships')
-          .select('role')
-          .eq('user_id', user.id)
-
-        if (membershipsError) {
-          console.error('[SSO] Memberships fetch error:', membershipsError.message)
-        }
-        const membershipCount = membershipsData?.length ?? 0
-
-        // 3. Dispatcher condition
-        const hasFleetAccess = fleetRole === 'admin' || fleetRole === 'driver'
-        const hasCleaningAccess = membershipCount > 0
-
-        if (hasFleetAccess && !hasCleaningAccess) {
-          window.location.href = 'https://flota.domio.com.pl'
-          return
-        }
-
-        // 4. Fetch applications (only when not redirected)
-        const { data: appsData, error: appsError } = await supabase
-          .from('applications')
-          .select('*')
-          .eq('is_active', true)
-          .order('name', { ascending: true })
-
-        if (appsError) throw appsError
-
-        const { data: subsData, error: subsError } = await supabase
-          .from('org_subscriptions')
-          .select('app_id, status, expires_at')
-
-        if (subsError) {
-          console.error('[SSO] org_subscriptions:', subsError.message)
-        }
-
-        const subscribedAppIds = new Set(
-          (subsData ?? [])
-            .filter((row) => isSubscriptionCurrent(row.status, row.expires_at))
-            .map((row) => row.app_id),
-        )
-
-        const isPlatformAdmin = (profile?.platform_role ?? '').toString().toLowerCase() === 'admin'
-        const visibleApps = filterAppsByOrgAccess(appsData || [], {
-          isPlatformAdmin,
-          subscribedAppIds,
-        })
-
-        setApps(
-          sortApplicationsByCatalog(
-            filterHubApplications(visibleApps, {
-              membershipRoles: (membershipsData ?? []).map((row) => row.role),
-              fleetRole,
-            }),
-          ),
-        )
-      } catch (err) {
-        // Ignore AbortError from tab suspension
-        if (err instanceof Error && err.name === 'AbortError') {
-          console.log('[DashboardPage] Request aborted (tab suspended)')
-        } else {
-          console.error('Error loading apps:', err)
-          setError(err instanceof Error ? err.message : 'Wystąpił błąd podczas ładowania aplikacji')
-        }
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadUserApps()
-  }, [navigate, searchParams])
-
   const handleAppClick = (app: Application) => {
     if (app.domain_url) {
       window.location.href = app.domain_url
@@ -202,9 +100,48 @@ export default function DashboardPage() {
     }
   }
 
-  const extraModules = getLandingModules().filter(
-    (mod) => !apps.some((app) => applicationMatchesModuleSlug(app, mod.slug)),
+  const extraModules = useMemo(
+    () =>
+      getLandingModules()
+        .map((mod) => ({
+          mod,
+          app: allProductApps.find((row) => applicationMatchesModuleSlug(row, mod.slug)) ?? null,
+        }))
+        .filter(
+          ({ app, mod }) =>
+            !apps.some((visible) => applicationMatchesModuleSlug(visible, mod.slug) || visible.id === app?.id),
+        ),
+    [allProductApps, apps],
   )
+
+  const planSummaryFor = (app: Application): string | null => {
+    if (app.is_free) return 'Plan: bezpłatny'
+    const sub = subsByAppId.get(app.id) ?? null
+    const plans = plansByAppId.get(app.id) ?? []
+    if (!isOrgSubscriptionActive(sub)) return 'Brak aktywnego planu'
+    const plan = currentPlanForApp(plans, sub)
+    if (!plan) return 'Subskrypcja aktywna'
+    return `Plan ${plan.name} · ${planPriceLabel(plan, sub?.billing_interval === 'yearly')}`
+  }
+
+  const applySubscriptionChange = (next: OrgSubscriptionView) => {
+    setSubsByAppId((prev) => {
+      const map = new Map(prev)
+      map.set(next.app_id, next)
+      return map
+    })
+    const active = isOrgSubscriptionActive(next)
+    if (active) {
+      const product = allProductApps.find((row) => row.id === next.app_id)
+      if (product) {
+        setApps((prev) => (prev.some((row) => row.id === product.id) ? prev : sortApplicationsByCatalog([...prev, product])))
+      }
+      return
+    }
+    if (!isPlatformAdmin) {
+      setApps((prev) => prev.filter((row) => row.id !== next.app_id))
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -262,35 +199,24 @@ export default function DashboardPage() {
                   const catalog = catalogModuleForApplication(app)
                   const Icon = iconForApplication(app)
                   const tier: 'free' | 'paid' = app.is_free ? 'free' : 'paid'
+                  const canOpenPlan = Boolean(billingOrgId) && !app.is_free
                   return (
                     <motion.div
                       key={app.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleAppClick(app)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          handleAppClick(app)
-                        }
-                      }}
                       whileHover={{ y: -6 }}
                       transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-                      className="bento-card cursor-pointer text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className={`p-2.5 rounded-xl bg-muted ${catalog?.color ?? 'text-primary'}`}>
-                          <Icon className="h-5 w-5" aria-hidden />
-                        </div>
-                        <span
-                          className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${statusBadgeClass[tier]}`}
-                        >
-                          {statusLabel[tier]}
-                        </span>
-                      </div>
-                      <h3 className="font-display font-semibold mb-1">{displayApplicationName(app)}</h3>
-                      <p className="text-sm text-muted-foreground">{displayApplicationDescription(app)}</p>
-                      <span className="mt-4 inline-flex text-sm font-medium text-primary">Otwórz →</span>
+                      <DashboardModuleCard
+                        catalog={catalog}
+                        Icon={Icon}
+                        title={displayApplicationName(app)}
+                        description={displayApplicationDescription(app)}
+                        badgeLabel={statusLabel[tier]}
+                        badgeClass={statusBadgeClass[tier]}
+                        planSummary={planSummaryFor(app)}
+                        onOpen={() => handleAppClick(app)}
+                        onManagePlan={canOpenPlan ? () => setPlanDialogApp(app) : undefined}
+                      />
                     </motion.div>
                   )
                 })}
@@ -309,7 +235,7 @@ export default function DashboardPage() {
                 Więcej modułów
               </h2>
               <div className="grid sm:grid-cols-2 gap-4">
-                {extraModules.map((mod) => {
+                {extraModules.map(({ mod, app }) => {
                   const Icon = mod.icon
                   return (
                     <div key={mod.slug} className="bento-card relative overflow-hidden">
@@ -320,12 +246,24 @@ export default function DashboardPage() {
                         <div className="flex-1 min-w-0">
                           <h3 className="font-display font-semibold mb-1">{mod.name}</h3>
                           <p className="text-sm text-muted-foreground mb-3">{mod.shortDescription ?? mod.description}</p>
-                          <Link
-                            to={`/module/${mod.slug}`}
-                            className="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-medium hover:bg-muted/60"
-                          >
-                            Zobacz plany
-                          </Link>
+                          <div className="flex flex-wrap gap-2">
+                            {app && billingOrgId ? (
+                              <button
+                                type="button"
+                                onClick={() => setPlanDialogApp(app)}
+                                className="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-medium hover:bg-muted/60"
+                              >
+                                Wybierz plan
+                              </button>
+                            ) : (
+                              <Link
+                                to={`/module/${mod.slug}`}
+                                className="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-medium hover:bg-muted/60"
+                              >
+                                Zobacz plany
+                              </Link>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -336,6 +274,19 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {planDialogApp && billingOrgId && (
+        <ModulePlanDialog
+          appName={displayApplicationName(planDialogApp)}
+          appId={planDialogApp.id}
+          orgId={billingOrgId}
+          canManage={canManageBilling}
+          subscription={subsByAppId.get(planDialogApp.id) ?? null}
+          plans={plansByAppId.get(planDialogApp.id) ?? []}
+          onClose={() => setPlanDialogApp(null)}
+          onChanged={applySubscriptionChange}
+        />
+      )}
 
       <Footer />
     </div>

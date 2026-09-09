@@ -1773,6 +1773,8 @@ export type Database = {
       org_subscriptions: {
         Row: {
           app_id: string
+          billing_interval: string | null
+          cancelled_at: string | null
           created_at: string | null
           expires_at: string | null
           id: string
@@ -1782,6 +1784,8 @@ export type Database = {
         }
         Insert: {
           app_id: string
+          billing_interval?: string | null
+          cancelled_at?: string | null
           created_at?: string | null
           expires_at?: string | null
           id?: string
@@ -1791,6 +1795,8 @@ export type Database = {
         }
         Update: {
           app_id?: string
+          billing_interval?: string | null
+          cancelled_at?: string | null
           created_at?: string | null
           expires_at?: string | null
           id?: string
@@ -3832,6 +3838,19 @@ export type Database = {
       has_staff_access_safe: {
         Args: { target_location_id: string }
         Returns: boolean
+      }
+      activate_org_subscription_plan: {
+        Args: {
+          p_org_id: string
+          p_app_id: string
+          p_plan_id: string
+          p_billing_interval: string
+        }
+        Returns: Database["public"]["Tables"]["org_subscriptions"]["Row"]
+      }
+      cancel_org_subscription: {
+        Args: { p_org_id: string; p_app_id: string }
+        Returns: Database["public"]["Tables"]["org_subscriptions"]["Row"]
       }
       is_admin_safe: { Args: { target_org_id: string }; Returns: boolean }
       is_management_role: { Args: { target_org_id: string }; Returns: boolean }
