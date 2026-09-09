@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
+import { useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -10,7 +10,6 @@ import {
   ShieldCheck,
   ShoppingCart,
   Sparkles,
-  TrendingUp,
   Wrench,
   Zap,
 } from 'lucide-react'
@@ -19,7 +18,8 @@ import { Application } from '../types/database'
 import { Navbar } from '../components/landing/Navbar'
 import { Footer } from '../components/landing/Footer'
 import { buildChangePasswordPath, resolvePostLoginTarget } from '../lib/postLoginRedirect'
-import { filterHubApplications } from '../lib/moduleAccess'
+import { filterAppsByOrgAccess, filterHubApplications, applicationMatchesModuleSlug, isSubscriptionCurrent } from '../lib/moduleAccess'
+import { getLandingModules } from '../data/modules'
 
 /** Map application name/URLs to icons (fallback: LayoutGrid). */
 function iconForApplication(app: Application): LucideIcon {
@@ -42,30 +42,6 @@ const statusLabel: Record<'free' | 'paid', string> = {
   free: 'Darmowy',
   paid: 'Aktywny',
 }
-
-interface MarketplaceModule {
-  name: string
-  icon: LucideIcon
-  price: string
-  description: string
-  suggestion?: string
-}
-
-const marketplaceModules: MarketplaceModule[] = [
-  {
-    name: 'Flota DOMIO',
-    icon: Car,
-    price: '49 zł/mies.',
-    description: 'Zarządzanie flotą pojazdów',
-    suggestion: 'Skoro korzystasz z Cleaning, wypróbuj Flotę!',
-  },
-  {
-    name: 'Serwis DOMIO',
-    icon: Wrench,
-    price: '39 zł/mies.',
-    description: 'Zgłoszenia serwisowe i naprawy',
-  },
-]
 
 export default function DashboardPage() {
   const [apps, setApps] = useState<Application[]>([])
@@ -99,7 +75,7 @@ export default function DashboardPage() {
         // Check first-login before following returnTo — otherwise Cleaning bounces to Hub without returnTo.
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('fleet_role, is_first_login')
+          .select('fleet_role, is_first_login, platform_role')
           .eq('id', user.id)
           .maybeSingle()
 
@@ -155,8 +131,28 @@ export default function DashboardPage() {
 
         if (appsError) throw appsError
 
+        const { data: subsData, error: subsError } = await supabase
+          .from('org_subscriptions')
+          .select('app_id, status, expires_at')
+
+        if (subsError) {
+          console.error('[SSO] org_subscriptions:', subsError.message)
+        }
+
+        const subscribedAppIds = new Set(
+          (subsData ?? [])
+            .filter((row) => isSubscriptionCurrent(row.status, row.expires_at))
+            .map((row) => row.app_id),
+        )
+
+        const isPlatformAdmin = (profile?.platform_role ?? '').toString().toLowerCase() === 'admin'
+        const visibleApps = filterAppsByOrgAccess(appsData || [], {
+          isPlatformAdmin,
+          subscribedAppIds,
+        })
+
         setApps(
-          filterHubApplications(appsData || [], {
+          filterHubApplications(visibleApps, {
             membershipRoles: (membershipsData ?? []).map((row) => row.role),
             fleetRole,
           })
@@ -184,6 +180,10 @@ export default function DashboardPage() {
       window.location.href = app.api_url
     }
   }
+
+  const extraModules = getLandingModules().filter(
+    (mod) => !apps.some((app) => applicationMatchesModuleSlug(app, mod.slug)),
+  )
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -278,7 +278,7 @@ export default function DashboardPage() {
             )}
           </motion.div>
 
-          {!loading && (
+          {!loading && extraModules.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -286,37 +286,31 @@ export default function DashboardPage() {
             >
               <h2 className="font-display text-xl font-semibold mb-4 flex items-center gap-2">
                 <ShoppingCart className="h-5 w-5 text-accent" aria-hidden />
-                Sklep / Marketplace
+                Więcej modułów
               </h2>
               <div className="grid sm:grid-cols-2 gap-4">
-                {marketplaceModules.map((mod) => (
-                  <div key={mod.name} className="bento-card relative overflow-hidden">
-                    {mod.suggestion && (
-                      <div className="flex items-center gap-1.5 mb-3 text-xs text-primary bg-primary/5 px-3 py-1.5 rounded-full w-fit">
-                        <TrendingUp className="h-3 w-3 shrink-0" aria-hidden />
-                        {mod.suggestion}
-                      </div>
-                    )}
-                    <div className="flex items-start gap-4">
-                      <div className="p-2.5 rounded-xl bg-muted shrink-0">
-                        <mod.icon className="h-5 w-5 text-accent" aria-hidden />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-display font-semibold mb-1">{mod.name}</h3>
-                        <p className="text-sm text-muted-foreground mb-3">{mod.description}</p>
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-display font-bold text-foreground">{mod.price}</span>
-                          <button
-                            type="button"
-                            className="inline-flex h-9 items-center justify-center rounded-md gradient-brand px-4 text-sm font-medium text-primary-foreground shadow-sm hover:opacity-95"
+                {extraModules.map((mod) => {
+                  const Icon = mod.icon
+                  return (
+                    <div key={mod.slug} className="bento-card relative overflow-hidden">
+                      <div className="flex items-start gap-4">
+                        <div className="p-2.5 rounded-xl bg-muted shrink-0">
+                          <Icon className="h-5 w-5 text-accent" aria-hidden />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-display font-semibold mb-1">{mod.name}</h3>
+                          <p className="text-sm text-muted-foreground mb-3">{mod.shortDescription ?? mod.description}</p>
+                          <Link
+                            to={`/module/${mod.slug}`}
+                            className="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-medium hover:bg-muted/60"
                           >
-                            Kup moduł
-                          </button>
+                            Zobacz plany
+                          </Link>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </motion.div>
           )}

@@ -15,6 +15,14 @@ type OrgSubRow = {
   app_id: string
   status: string
   expires_at: string | null
+  plan_id: string | null
+}
+
+type PlanOption = {
+  id: string
+  app_id: string
+  name: string
+  max_users: number | null
 }
 
 function defaultExpiresAtIso(): string {
@@ -74,6 +82,8 @@ export default function UserDetailModuleAccessSection({
 
   const [applications, setApplications] = useState<ApplicationRow[]>([])
   const [subsByAppId, setSubsByAppId] = useState<Map<string, OrgSubRow>>(new Map())
+  const [plans, setPlans] = useState<PlanOption[]>([])
+  const [draftPlanByAppId, setDraftPlanByAppId] = useState<Record<string, string>>({})
   const [appsLoading, setAppsLoading] = useState(false)
 
   const primaryMembership = memberships[0] ?? null
@@ -89,9 +99,14 @@ export default function UserDetailModuleAccessSection({
     setAppsLoading(true)
     setModuleError(null)
     try {
-      const [appsRes, subsRes] = await Promise.all([
+      const [appsRes, subsRes, plansRes] = await Promise.all([
         supabase.from('applications').select('id,name,is_active').order('name'),
-        supabase.from('org_subscriptions').select('id,app_id,status,expires_at').eq('org_id', primaryOrgId),
+        supabase.from('org_subscriptions').select('id,app_id,status,expires_at,plan_id').eq('org_id', primaryOrgId),
+        supabase
+          .from('pricing_plans')
+          .select('id,app_id,name,max_users,is_active')
+          .eq('is_active', true)
+          .order('name'),
       ])
       if (appsRes.error) {
         console.error('[UserDetailModuleAccessSection] applications:', appsRes.error)
@@ -112,6 +127,13 @@ export default function UserDetailModuleAccessSection({
           if (!map.has(r.app_id)) map.set(r.app_id, r)
         }
         setSubsByAppId(map)
+      }
+      if (plansRes.error) {
+        console.error('[UserDetailModuleAccessSection] pricing_plans:', plansRes.error)
+        setModuleError((prev) => prev ?? 'Nie udało się pobrać planów cenowych.')
+        setPlans([])
+      } else {
+        setPlans((plansRes.data ?? []) as PlanOption[])
       }
     } catch (e) {
       console.error('[UserDetailModuleAccessSection] loadAppsAndSubs:', e)
@@ -229,9 +251,45 @@ export default function UserDetailModuleAccessSection({
     }
   }
 
+  const updateSubscriptionPlan = async (sub: OrgSubRow, planId: string) => {
+    const nextPlanId = planId.trim() || null
+    if ((sub.plan_id ?? null) === nextPlanId) return
+    setModuleError(null)
+    try {
+      const { data, error } = await supabase
+        .from('org_subscriptions')
+        .update({ plan_id: nextPlanId })
+        .eq('id', sub.id)
+        .select('id,app_id,status,expires_at,plan_id')
+        .maybeSingle()
+      if (error) {
+        console.error('[UserDetailModuleAccessSection] plan_id update:', error)
+        setModuleError(error.message || 'Nie udało się przypisać planu.')
+        return
+      }
+      if (data) {
+        const row = data as OrgSubRow
+        setSubsByAppId((prev) => {
+          const next = new Map(prev)
+          next.set(row.app_id, row)
+          return next
+        })
+      }
+    } catch (e) {
+      console.error('[UserDetailModuleAccessSection] updateSubscriptionPlan:', e)
+      setModuleError('Wystąpił błąd podczas zapisu planu.')
+    }
+  }
+
   const setModuleActive = async (appId: string, appName: string, nextActive: boolean) => {
     if (!primaryOrgId) return
     setModuleError(null)
+    const appPlans = plans.filter((p) => p.app_id === appId)
+    const chosenPlanId = draftPlanByAppId[appId] || subsByAppId.get(appId)?.plan_id || ''
+    if (nextActive && appPlans.length > 0 && !chosenPlanId) {
+      setModuleError(`Wybierz plan dla modułu „${appName}” przed włączeniem.`)
+      return
+    }
     setTogglingAppId(appId)
     const nextStatus = nextActive ? 'active' : 'inactive'
     const expiresOnActivate = defaultExpiresAtIso()
@@ -243,9 +301,10 @@ export default function UserDetailModuleAccessSection({
           .update({
             status: nextStatus,
             expires_at: nextActive ? expiresOnActivate : null,
+            plan_id: nextActive ? chosenPlanId || existing.plan_id : existing.plan_id,
           })
           .eq('id', existing.id)
-          .select('id,app_id,status,expires_at')
+          .select('id,app_id,status,expires_at,plan_id')
           .maybeSingle()
         if (error) {
           console.error('[UserDetailModuleAccessSection] sub update:', error)
@@ -270,8 +329,9 @@ export default function UserDetailModuleAccessSection({
           app_id: appId,
           status: nextStatus,
           expires_at: expiresOnActivate,
+          plan_id: chosenPlanId || null,
         })
-        .select('id,app_id,status,expires_at')
+        .select('id,app_id,status,expires_at,plan_id')
         .maybeSingle()
       if (insErr) {
         console.error('[UserDetailModuleAccessSection] sub insert:', insErr)
@@ -376,6 +436,8 @@ export default function UserDetailModuleAccessSection({
               const active = sub ? isSubActive(sub.status) : false
               const busy = togglingAppId === app.id
               const expiryBusy = expirySavingAppId === app.id
+              const appPlans = plans.filter((p) => p.app_id === app.id)
+              const planValue = sub?.plan_id ?? draftPlanByAppId[app.id] ?? ''
               return (
                 <li key={app.id} className="flex flex-wrap items-center justify-between gap-4 px-4 py-3 bg-background/50">
                   <div>
@@ -385,6 +447,29 @@ export default function UserDetailModuleAccessSection({
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3 shrink-0">
+                    {appPlans.length > 0 && (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Plan</span>
+                        <select
+                          disabled={busy}
+                          className={`${inputClass} w-[14rem] text-sm py-1.5 h-9`}
+                          value={planValue}
+                          onChange={(e) => {
+                            const nextId = e.target.value
+                            setDraftPlanByAppId((prev) => ({ ...prev, [app.id]: nextId }))
+                            if (sub) void updateSubscriptionPlan(sub, nextId)
+                          }}
+                        >
+                          <option value="">— Wybierz plan —</option>
+                          {appPlans.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                              {p.max_users != null ? ` (${p.max_users} użytk.)` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     {active && sub && (
                       <div className="flex flex-col gap-0.5">
                         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Wygasa</span>

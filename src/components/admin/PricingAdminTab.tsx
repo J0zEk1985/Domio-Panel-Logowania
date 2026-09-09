@@ -19,7 +19,7 @@ export default function PricingAdminTab() {
         supabase.from('applications').select('id, name, domain_url, api_url, is_free, is_active, created_at').order('name'),
         supabase
           .from('pricing_plans')
-          .select('id, app_id, name, price_monthly, price_yearly, features, is_active, created_at, updated_at, applications(name)')
+          .select('id, app_id, name, price_monthly, price_yearly, features, is_active, max_users, max_locations, max_storage_gb, has_ai_features, created_at, updated_at, applications(name)')
           .order('name'),
         supabase.from('promo_codes').select('*').order('code'),
       ])

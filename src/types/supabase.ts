@@ -1777,6 +1777,7 @@ export type Database = {
           expires_at: string | null
           id: string
           org_id: string
+          plan_id: string | null
           status: string | null
         }
         Insert: {
@@ -1785,6 +1786,7 @@ export type Database = {
           expires_at?: string | null
           id?: string
           org_id: string
+          plan_id?: string | null
           status?: string | null
         }
         Update: {
@@ -1793,6 +1795,7 @@ export type Database = {
           expires_at?: string | null
           id?: string
           org_id?: string
+          plan_id?: string | null
           status?: string | null
         }
         Relationships: [

@@ -1,12 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useParams, Link, Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Layers, CheckCircle2 } from 'lucide-react'
 import { Navbar } from '../components/landing/Navbar'
 import { Footer } from '../components/landing/Footer'
 import { audienceHeading, getModuleBySlug } from '../data/modules'
-import { PricingSection, type PricingPlan } from '../components/module/PricingSection'
-import { CheckoutDrawer } from '../components/module/CheckoutDrawer'
+import { PricingSection } from '../components/module/PricingSection'
 
 const btnPrimary = 'inline-flex items-center justify-center rounded-md px-6 py-3 text-sm font-medium gradient-brand text-primary-foreground border-0 shadow-sm hover:opacity-95 transition-opacity'
 const btnGhost = 'inline-flex items-center justify-center gap-2 rounded-md px-6 py-3 text-sm font-medium border border-border bg-transparent hover:bg-muted/60 transition-colors'
@@ -14,15 +13,6 @@ const btnGhost = 'inline-flex items-center justify-center gap-2 rounded-md px-6 
 export default function ModuleDetail() {
   const { slug } = useParams<{ slug: string }>()
   const mod = slug ? getModuleBySlug(slug) : undefined
-  const [checkoutOpen, setCheckoutOpen] = useState(false)
-  const [selectedPlan, setSelectedPlan] = useState<PricingPlan | null>(null)
-  const [selectedYearly, setSelectedYearly] = useState(false)
-
-  const handleSelectPlan = (plan: PricingPlan, yearly: boolean) => {
-    setSelectedPlan(plan)
-    setSelectedYearly(yearly)
-    setCheckoutOpen(true)
-  }
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
@@ -187,7 +177,7 @@ export default function ModuleDetail() {
         </section>
       )}
 
-      <PricingSection moduleName={mod.name} moduleSlug={mod.slug} onSelectPlan={handleSelectPlan} />
+      <PricingSection moduleName={mod.name} moduleSlug={mod.slug} />
 
       <section className="py-16 px-4">
         <div className="container mx-auto max-w-3xl text-center">
@@ -195,21 +185,15 @@ export default function ModuleDetail() {
             <h2 className="font-display text-2xl md:text-3xl font-bold mb-4">
               Gotowy na <span className="gradient-brand-text">{mod.name}</span>?
             </h2>
-            <p className="text-muted-foreground mb-8">Zacznij korzystać już dziś — bez zobowiązań.</p>
+            <p className="text-muted-foreground mb-8">
+              Zaloguj się — dostęp do aplikacji nadaje administrator zgodnie z planem i limitami organizacji.
+            </p>
             <Link to="/dashboard" className={btnPrimary}>
-              Rozpocznij za darmo
+              Przejdź do panelu
             </Link>
           </motion.div>
         </div>
       </section>
-
-      <CheckoutDrawer
-        open={checkoutOpen}
-        onOpenChange={setCheckoutOpen}
-        moduleName={mod.name}
-        plan={selectedPlan}
-        yearly={selectedYearly}
-      />
 
       <Footer />
     </div>
