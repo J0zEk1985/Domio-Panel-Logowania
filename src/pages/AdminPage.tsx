@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
+  AlertTriangle,
   CreditCard,
   DollarSign,
   FileText,
@@ -13,6 +14,7 @@ import {
   Users,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { countPlatformVerificationAlerts } from '../lib/legalEntityAdminApi'
 import { Navbar } from '../components/landing/Navbar'
 import { Footer } from '../components/landing/Footer'
 import PricingAdminTab from '../components/admin/PricingAdminTab'
@@ -21,6 +23,7 @@ import UsersAndOrgsTab from '../components/admin/UsersAndOrgsTab'
 import SubscriptionsAdminTab from '../components/admin/SubscriptionsAdminTab'
 import CmsAdminTab from '../components/admin/CmsAdminTab'
 import PartnerOffersAdminTab from '../components/admin/PartnerOffersAdminTab'
+import EntityVerificationAdminTab from '../components/admin/EntityVerificationAdminTab'
 
 type ProfileRow = {
   id: string
@@ -50,10 +53,11 @@ function formatInt(n: number | null | undefined): string {
   return n.toLocaleString('pl-PL')
 }
 
-type AdminTab = 'dashboard' | 'users' | 'subscriptions' | 'pricing' | 'partner-offers' | 'legal' | 'cms'
+type AdminTab = 'dashboard' | 'users' | 'subscriptions' | 'pricing' | 'partner-offers' | 'legal' | 'cms' | 'entity-verification'
 
 const sidebarNav: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Pulpit', icon: LayoutDashboard },
+  { id: 'entity-verification', label: 'Weryfikacja NIP', icon: AlertTriangle },
   { id: 'users', label: 'Użytkownicy i Firmy', icon: Users },
   { id: 'subscriptions', label: 'Globalne subskrypcje', icon: CreditCard },
   { id: 'pricing', label: 'Cennik i Promocje', icon: Tag },
@@ -71,6 +75,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [statsError, setStatsError] = useState<string | null>(null)
   const [tableError, setTableError] = useState<string | null>(null)
+  const [verificationCount, setVerificationCount] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -120,6 +125,12 @@ export default function AdminPage() {
         setActiveSubscriptionsCount(subsRes.count ?? null)
         setOrganizationsCount(orgsRes.count ?? null)
         setProfiles((profilesRes.data as ProfileRow[] | null) ?? [])
+        try {
+          const pending = await countPlatformVerificationAlerts()
+          if (!cancelled) setVerificationCount(pending)
+        } catch (e) {
+          console.error('[AdminPage] verification count:', e)
+        }
       } catch (e) {
         console.error('[AdminPage] load error:', e)
         if (!cancelled) {
@@ -183,7 +194,12 @@ export default function AdminPage() {
                     }`}
                   >
                     <Icon className={`h-5 w-5 shrink-0 ${isActive ? 'text-primary' : ''}`} />
-                    <span className="leading-tight">{item.label}</span>
+                    <span className="leading-tight flex-1">{item.label}</span>
+                    {item.id === 'entity-verification' && verificationCount > 0 ? (
+                      <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
+                        {verificationCount > 99 ? '99+' : verificationCount}
+                      </span>
+                    ) : null}
                   </button>
                 )
               })}
@@ -299,6 +315,10 @@ export default function AdminPage() {
                   </div>
                 </motion.div>
               </>
+            )}
+
+            {activeTab === 'entity-verification' && (
+              <EntityVerificationAdminTab onCountChange={setVerificationCount} />
             )}
 
             {activeTab === 'users' && <UsersAndOrgsTab />}

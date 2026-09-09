@@ -216,7 +216,7 @@ CREATE FUNCTION private.initiate_equipment_handover(
   p_kind text,
   p_asset_id uuid DEFAULT NULL,
   p_key_name text DEFAULT NULL,
-  p_key_type text DEFAULT 'key',
+  p_key_type text DEFAULT 'other',
   p_condition_notes text DEFAULT NULL,
   p_photo_urls text[] DEFAULT '{}'::text[]
 )
@@ -229,7 +229,7 @@ DECLARE
   v_actor uuid := private.equipment_require_actor();
   v_protocol public.equipment_protocols;
   v_staff_id uuid;
-  v_key_type text := lower(btrim(COALESCE(p_key_type, 'key')));
+  v_key_type text := lower(btrim(COALESCE(p_key_type, 'other')));
 BEGIN
   IF NOT public.is_org_management(p_org_id) THEN
     RAISE EXCEPTION 'EQUIPMENT_FORBIDDEN';
@@ -273,7 +273,7 @@ BEGIN
     IF btrim(COALESCE(p_key_name, '')) = '' THEN
       RAISE EXCEPTION 'EQUIPMENT_NAME_REQUIRED';
     END IF;
-    IF v_key_type NOT IN ('key', 'card') THEN
+    IF v_key_type NOT IN ('key', 'card', 'other') THEN
       RAISE EXCEPTION 'EQUIPMENT_INVALID_TYPE';
     END IF;
 
@@ -698,7 +698,7 @@ CREATE FUNCTION public.initiate_equipment_handover(
   p_kind text,
   p_asset_id uuid DEFAULT NULL,
   p_key_name text DEFAULT NULL,
-  p_key_type text DEFAULT 'key',
+  p_key_type text DEFAULT 'other',
   p_condition_notes text DEFAULT NULL,
   p_photo_urls text[] DEFAULT '{}'::text[]
 )

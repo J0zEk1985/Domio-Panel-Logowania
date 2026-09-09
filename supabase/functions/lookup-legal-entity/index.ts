@@ -8,6 +8,8 @@ const ALLOWED_ORIGINS = [
   'https://test.serwis.domio.com.pl',
   'https://admin.domio.com.pl',
   'https://test.admin.domio.com.pl',
+  'https://adm.domio.com.pl',
+  'https://test.adm.domio.com.pl',
   'https://home.domio.com.pl',
   'https://test.home.domio.com.pl',
   'https://domio.com.pl',
@@ -59,6 +61,29 @@ function rpcError(error: { message?: string; details?: string } | null): string 
   const msg = `${error?.message ?? ''} ${error?.details ?? ''}`
   const token = msg.match(/[A-Z_]+_([A-Z_]+)/)?.[0] ?? error?.message ?? 'RPC_FAILED'
   return token
+}
+
+function isGusOutage(code: string): boolean {
+  return (
+    code === 'GUS_NOT_CONFIGURED' ||
+    code === 'GUS_LOGIN_FAILED' ||
+    code === 'GUS_FAILED' ||
+    code.startsWith('GUS_HTTP_')
+  )
+}
+
+function gusOutageReason(code: string): 'gus_not_configured' | 'gus_unavailable' {
+  return code === 'GUS_NOT_CONFIGURED' ? 'gus_not_configured' : 'gus_unavailable'
+}
+
+function gusUnavailableBody(code: string) {
+  return {
+    status: 'gus_unavailable',
+    reason: gusOutageReason(code),
+    entity: null,
+    gusPreview: null,
+    alreadyEnrolledInThisOrg: false,
+  }
 }
 
 Deno.serve(async function (req) {
@@ -132,8 +157,8 @@ Deno.serve(async function (req) {
         })
       } catch (gusError) {
         const code = gusError instanceof Error ? gusError.message : 'GUS_FAILED'
-        if (code === 'GUS_NOT_CONFIGURED') {
-          return json(cors, 503, { error: 'GUS_NOT_CONFIGURED', status: 'not_in_domio' })
+        if (isGusOutage(code)) {
+          return json(cors, 200, gusUnavailableBody(code))
         }
         return json(cors, 502, { error: code, status: 'not_in_domio' })
       }
@@ -249,6 +274,111 @@ Deno.serve(async function (req) {
       })
       if (error) return json(cors, 400, { error: rpcError(error), details: error.message })
       return json(cors, 201, data)
+    }
+
+    if (action === 'createUnverified') {
+      const nip = digitsNip(body.nip)
+      const { data: lookupData, error: lookupError } = await supabase.rpc('lookup_legal_entity_by_nip', {
+        p_nip: nip,
+        p_org_id: orgId,
+      })
+      if (lookupError) return json(cors, 403, { error: rpcError(lookupError), details: lookupError.message })
+
+      const lookup = lookupData as { status?: string }
+      if (lookup?.status === 'invalid_nip') {
+        return json(cors, 400, { error: 'invalid_nip' })
+      }
+      if (lookup?.status === 'exists_in_domio') {
+        const { data, error } = await supabase.rpc('enroll_legal_entity_for_org', {
+          p_org_id: orgId,
+          p_legal_entity_id: String((lookupData as { entity?: { id?: string } }).entity?.id ?? ''),
+          p_is_cleaning: body.isCleaning === true,
+          p_is_maintenance: body.isMaintenance === true,
+          p_is_admin: body.isAdmin === true,
+        })
+        if (error) return json(cors, 400, { error: rpcError(error), details: error.message })
+        return json(cors, 200, data)
+      }
+
+      try {
+        const gus = await fetchGusByNip(nip)
+        if (!gus.preview) {
+          return json(cors, 409, { error: 'LEGAL_ENTITY_GUS_STILL_AVAILABLE', status: 'not_in_gus' })
+        }
+        if (gus.preview.endedAt) {
+          return json(cors, 409, { error: 'LEGAL_ENTITY_GUS_STILL_AVAILABLE', status: 'gus_inactive' })
+        }
+        return json(cors, 409, {
+          error: 'LEGAL_ENTITY_GUS_STILL_AVAILABLE',
+          status: 'found_in_gus',
+          gusPreview: gus.preview,
+          suggestedKind: gus.suggestedKind,
+        })
+      } catch (gusError) {
+        const code = gusError instanceof Error ? gusError.message : 'GUS_FAILED'
+        if (!isGusOutage(code)) {
+          return json(cors, 502, { error: code })
+        }
+        const { data, error } = await supabase.rpc('create_legal_entity_unverified', {
+          p_org_id: orgId,
+          p_kind: String(body.kind ?? 'housing_community'),
+          p_nip: nip,
+          p_short_name: String(body.shortName ?? body.short_name ?? ''),
+          p_legal_name: String(body.legalName ?? body.legal_name ?? body.shortName ?? ''),
+          p_email: String(body.email ?? ''),
+          p_phone: String(body.phone ?? ''),
+          p_city: String(body.city ?? ''),
+          p_postal_code: String(body.postalCode ?? body.postal_code ?? ''),
+          p_reason: gusOutageReason(code),
+          p_street: body.street ? String(body.street) : null,
+          p_building_number:
+            body.buildingNumber || body.building_number
+              ? String(body.buildingNumber ?? body.building_number)
+              : null,
+          p_voivodeship: body.voivodeship ? String(body.voivodeship) : null,
+          p_is_cleaning: body.isCleaning === true,
+          p_is_maintenance: body.isMaintenance === true,
+          p_is_admin: body.isAdmin === true,
+        })
+        if (error) return json(cors, 400, { error: rpcError(error), details: error.message })
+        return json(cors, 201, data)
+      }
+    }
+
+    if (action === 'retryGus') {
+      const entityId = String(body.legalEntityId ?? body.legal_entity_id ?? '')
+      if (!entityId) return json(cors, 400, { error: 'LEGAL_ENTITY_NOT_FOUND' })
+
+      const { data: entityRow, error: entityError } = await supabase
+        .from('legal_entities')
+        .select('nip_normalized')
+        .eq('id', entityId)
+        .maybeSingle()
+      if (entityError) return json(cors, 400, { error: rpcError(entityError), details: entityError.message })
+      const nip = digitsNip(entityRow?.nip_normalized)
+      if (!nip) return json(cors, 404, { error: 'LEGAL_ENTITY_NOT_FOUND' })
+
+      try {
+        const gus = await fetchGusByNip(nip)
+        if (!gus.preview) {
+          return json(cors, 400, { error: 'NOT_IN_GUS' })
+        }
+        if (gus.preview.endedAt) {
+          return json(cors, 400, { error: 'GUS_INACTIVE' })
+        }
+        const { data, error } = await supabase.rpc('apply_legal_entity_gus_data', {
+          p_legal_entity_id: entityId,
+          p_gus: gus.preview,
+        })
+        if (error) return json(cors, 400, { error: rpcError(error), details: error.message })
+        return json(cors, 200, data)
+      } catch (gusError) {
+        const code = gusError instanceof Error ? gusError.message : 'GUS_FAILED'
+        if (isGusOutage(code)) {
+          return json(cors, 503, { error: code, status: 'gus_unavailable' })
+        }
+        return json(cors, 502, { error: code })
+      }
     }
 
     return json(cors, 400, { error: 'UNKNOWN_ACTION' })

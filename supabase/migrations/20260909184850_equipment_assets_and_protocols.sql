@@ -107,7 +107,7 @@ ALTER TABLE public.staff_equipment
 
 ALTER TABLE public.staff_equipment
   ADD CONSTRAINT staff_equipment_type_check
-  CHECK (type = ANY (ARRAY['key'::text, 'card'::text]));
+  CHECK (type = ANY (ARRAY['key'::text, 'card'::text, 'other'::text]));
 
 -- ---------------------------------------------------------------------------
 -- Keys/cards: keep rows on return (no hard delete)
