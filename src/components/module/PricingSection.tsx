@@ -35,10 +35,10 @@ function matchesModuleApplication(appName: string, moduleName: string, moduleSlu
   const m = moduleName.trim().toLowerCase()
   if (a === m) return true
   const slugHints: Record<string, string[]> = {
-    cleaning: ['cleaning'],
-    flota: ['flota'],
+    cleaning: ['cleaning', 'clean'],
+    flota: ['flota', 'fleet'],
     serwis: ['serwis'],
-    administracja: ['administrac', 'nieruchomo'],
+    administracja: ['administrac', 'nieruchomo', 'admin.domio', 'adm.domio'],
     home: ['home', 'mieszkan'],
   }
   const hints = slugHints[moduleSlug]

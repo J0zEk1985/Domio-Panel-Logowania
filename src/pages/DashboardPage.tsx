@@ -18,11 +18,20 @@ import { Application } from '../types/database'
 import { Navbar } from '../components/landing/Navbar'
 import { Footer } from '../components/landing/Footer'
 import { buildChangePasswordPath, resolvePostLoginTarget } from '../lib/postLoginRedirect'
-import { filterAppsByOrgAccess, filterHubApplications, applicationMatchesModuleSlug, isSubscriptionCurrent } from '../lib/moduleAccess'
+import {
+  filterAppsByOrgAccess,
+  filterHubApplications,
+  applicationMatchesModuleSlug,
+  isSubscriptionCurrent,
+  catalogModuleForApplication,
+  sortApplicationsByCatalog,
+} from '../lib/moduleAccess'
 import { getLandingModules } from '../data/modules'
 
 /** Map application name/URLs to icons (fallback: LayoutGrid). */
 function iconForApplication(app: Application): LucideIcon {
+  const catalogIcon = catalogModuleForApplication(app)?.icon
+  if (catalogIcon) return catalogIcon
   const blob = `${app.name} ${app.domain_url ?? ''} ${app.api_url ?? ''}`.toLowerCase()
   if (blob.includes('clean')) return Sparkles
   if (blob.includes('flot') || blob.includes('fleet') || blob.includes('car')) return Car
@@ -31,6 +40,16 @@ function iconForApplication(app: Application): LucideIcon {
   if (blob.includes('administr') || blob.includes('nieruchom') || blob.includes('building')) return Building2
   if (blob.includes('bezpiecz') || blob.includes('security') || blob.includes('shield')) return ShieldCheck
   return LayoutGrid
+}
+
+function displayApplicationName(app: Application): string {
+  return catalogModuleForApplication(app)?.name ?? app.name
+}
+
+function displayApplicationDescription(app: Application): string {
+  const catalog = catalogModuleForApplication(app)
+  if (catalog?.shortDescription) return catalog.shortDescription
+  return app.is_free ? 'Moduł dostępny bezpłatnie.' : 'Subskrypcja aktywna — kliknij, aby otworzyć.'
 }
 
 const statusBadgeClass: Record<'free' | 'paid', string> = {
@@ -152,10 +171,12 @@ export default function DashboardPage() {
         })
 
         setApps(
-          filterHubApplications(visibleApps, {
-            membershipRoles: (membershipsData ?? []).map((row) => row.role),
-            fleetRole,
-          })
+          sortApplicationsByCatalog(
+            filterHubApplications(visibleApps, {
+              membershipRoles: (membershipsData ?? []).map((row) => row.role),
+              fleetRole,
+            }),
+          ),
         )
       } catch (err) {
         // Ignore AbortError from tab suspension
@@ -238,6 +259,7 @@ export default function DashboardPage() {
             {!loading && !error && apps.length > 0 && (
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {apps.map((app) => {
+                  const catalog = catalogModuleForApplication(app)
                   const Icon = iconForApplication(app)
                   const tier: 'free' | 'paid' = app.is_free ? 'free' : 'paid'
                   return (
@@ -257,8 +279,8 @@ export default function DashboardPage() {
                       className="bento-card cursor-pointer text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <div className="flex items-start justify-between mb-3">
-                        <div className="p-2.5 rounded-xl bg-muted">
-                          <Icon className="h-5 w-5 text-primary" aria-hidden />
+                        <div className={`p-2.5 rounded-xl bg-muted ${catalog?.color ?? 'text-primary'}`}>
+                          <Icon className="h-5 w-5" aria-hidden />
                         </div>
                         <span
                           className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${statusBadgeClass[tier]}`}
@@ -266,10 +288,8 @@ export default function DashboardPage() {
                           {statusLabel[tier]}
                         </span>
                       </div>
-                      <h3 className="font-display font-semibold mb-1">{app.name}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {app.is_free ? 'Moduł dostępny bezpłatnie.' : 'Subskrypcja aktywna — kliknij, aby otworzyć.'}
-                      </p>
+                      <h3 className="font-display font-semibold mb-1">{displayApplicationName(app)}</h3>
+                      <p className="text-sm text-muted-foreground">{displayApplicationDescription(app)}</p>
                       <span className="mt-4 inline-flex text-sm font-medium text-primary">Otwórz →</span>
                     </motion.div>
                   )
