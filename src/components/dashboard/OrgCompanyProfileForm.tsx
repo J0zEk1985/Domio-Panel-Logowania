@@ -2,6 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { supabase } from '../../lib/supabase'
 import { inboundAliasPreview, isValidOrgSlug, slugifyOrgName } from '../../lib/orgSlug'
+import {
+  upsertBillingOrgLegalEntity,
+  setOrgListedInProviderDirectory,
+  BillingOrgLegalEntityError,
+} from '../../lib/billingOrgLegalEntity'
+import type { BillingGusPreview } from '../../lib/billingNipLookup'
+import type { LegalEntityKind } from '../../lib/legalEntityMessages'
+import { OrgNipLookupField } from './OrgNipLookupField'
 
 const fieldClass =
   'w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60'
@@ -13,6 +21,8 @@ type OrgProfile = {
   address: string | null
   city: string | null
   postal_code: string | null
+  legal_entity_id: string | null
+  listed_in_provider_directory: boolean
 }
 
 type Props = {
@@ -34,6 +44,11 @@ export function OrgCompanyProfileForm({ organizationId, canManage, idPrefix = 'o
   const [address, setAddress] = useState('')
   const [city, setCity] = useState('')
   const [postalCode, setPostalCode] = useState('')
+  const [phone, setPhone] = useState('')
+  const [listed, setListed] = useState(false)
+  const [legalEntityId, setLegalEntityId] = useState<string | null>(null)
+  const [gusPreview, setGusPreview] = useState<BillingGusPreview | null>(null)
+  const [suggestedKind, setSuggestedKind] = useState<LegalEntityKind>('company')
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -41,7 +56,7 @@ export function OrgCompanyProfileForm({ organizationId, canManage, idPrefix = 'o
     try {
       const { data, error } = await supabase
         .from('organizations')
-        .select('name, slug, nip, address, city, postal_code')
+        .select('name, slug, nip, address, city, postal_code, legal_entity_id, listed_in_provider_directory')
         .eq('id', organizationId)
         .maybeSingle()
 
@@ -62,6 +77,9 @@ export function OrgCompanyProfileForm({ organizationId, canManage, idPrefix = 'o
       setAddress(row.address ?? '')
       setCity(row.city ?? '')
       setPostalCode(row.postal_code ?? '')
+      setLegalEntityId(row.legal_entity_id ?? null)
+      setListed(row.listed_in_provider_directory === true)
+      setGusPreview(null)
     } catch (e) {
       console.error('[OrgCompanyProfileForm] load:', e)
       setLoadError('Wystąpił błąd podczas ładowania danych firmy.')
@@ -111,6 +129,31 @@ export function OrgCompanyProfileForm({ organizationId, canManage, idPrefix = 'o
       }
 
       setSlug(nextSlug)
+      const nipDigits = nip.replace(/\D/g, '')
+      try {
+        const linked = await upsertBillingOrgLegalEntity({
+          orgId: organizationId,
+          nip: nipDigits,
+          legalName: trimmedName,
+          city,
+          postalCode,
+          address,
+          phone,
+          gus: gusPreview,
+          kind: suggestedKind,
+          listedInProviderDirectory: listed,
+        })
+        setLegalEntityId(linked.legalEntityId)
+        setListed(linked.listed)
+      } catch (leErr) {
+        console.error('[OrgCompanyProfileForm] legal entity:', leErr)
+        setSaveError(
+          leErr instanceof BillingOrgLegalEntityError || leErr instanceof Error
+            ? leErr.message
+            : 'Zapisano dane firmy, ale nie udało się zaktualizować rejestru NIP.',
+        )
+        return
+      }
       if (nextSlug !== savedSlug) {
         const { error: syncErr } = await supabase.rpc('sync_org_inbound_mailbox_aliases', {
           p_org_id: organizationId,
@@ -201,16 +244,24 @@ export function OrgCompanyProfileForm({ organizationId, canManage, idPrefix = 'o
             </button>
           ) : null}
         </div>
-        <div className="space-y-1.5">
-          <label className="block text-sm text-muted-foreground" htmlFor={`${idPrefix}-nip`}>
-            NIP
-          </label>
-          <input
-            id={`${idPrefix}-nip`}
-            className={fieldClass}
-            value={nip}
+        <div className="space-y-1.5 sm:col-span-2">
+          <OrgNipLookupField
+            idPrefix={idPrefix}
+            nip={nip}
             disabled={!canManage || saving}
-            onChange={(e) => setNip(e.target.value)}
+            onNipChange={(value) => {
+              setNip(value)
+              setGusPreview(null)
+            }}
+            onFilled={(filled) => {
+              setNip(filled.nip)
+              setName(filled.name)
+              setAddress(filled.address)
+              setCity(filled.city)
+              setPostalCode(filled.postalCode)
+              setGusPreview(filled.gusPreview)
+              setSuggestedKind(filled.suggestedKind)
+            }}
           />
         </div>
         <div className="space-y-1.5">
@@ -223,6 +274,20 @@ export function OrgCompanyProfileForm({ organizationId, canManage, idPrefix = 'o
             value={city}
             disabled={!canManage || saving}
             onChange={(e) => setCity(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="block text-sm text-muted-foreground" htmlFor={`${idPrefix}-phone`}>
+            Telefon
+          </label>
+          <input
+            id={`${idPrefix}-phone`}
+            className={fieldClass}
+            value={phone}
+            disabled={!canManage || saving}
+            inputMode="tel"
+            autoComplete="tel"
+            onChange={(e) => setPhone(e.target.value)}
           />
         </div>
         <div className="space-y-1.5 sm:col-span-2">
@@ -249,6 +314,38 @@ export function OrgCompanyProfileForm({ organizationId, canManage, idPrefix = 'o
             onChange={(e) => setPostalCode(e.target.value)}
           />
         </div>
+        {canManage ? (
+          <label className="sm:col-span-2 flex items-start gap-3 rounded-xl border border-border/70 bg-muted/30 px-4 py-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={listed}
+              disabled={saving}
+              onChange={(e) => {
+                const next = e.target.checked
+                setListed(next)
+                if (!legalEntityId) return
+                void setOrgListedInProviderDirectory(organizationId, next).catch((err) => {
+                  console.error('[OrgCompanyProfileForm] listed toggle:', err)
+                  setListed(!next)
+                  setSaveError(
+                    err instanceof BillingOrgLegalEntityError || err instanceof Error
+                      ? err.message
+                      : 'Nie udało się zmienić widoczności w katalogu.',
+                  )
+                })
+              }}
+            />
+            <span>
+              <span className="font-medium">Chcę być widoczny jako usługodawca dla wspólnot w DOMIO</span>
+              <span className="block text-xs text-muted-foreground mt-1">
+                Widoczność w katalogu Administracji. Możesz wyłączyć to w każdej chwili. Domyślnie jesteś niewidoczny.
+              </span>
+            </span>
+          </label>
+        ) : listed ? (
+          <p className="sm:col-span-2 text-sm text-muted-foreground">Firma jest widoczna w katalogu usługodawców.</p>
+        ) : null}
       </div>
       {canManage ? (
         <button

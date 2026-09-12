@@ -13,8 +13,12 @@ const ALLOWED_ORIGINS = [
   'https://home.domio.com.pl',
   'https://test.home.domio.com.pl',
   'https://domio.com.pl',
+  'https://www.domio.com.pl',
+  'https://test.domio.com.pl',
+  'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:8080',
+  'http://127.0.0.1:3000',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:8080',
 ]
@@ -86,6 +90,42 @@ function gusUnavailableBody(code: string) {
   }
 }
 
+async function gusLookupResponse(cors: Record<string, string>, nip: string) {
+  try {
+    const gus = await fetchGusByNip(nip)
+    if (!gus.preview) {
+      return json(cors, 200, {
+        status: 'not_in_gus',
+        entity: null,
+        gusPreview: null,
+        alreadyEnrolledInThisOrg: false,
+      })
+    }
+    if (gus.preview.endedAt) {
+      return json(cors, 200, {
+        status: 'gus_inactive',
+        entity: null,
+        gusPreview: gus.preview,
+        suggestedKind: gus.suggestedKind,
+        alreadyEnrolledInThisOrg: false,
+      })
+    }
+    return json(cors, 200, {
+      status: 'found_in_gus',
+      entity: null,
+      gusPreview: gus.preview,
+      suggestedKind: gus.suggestedKind,
+      alreadyEnrolledInThisOrg: false,
+    })
+  } catch (gusError) {
+    const code = gusError instanceof Error ? gusError.message : 'GUS_FAILED'
+    if (isGusOutage(code)) {
+      return json(cors, 200, gusUnavailableBody(code))
+    }
+    return json(cors, 502, { error: code, status: 'not_in_domio' })
+  }
+}
+
 Deno.serve(async function (req) {
   const cors = getCorsHeaders(req)
   if (req.method === 'OPTIONS') {
@@ -129,39 +169,26 @@ Deno.serve(async function (req) {
         return json(cors, 200, lookup)
       }
 
-      try {
-        const gus = await fetchGusByNip(nip)
-        if (!gus.preview) {
-          return json(cors, 200, {
-            status: 'not_in_gus',
-            entity: null,
-            gusPreview: null,
-            alreadyEnrolledInThisOrg: false,
-          })
-        }
-        if (gus.preview.endedAt) {
-          return json(cors, 200, {
-            status: 'gus_inactive',
-            entity: null,
-            gusPreview: gus.preview,
-            suggestedKind: gus.suggestedKind,
-            alreadyEnrolledInThisOrg: false,
-          })
-        }
+      return await gusLookupResponse(cors, nip)
+    }
+
+    if (action === 'billingLookup') {
+      const nip = digitsNip(body.nip)
+      const { data: checksumOk, error: checksumError } = await supabase.rpc('nip_checksum_ok', {
+        digits: nip,
+      })
+      if (checksumError) {
+        return json(cors, 400, { error: rpcError(checksumError), details: checksumError.message })
+      }
+      if (checksumOk !== true) {
         return json(cors, 200, {
-          status: 'found_in_gus',
+          status: 'invalid_nip',
           entity: null,
-          gusPreview: gus.preview,
-          suggestedKind: gus.suggestedKind,
+          gusPreview: null,
           alreadyEnrolledInThisOrg: false,
         })
-      } catch (gusError) {
-        const code = gusError instanceof Error ? gusError.message : 'GUS_FAILED'
-        if (isGusOutage(code)) {
-          return json(cors, 200, gusUnavailableBody(code))
-        }
-        return json(cors, 502, { error: code, status: 'not_in_domio' })
       }
+      return await gusLookupResponse(cors, nip)
     }
 
     if (action === 'enroll') {

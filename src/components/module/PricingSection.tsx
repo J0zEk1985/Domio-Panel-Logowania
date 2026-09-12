@@ -238,8 +238,8 @@ export function PricingSection({ moduleName, moduleSlug, onSelectPlan }: Pricing
                   key={plan.id}
                   variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }}
                   whileHover={{ y: -6, scale: 1.02 }}
-                  className={`bento-card relative flex flex-col ${
-                    plan.highlighted ? 'ring-2 ring-primary/60 shadow-[0_0_40px_-10px_hsl(var(--primary)/0.3)]' : ''
+                  className={`bento-card relative flex flex-col ring-2 ring-primary ${
+                    plan.highlighted ? 'shadow-[0_0_40px_-10px_hsl(var(--primary)/0.3)]' : ''
                   }`}
                 >
                   {plan.highlighted && (
@@ -266,11 +266,7 @@ export function PricingSection({ moduleName, moduleSlug, onSelectPlan }: Pricing
                   <button
                     type="button"
                     onClick={() => void handleSelect(plan)}
-                    className={`w-full rounded-md px-4 py-3 text-sm font-medium text-center transition-colors ${
-                      plan.highlighted
-                        ? 'gradient-brand text-primary-foreground border-0'
-                        : 'border border-border bg-background hover:bg-muted/60'
-                    }`}
+                    className="w-full rounded-md px-4 py-3 text-sm font-medium text-center gradient-brand text-primary-foreground border-0 shadow-sm hover:opacity-95 transition-opacity"
                   >
                     Wybierz plan
                   </button>

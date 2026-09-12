@@ -1967,6 +1967,8 @@ export type Database = {
           support_email: string | null
           task_generation_days: number | null
           tenant_id: string | null
+          legal_entity_id: string | null
+          listed_in_provider_directory: boolean
         }
         Insert: {
           address?: string | null
@@ -1984,6 +1986,8 @@ export type Database = {
           support_email?: string | null
           task_generation_days?: number | null
           tenant_id?: string | null
+          legal_entity_id?: string | null
+          listed_in_provider_directory?: boolean
         }
         Update: {
           address?: string | null
@@ -2001,6 +2005,8 @@ export type Database = {
           support_email?: string | null
           task_generation_days?: number | null
           tenant_id?: string | null
+          legal_entity_id?: string | null
+          listed_in_provider_directory?: boolean
         }
         Relationships: []
       }
@@ -3997,6 +4003,35 @@ export type Database = {
           p_postal_code?: string | null
         }
         Returns: string
+      }
+      upsert_billing_org_legal_entity: {
+        Args: {
+          p_org_id: string
+          p_nip: string
+          p_legal_name: string
+          p_city: string
+          p_postal_code: string
+          p_address: string
+          p_phone: string
+          p_gus: Json
+          p_kind?: string
+          p_listed_in_provider_directory?: boolean
+        }
+        Returns: Json
+      }
+      set_org_listed_in_provider_directory: {
+        Args: { p_org_id: string; p_listed: boolean }
+        Returns: Json
+      }
+      list_provider_directory: {
+        Args: { p_acting_org_id: string; p_module: string }
+        Returns: {
+          org_id: string
+          org_name: string
+          city: string | null
+          nip: string
+          legal_entity_id: string
+        }[]
       }
       ensure_org_inbound_mailboxes: {
         Args: { p_org_id: string }

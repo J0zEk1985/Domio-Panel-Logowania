@@ -14,6 +14,9 @@ import {
 } from '../../lib/promoCodes'
 import { formatMoneyPln } from '../../lib/pricingDisplay'
 import type { PricingPlan } from './PricingSection'
+import { OrgNipLookupField } from '../dashboard/OrgNipLookupField'
+import type { BillingGusPreview } from '../../lib/billingNipLookup'
+import { upsertBillingOrgLegalEntity } from '../../lib/billingOrgLegalEntity'
 
 type PaymentMethod = 'card' | 'blik' | 'payu'
 
@@ -40,6 +43,7 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
   const [fullName, setFullName] = useState('')
   const [companyName, setCompanyName] = useState('')
   const [nip, setNip] = useState('')
+  const [gusPreview, setGusPreview] = useState<BillingGusPreview | null>(null)
   const [promoInput, setPromoInput] = useState('')
   const [promo, setPromo] = useState<PromoPreview | null>(null)
   const [promoError, setPromoError] = useState<string | null>(null)
@@ -53,6 +57,7 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
     setFullName('')
     setCompanyName('')
     setNip('')
+    setGusPreview(null)
     setPromoInput('')
     setPromo(null)
     setPromoError(null)
@@ -98,6 +103,23 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
         name: orgName,
         nip: nipDigits || null,
       })
+      if (nipDigits) {
+        try {
+          await upsertBillingOrgLegalEntity({
+            orgId,
+            nip: nipDigits,
+            legalName: orgName,
+            city: '',
+            postalCode: '',
+            address: '',
+            phone: '',
+            gus: gusPreview,
+            listedInProviderDirectory: false,
+          })
+        } catch (leErr) {
+          console.error('[CheckoutDrawer] legal entity:', leErr)
+        }
+      }
       await activateOrgSubscriptionPlan({
         orgId,
         appId: plan.appId,
@@ -131,7 +153,7 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
       onClick={onClose}
     >
       <div
-        className="bento-card max-w-lg w-full max-h-[90vh] flex flex-col shadow-lg border border-border"
+        className="bg-card text-card-foreground rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-lg border border-border overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 p-4 border-b border-border/60">
@@ -248,13 +270,19 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
                   autoComplete="organization"
                   onChange={(e) => setCompanyName(e.target.value)}
                 />
-                <input
-                  className={fieldClass}
-                  placeholder="NIP (opcjonalnie)"
-                  value={nip}
+                <OrgNipLookupField
+                  idPrefix="checkout"
+                  nip={nip}
                   disabled={busy}
-                  inputMode="numeric"
-                  onChange={(e) => setNip(e.target.value)}
+                  onNipChange={(value) => {
+                    setNip(value)
+                    setGusPreview(null)
+                  }}
+                  onFilled={(filled) => {
+                    setNip(filled.nip)
+                    setCompanyName(filled.name)
+                    setGusPreview(filled.gusPreview)
+                  }}
                 />
               </div>
 

@@ -7,6 +7,13 @@ import { Footer } from '../components/landing/Footer'
 import { OrgCompanyProfileForm } from '../components/dashboard/OrgCompanyProfileForm'
 import { useDashboardApps } from '../hooks/useDashboardApps'
 import { ensureMyBillingOrganization } from '../lib/orgBilling'
+import {
+  upsertBillingOrgLegalEntity,
+  BillingOrgLegalEntityError,
+} from '../lib/billingOrgLegalEntity'
+import type { BillingGusPreview } from '../lib/billingNipLookup'
+import type { LegalEntityKind } from '../lib/legalEntityMessages'
+import { OrgNipLookupField } from '../components/dashboard/OrgNipLookupField'
 
 const fieldClass =
   'w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60'
@@ -17,6 +24,10 @@ function CreateCompanyForm({ onCreated }: { onCreated: () => Promise<void> }) {
   const [address, setAddress] = useState('')
   const [city, setCity] = useState('')
   const [postalCode, setPostalCode] = useState('')
+  const [phone, setPhone] = useState('')
+  const [listed, setListed] = useState(false)
+  const [gusPreview, setGusPreview] = useState<BillingGusPreview | null>(null)
+  const [suggestedKind, setSuggestedKind] = useState<LegalEntityKind>('company')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -27,25 +38,39 @@ function CreateCompanyForm({ onCreated }: { onCreated: () => Promise<void> }) {
       setError('Nazwa firmy jest wymagana.')
       return
     }
-    const nipDigits = nip.replace(/\s+/g, '')
+    const nipDigits = nip.replace(/\D/g, '')
     if (nipDigits && !/^\d{10}$/.test(nipDigits)) {
       setError('NIP musi składać się z 10 cyfr.')
       return
     }
     setSaving(true)
     try {
-      await ensureMyBillingOrganization({
+      const orgId = await ensureMyBillingOrganization({
         name: trimmed,
         nip: nipDigits || null,
         address,
         city,
         postalCode,
       })
+      if (nipDigits) {
+        await upsertBillingOrgLegalEntity({
+          orgId,
+          nip: nipDigits,
+          legalName: trimmed,
+          city,
+          postalCode,
+          address,
+          phone,
+          gus: gusPreview,
+          kind: suggestedKind,
+          listedInProviderDirectory: listed,
+        })
+      }
       toast.success('Zapisano dane firmy.')
       await onCreated()
     } catch (e) {
       console.error('[CompanySettingsPage] create:', e)
-      setError(e instanceof Error ? e.message : 'Nie udało się zapisać danych firmy.')
+      setError(e instanceof BillingOrgLegalEntityError || e instanceof Error ? e.message : 'Nie udało się zapisać danych firmy.')
     } finally {
       setSaving(false)
     }
@@ -68,17 +93,46 @@ function CreateCompanyForm({ onCreated }: { onCreated: () => Promise<void> }) {
           </label>
           <input id="new-org-name" className={fieldClass} value={name} disabled={saving} onChange={(e) => setName(e.target.value)} />
         </div>
-        <div className="space-y-1.5">
-          <label className="block text-sm text-muted-foreground" htmlFor="new-org-nip">
-            NIP
-          </label>
-          <input id="new-org-nip" className={fieldClass} value={nip} disabled={saving} onChange={(e) => setNip(e.target.value)} />
+        <div className="space-y-1.5 sm:col-span-2">
+          <OrgNipLookupField
+            idPrefix="new-org"
+            nip={nip}
+            disabled={saving}
+            onNipChange={(value) => {
+              setNip(value)
+              setGusPreview(null)
+            }}
+            onFilled={(filled) => {
+              setNip(filled.nip)
+              setName(filled.name)
+              setAddress(filled.address)
+              setCity(filled.city)
+              setPostalCode(filled.postalCode)
+              setGusPreview(filled.gusPreview)
+              setSuggestedKind(filled.suggestedKind)
+            }}
+          />
         </div>
         <div className="space-y-1.5">
           <label className="block text-sm text-muted-foreground" htmlFor="new-org-city">
             Miasto
           </label>
           <input id="new-org-city" className={fieldClass} value={city} disabled={saving} onChange={(e) => setCity(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <label className="block text-sm text-muted-foreground" htmlFor="new-org-phone">
+            Telefon
+          </label>
+          <input
+            id="new-org-phone"
+            className={fieldClass}
+            value={phone}
+            disabled={saving}
+            inputMode="tel"
+            autoComplete="tel"
+            onChange={(e) => setPhone(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">Potrzebny, aby zapisać firmę w rejestrze DOMIO i katalogu usługodawców.</p>
         </div>
         <div className="space-y-1.5 sm:col-span-2">
           <label className="block text-sm text-muted-foreground" htmlFor="new-org-address">
@@ -104,6 +158,22 @@ function CreateCompanyForm({ onCreated }: { onCreated: () => Promise<void> }) {
             onChange={(e) => setPostalCode(e.target.value)}
           />
         </div>
+        <label className="sm:col-span-2 flex items-start gap-3 rounded-xl border border-border/70 bg-muted/30 px-4 py-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={listed}
+            disabled={saving}
+            onChange={(e) => setListed(e.target.checked)}
+          />
+          <span>
+            <span className="font-medium">Chcę być widoczny jako usługodawca dla wspólnot w DOMIO</span>
+            <span className="block text-xs text-muted-foreground mt-1">
+              Wspólnoty w module Administracja będą mogły Cię zaprosić. Decyzję możesz zmienić w każdej chwili. Domyślnie
+              jesteś niewidoczny.
+            </span>
+          </span>
+        </label>
       </div>
       <button
         type="button"

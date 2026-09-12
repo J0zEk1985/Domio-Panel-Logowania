@@ -191,22 +191,6 @@ export default function ModuleDetail() {
 
       <PricingSection moduleName={mod.name} moduleSlug={mod.slug} onSelectPlan={handleSelectPlan} />
 
-      <section className="py-16 px-4">
-        <div className="container mx-auto max-w-3xl text-center">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
-            <h2 className="font-display text-2xl md:text-3xl font-bold mb-4">
-              Gotowy na <span className="gradient-brand-text">{mod.name}</span>?
-            </h2>
-            <p className="text-muted-foreground mb-8">
-              Wybierz plan powyżej — dane firmy uzupełnisz przy pierwszym zakupie.
-            </p>
-            <a href="#cennik" className={btnPrimary}>
-              Zobacz plany
-            </a>
-          </motion.div>
-        </div>
-      </section>
-
       {selectedPlan ? (
         <CheckoutDrawer
           open={checkoutOpen}
