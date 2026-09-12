@@ -216,6 +216,7 @@ export function useDashboardApps() {
     allProductApps,
     loading,
     error,
+    reload: loadUserApps,
     isPlatformAdmin,
     billingOrgId,
     canManageBilling,

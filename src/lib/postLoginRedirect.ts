@@ -14,7 +14,9 @@ export const isValidDomioSubdomain = (url: string): boolean => {
 /** Same-origin SPA paths after login (e.g. /admin). Rejects open redirects. */
 export const isSafeInternalReturnPath = (path: string): boolean => {
   if (!path.startsWith("/") || path.startsWith("//")) return false;
-  const [pathname] = path.split("?");
+  const [withoutHash, hash] = path.split("#");
+  if (hash != null && hash !== "" && !/^[a-zA-Z0-9_-]+$/.test(hash)) return false;
+  const [pathname] = withoutHash.split("?");
   return /^\/[a-zA-Z0-9/_-]*$/.test(pathname) && !pathname.includes("..");
 };
 

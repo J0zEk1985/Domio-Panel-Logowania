@@ -3986,6 +3986,18 @@ export type Database = {
         }
         Returns: Database["public"]["Tables"]["org_subscriptions"]["Row"]
       }
+      preview_promo_code: { Args: { p_code: string }; Returns: Json }
+      redeem_promo_code: { Args: { p_code: string }; Returns: Json }
+      ensure_my_billing_organization: {
+        Args: {
+          p_name: string
+          p_nip?: string | null
+          p_address?: string | null
+          p_city?: string | null
+          p_postal_code?: string | null
+        }
+        Returns: string
+      }
       ensure_org_inbound_mailboxes: {
         Args: { p_org_id: string }
         Returns: Database["public"]["Tables"]["org_inbound_mailboxes"]["Row"][]

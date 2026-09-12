@@ -170,6 +170,30 @@ export function mapPricingPlanRow(row: {
   }
 }
 
+export async function ensureMyBillingOrganization(input: {
+  name: string
+  nip?: string | null
+  address?: string | null
+  city?: string | null
+  postalCode?: string | null
+}): Promise<string> {
+  const { data, error } = await supabase.rpc('ensure_my_billing_organization', {
+    p_name: input.name,
+    p_nip: input.nip?.trim() || null,
+    p_address: input.address?.trim() || null,
+    p_city: input.city?.trim() || null,
+    p_postal_code: input.postalCode?.trim() || null,
+  })
+  if (error) {
+    console.error('[orgBilling] ensure_my_billing_organization:', error)
+    throw new Error(error.message || 'Nie udało się zapisać danych firmy.')
+  }
+  if (typeof data !== 'string' || !data) {
+    throw new Error('Nie udało się utworzyć firmy.')
+  }
+  return data
+}
+
 export async function activateOrgSubscriptionPlan(input: {
   orgId: string
   appId: string

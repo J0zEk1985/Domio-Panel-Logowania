@@ -2,7 +2,6 @@ import { useState, FormEvent, useEffect, useRef } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { navigateToHref, resolveAuthLanding, resolvePostLoginTarget } from '../lib/postLoginRedirect'
-import { AuthContactSlot } from '../components/landing/ContactDetails'
 
 /**
  * Hard reset function - completely clears session, cookies, and localStorage
@@ -319,7 +318,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-white px-4 py-8">
-      <div className="w-full max-w-md space-y-6">
+      <div className="w-full max-w-md">
         <div className="bg-white rounded-lg shadow-lg p-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Witaj ponownie</h1>
           <p className="text-gray-600 mb-8">Zaloguj się, aby uzyskać dostęp do swoich aplikacji</p>
@@ -433,7 +432,6 @@ export default function LoginPage() {
             </Link>
           </p>
         </div>
-        <AuthContactSlot />
       </div>
     </div>
   )

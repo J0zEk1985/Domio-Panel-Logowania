@@ -46,6 +46,7 @@ function App() {
 
   useEffect(() => {
     if (currentPath.startsWith('/module/')) {
+      if (window.location.hash) return
       window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
     }
   }, [currentPath])

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { CheckCircle2, Star } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
@@ -8,6 +8,7 @@ import { planLimitLines } from '../../lib/pricingDisplay'
 
 export interface PricingPlan {
   id: string
+  appId: string
   name: string
   monthlyPrice: number
   yearlyPrice: number
@@ -56,6 +57,7 @@ function toDisplayPlan(row: DbPricingPlanRow, highlighted: boolean, omitLocation
   const fromDb = parseFeaturesFromDb(row.features)
   return {
     id: row.id,
+    appId: row.app_id,
     name: row.name,
     monthlyPrice: Number(row.price_monthly) || 0,
     yearlyPrice: Number(row.price_yearly) || 0,
@@ -78,12 +80,14 @@ function toDisplayPlan(row: DbPricingPlanRow, highlighted: boolean, omitLocation
 interface PricingSectionProps {
   moduleName: string
   moduleSlug: string
+  onSelectPlan: (plan: PricingPlan, yearly: boolean) => void
 }
 
-export function PricingSection({ moduleName, moduleSlug }: PricingSectionProps) {
+export function PricingSection({ moduleName, moduleSlug, onSelectPlan }: PricingSectionProps) {
   const [yearly, setYearly] = useState(false)
   const [dbPlans, setDbPlans] = useState<DbPricingPlanRow[]>([])
   const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
 
   useEffect(() => {
     let cancelled = false
@@ -137,6 +141,27 @@ export function PricingSection({ moduleName, moduleSlug }: PricingSectionProps) 
     }
   }, [moduleName, moduleSlug])
 
+  useEffect(() => {
+    if (loading) return
+    if (window.location.hash !== '#cennik') return
+    const node = document.getElementById('cennik')
+    if (!node) return
+    window.requestAnimationFrame(() => {
+      node.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [loading])
+
+  const handleSelect = async (plan: PricingPlan) => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    if (!session) {
+      navigate(`/login?returnTo=${encodeURIComponent(`/module/${moduleSlug}#cennik`)}`)
+      return
+    }
+    onSelectPlan(plan, yearly)
+  }
+
   const displayPlans = useMemo(() => {
     const sorted = [...dbPlans].sort((a, b) => Number(a.price_monthly) - Number(b.price_monthly))
     const highlightId =
@@ -147,7 +172,7 @@ export function PricingSection({ moduleName, moduleSlug }: PricingSectionProps) 
   }, [dbPlans, moduleSlug])
 
   return (
-    <section className="py-20 px-4">
+    <section id="cennik" className="py-20 px-4 scroll-mt-24">
       <div className="container mx-auto max-w-6xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -238,16 +263,17 @@ export function PricingSection({ moduleName, moduleSlug }: PricingSectionProps) 
                       </li>
                     ))}
                   </ul>
-                  <Link
-                    to="/dashboard"
+                  <button
+                    type="button"
+                    onClick={() => void handleSelect(plan)}
                     className={`w-full rounded-md px-4 py-3 text-sm font-medium text-center transition-colors ${
                       plan.highlighted
                         ? 'gradient-brand text-primary-foreground border-0'
                         : 'border border-border bg-background hover:bg-muted/60'
                     }`}
                   >
-                    Przejdź do panelu
-                  </Link>
+                    Wybierz plan
+                  </button>
                 </motion.div>
               )
             })}

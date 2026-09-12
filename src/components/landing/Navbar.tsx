@@ -10,9 +10,20 @@ const ctaDesktopClass =
 const ctaMobileClass =
   'block w-full rounded-md px-4 py-2 text-center font-medium gradient-brand text-primary-foreground disabled:opacity-60 disabled:pointer-events-none'
 
+async function loadPlatformAdmin(userId: string | undefined): Promise<boolean> {
+  if (!userId) return false
+  const { data, error } = await supabase.from('profiles').select('platform_role').eq('id', userId).maybeSingle()
+  if (error) {
+    console.error('[Navbar] platform_role:', error)
+    return false
+  }
+  return (data?.platform_role ?? '').toString().trim().toLowerCase() === 'admin'
+}
+
 export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
@@ -21,13 +32,20 @@ export function Navbar() {
 
   useEffect(() => {
     let cancelled = false
+    const syncAuth = async (userId: string | undefined) => {
+      const admin = await loadPlatformAdmin(userId)
+      if (!cancelled) {
+        setIsAuthenticated(!!userId)
+        setIsPlatformAdmin(admin)
+      }
+    }
     void supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!cancelled) setIsAuthenticated(!!session)
+      void syncAuth(session?.user?.id)
     })
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsAuthenticated(!!session)
+      void syncAuth(session?.user?.id)
     })
     return () => {
       cancelled = true
@@ -108,9 +126,11 @@ export function Navbar() {
               <Link to="/firma" className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
                 <Building2 className="h-4 w-4" /> Firma
               </Link>
-              <Link to="/admin" className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
-                <Shield className="h-4 w-4" /> Admin
-              </Link>
+              {isPlatformAdmin ? (
+                <Link to="/admin" className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                  <Shield className="h-4 w-4" /> Admin
+                </Link>
+              ) : null}
             </>
           )}
           <ThemeToggle />
@@ -146,9 +166,11 @@ export function Navbar() {
               <Link to="/firma" className="block text-sm text-muted-foreground" onClick={closeMobile}>
                 Firma
               </Link>
-              <Link to="/admin" className="block text-sm text-muted-foreground" onClick={closeMobile}>
-                Admin
-              </Link>
+              {isPlatformAdmin ? (
+                <Link to="/admin" className="block text-sm text-muted-foreground" onClick={closeMobile}>
+                  Admin
+                </Link>
+              ) : null}
             </>
           )}
           {renderCta('mobile')}
