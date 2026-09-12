@@ -1,0 +1,20 @@
+---
+description: Rebuild and verify dist after any UI/frontend change before calling the work deployable
+alwaysApply: true
+---
+
+# Panel Logowania: dist is the production site
+
+test.udomio.com.pl / udomio.com.pl serve the committed/uploaded `dist/` folder, not `src/`. Changing React/CSS without `npm run build` leaves the live panel on the previous bundle.
+
+## After any user-visible change (UI, copy, routing, checkout, dashboard)
+
+1. Run `npm run build` in `Domio-Panel-Logowania`.
+2. Confirm `dist/index.html` points at newly hashed `/assets/index-*.js` and `/assets/index-*.css` (hashes must change vs the previous build).
+3. Grep `dist/assets` for a unique string from the change (Polish UI copy or a distinctive className). Fail the task if it is missing.
+4. Tell the user that `dist/` is ready to upload. Do not claim the live site is updated until that upload happens.
+
+## Do not
+
+- Finish a panel UI task with only `src/` edits.
+- Assume Vite dev server or a source commit is what production serves.
