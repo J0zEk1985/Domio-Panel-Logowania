@@ -19,11 +19,17 @@ export type PartnerOfferRow = {
 
 export type VendorPartnerRow = {
   id: string
+  org_id: string
   name: string
   service_type: string | null
   contact_email: string | null
   contact_phone: string | null
   status: string | null
+}
+
+export type OrganizationOption = {
+  id: string
+  name: string
 }
 
 export type CleaningLocationRow = {

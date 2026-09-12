@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react'
 import { Edit, Plus, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { inputClass } from './pricingAdminUtils'
-import type { VendorPartnerRow } from './partnerOffersTypes'
+import type { OrganizationOption, VendorPartnerRow } from './partnerOffersTypes'
 
 type VendorFormState = {
+  orgId: string
   name: string
   serviceType: string
   contactEmail: string
@@ -13,6 +14,7 @@ type VendorFormState = {
 }
 
 const emptyVendorForm: VendorFormState = {
+  orgId: '',
   name: '',
   serviceType: '',
   contactEmail: '',
@@ -22,11 +24,12 @@ const emptyVendorForm: VendorFormState = {
 
 type Props = {
   vendors: VendorPartnerRow[]
+  organizations: OrganizationOption[]
   loading: boolean
   onRefresh: () => Promise<void>
 }
 
-export default function VendorPartnersSubTab({ vendors, loading, onRefresh }: Props) {
+export default function VendorPartnersSubTab({ vendors, organizations, loading, onRefresh }: Props) {
   const [searchQuery, setSearchQuery] = useState('')
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingVendorId, setEditingVendorId] = useState<string | null>(null)
@@ -44,10 +47,12 @@ export default function VendorPartnersSubTab({ vendors, loading, onRefresh }: Pr
     })
   }, [vendors, searchQuery])
 
+  const defaultOrgId = organizations.length === 1 ? organizations[0].id : ''
+
   const openCreateDialog = () => {
     setFormError(null)
     setEditingVendorId(null)
-    setForm(emptyVendorForm)
+    setForm({ ...emptyVendorForm, orgId: defaultOrgId })
     setIsDialogOpen(true)
   }
 
@@ -55,6 +60,7 @@ export default function VendorPartnersSubTab({ vendors, loading, onRefresh }: Pr
     setFormError(null)
     setEditingVendorId(vendor.id)
     setForm({
+      orgId: vendor.org_id ?? defaultOrgId,
       name: vendor.name ?? '',
       serviceType: vendor.service_type ?? '',
       contactEmail: vendor.contact_email ?? '',
@@ -75,6 +81,11 @@ export default function VendorPartnersSubTab({ vendors, loading, onRefresh }: Pr
     setFormError(null)
     const name = form.name.trim()
     const serviceType = form.serviceType.trim()
+    const orgId = form.orgId.trim()
+    if (!orgId) {
+      setFormError('Wybierz organizację, do której ma należeć partner.')
+      return
+    }
     if (!name) {
       setFormError('Podaj nazwę firmy.')
       return
@@ -85,6 +96,7 @@ export default function VendorPartnersSubTab({ vendors, loading, onRefresh }: Pr
     }
 
     const payload = {
+      org_id: orgId,
       name,
       service_type: serviceType,
       contact_email: form.contactEmail.trim() || null,
@@ -207,6 +219,22 @@ export default function VendorPartnersSubTab({ vendors, loading, onRefresh }: Pr
                   {formError}
                 </div>
               )}
+
+              <label className="block space-y-1.5 text-sm">
+                <span className="text-muted-foreground">Organizacja</span>
+                <select
+                  className={inputClass}
+                  value={form.orgId}
+                  onChange={(e) => setForm((prev) => ({ ...prev, orgId: e.target.value }))}
+                >
+                  <option value="">Wybierz organizację</option>
+                  {organizations.map((org) => (
+                    <option key={org.id} value={org.id}>
+                      {org.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
               <label className="block space-y-1.5 text-sm">
                 <span className="text-muted-foreground">Nazwa firmy</span>

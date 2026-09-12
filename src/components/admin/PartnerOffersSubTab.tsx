@@ -162,10 +162,16 @@ export default function PartnerOffersSubTab({
       setFormError('Wybierz partnera.')
       return
     }
+    const selectedVendor = partners.find((partner) => partner.id === form.vendorId)
+    if (!selectedVendor?.org_id) {
+      setFormError('Wybrany partner nie ma przypisanej organizacji.')
+      return
+    }
 
     const payload = {
+      org_id: selectedVendor.org_id,
       title,
-      description: form.description.trim() || null,
+      description: form.description.trim(),
       vendor_id: form.vendorId,
       billing_model: form.billingModel,
       action_type: form.actionType,

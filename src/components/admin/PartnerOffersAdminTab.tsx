@@ -3,13 +3,14 @@ import { supabase } from '../../lib/supabase'
 import PartnerOffersSubTab from './PartnerOffersSubTab'
 import VendorPartnersSubTab from './VendorPartnersSubTab'
 import ReportsSubTab from './partner-offers/ReportsSubTab'
-import type { CleaningLocationRow, PartnerOfferRow, VendorPartnerRow } from './partnerOffersTypes'
+import type { CleaningLocationRow, OrganizationOption, PartnerOfferRow, VendorPartnerRow } from './partnerOffersTypes'
 
 type AdminPartnerOffersTab = 'offers' | 'vendors' | 'reports'
 
 export default function PartnerOffersAdminTab() {
   const [offers, setOffers] = useState<PartnerOfferRow[]>([])
   const [partners, setPartners] = useState<VendorPartnerRow[]>([])
+  const [organizations, setOrganizations] = useState<OrganizationOption[]>([])
   const [locations, setLocations] = useState<CleaningLocationRow[]>([])
   const [interactionsCount, setInteractionsCount] = useState<number>(0)
   const [loading, setLoading] = useState(true)
@@ -19,14 +20,18 @@ export default function PartnerOffersAdminTab() {
   const loadAll = useCallback(async () => {
     setLoadError(null)
     try {
-      const [offersRes, partnersRes, interactionsRes, locationsRes] = await Promise.all([
+      const [offersRes, partnersRes, orgsRes, interactionsRes, locationsRes] = await Promise.all([
         supabase
           .from('partner_offers')
           .select(
             'id, title, description, vendor_id, billing_model, action_type, action_value, is_active, target_locations, icon_emoji, bg_color, image_url, promote_on_board',
           )
           .order('title'),
-        supabase.from('vendor_partners').select('id, name, service_type, contact_email, contact_phone, status').order('name'),
+        supabase
+          .from('vendor_partners')
+          .select('id, org_id, name, service_type, contact_email, contact_phone, status')
+          .order('name'),
+        supabase.from('organizations').select('id, name').order('name'),
         supabase.from('offer_interactions').select('*', { count: 'exact', head: true }),
         supabase.from('cleaning_locations').select('id, city, address').order('city').order('address'),
       ])
@@ -45,6 +50,14 @@ export default function PartnerOffersAdminTab() {
         setPartners([])
       } else {
         setPartners((partnersRes.data as VendorPartnerRow[] | null) ?? [])
+      }
+
+      if (orgsRes.error) {
+        console.error('[PartnerOffersAdminTab] organizations:', orgsRes.error)
+        setLoadError((prev) => prev ?? 'Nie udało się pobrać listy organizacji.')
+        setOrganizations([])
+      } else {
+        setOrganizations((orgsRes.data as OrganizationOption[] | null) ?? [])
       }
 
       if (interactionsRes.error) {
@@ -130,6 +143,7 @@ export default function PartnerOffersAdminTab() {
       {activeTab === 'vendors' && (
         <VendorPartnersSubTab
           vendors={partners}
+          organizations={organizations}
           loading={loading}
           onRefresh={loadAll}
         />
