@@ -14,7 +14,9 @@ import type {
   UserSortKey,
   UsersOrgsSubTab,
 } from './usersAndOrgsTypes'
-import { formatDateTime } from './usersAndOrgsUtils'
+import { fetchUserIdsWithModuleAccess, type ProductAppOption } from './adminUserAccess'
+import { isHubApplication } from '../../lib/moduleAccess'
+import { accountTypeLabel, formatDateTime, platformRoleLabel } from './usersAndOrgsUtils'
 
 /** Surfaces PostgREST / Postgres details in UI and logs (not generic RLS text). */
 function formatSupabaseError(err: PostgrestError | Error | null | undefined): string {
@@ -94,9 +96,11 @@ export default function UsersAndOrgsTab() {
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [orgSort, setOrgSort] = useState<OrgSortConfig>({ key: 'name', direction: 'asc' })
-  const [userSort, setUserSort] = useState<UserSortConfig>({ key: 'last_login_at', direction: 'desc' })
+  const [userSort, setUserSort] = useState<UserSortConfig>({ key: 'full_name', direction: 'asc' })
   const [selectedOrg, setSelectedOrg] = useState<string | null>(null)
   const [selectedUser, setSelectedUser] = useState<string | null>(null)
+  const [moduleFilterAppId, setModuleFilterAppId] = useState<string | null>(null)
+  const [productApps, setProductApps] = useState<ProductAppOption[]>([])
 
   const [orgs, setOrgs] = useState<OrganizationListRow[]>([])
   const [users, setUsers] = useState<ProfileListRow[]>([])
@@ -161,11 +165,26 @@ export default function UsersAndOrgsTab() {
     try {
       const key = userSort.key
       const ascending = userSort.direction === 'asc'
-      let query = supabase.from('profiles').select('*')
+      let query = supabase
+        .from('profiles')
+        .select('id, full_name, email, platform_role, account_type, updated_at, last_login_at')
       const searchQuery = debouncedSearch.trim()
       if (searchQuery) {
         const pattern = `%${searchQuery.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
         query = query.or(`email.ilike.${pattern},full_name.ilike.${pattern}`)
+      }
+      if (moduleFilterAppId) {
+        const selectedApp = productApps.find((app) => app.id === moduleFilterAppId)
+        if (!selectedApp) {
+          setUsers([])
+          return
+        }
+        const allowedIds = await fetchUserIdsWithModuleAccess(selectedApp)
+        if (allowedIds.length === 0) {
+          setUsers([])
+          return
+        }
+        query = query.in('id', allowedIds)
       }
       query = query.order(key, { ascending }).limit(10)
 
@@ -182,7 +201,36 @@ export default function UsersAndOrgsTab() {
       setListError(e instanceof Error ? e.message : 'Wystąpił błąd podczas ładowania użytkowników.')
       setUsers([])
     }
-  }, [debouncedSearch, userSort])
+  }, [debouncedSearch, moduleFilterAppId, productApps, userSort])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadApps = async () => {
+      const { data, error } = await supabase
+        .from('applications')
+        .select('id,name,is_active,is_free,domain_url,api_url')
+        .eq('is_active', true)
+        .order('name')
+      if (error) {
+        console.error('[UsersAndOrgsTab] applications:', error)
+        return
+      }
+      if (cancelled) return
+      const list = ((data ?? []) as ProductAppOption[]).filter(
+        (app) =>
+          !isHubApplication({
+            name: app.name,
+            domain_url: app.domain_url ?? '',
+            api_url: app.api_url,
+          }),
+      )
+      setProductApps(list)
+    }
+    void loadApps()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (selectedOrg != null || selectedUser != null) return
@@ -227,8 +275,8 @@ export default function UsersAndOrgsTab() {
       <div>
         <h2 className="font-display text-xl font-semibold mb-1">Użytkownicy i firmy</h2>
         <p className="text-muted-foreground text-sm">
-          Przeglądaj organizacje i profile użytkowników (max. 10 wyników na listę). Użyj wyszukiwania i nagłówków kolumn
-          do sortowania.
+          Przeglądaj organizacje i profile użytkowników (max. 10 wyników na listę). Użyj wyszukiwania, filtra modułów i
+          nagłówków kolumn do sortowania.
         </p>
       </div>
 
@@ -252,7 +300,8 @@ export default function UsersAndOrgsTab() {
           type="button"
           onClick={() => {
             setActiveSubTab('users')
-            setUserSort({ key: 'last_login_at', direction: 'desc' })
+            setUserSort({ key: 'full_name', direction: 'asc' })
+            setModuleFilterAppId(null)
           }}
           className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
             activeSubTab === 'users'
@@ -275,6 +324,36 @@ export default function UsersAndOrgsTab() {
           aria-label="Wyszukiwarka"
         />
       </div>
+
+      {activeSubTab === 'users' && (
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Filtr modułów">
+          <button
+            type="button"
+            onClick={() => setModuleFilterAppId(null)}
+            className={`rounded-xl px-3 py-1.5 text-sm font-medium transition-colors ${
+              moduleFilterAppId == null
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+          >
+            Wszystkie moduły
+          </button>
+          {productApps.map((app) => (
+            <button
+              key={app.id}
+              type="button"
+              onClick={() => setModuleFilterAppId(app.id)}
+              className={`rounded-xl px-3 py-1.5 text-sm font-medium transition-colors ${
+                moduleFilterAppId === app.id
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`}
+            >
+              {app.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {listError && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-xl text-sm break-words">
@@ -344,8 +423,8 @@ export default function UsersAndOrgsTab() {
                   onSort={handleUserSort}
                 />
                 <UserSortableTh
-                  label="Ostatnie logowanie"
-                  sortKey="last_login_at"
+                  label="Typ konta"
+                  sortKey="account_type"
                   currentSort={userSort}
                   onSort={handleUserSort}
                 />
@@ -368,8 +447,8 @@ export default function UsersAndOrgsTab() {
                   >
                     <td className="p-4 font-medium">{user.full_name?.trim() || 'Brak nazwy'}</td>
                     <td className="p-4 text-muted-foreground">{user.email?.trim() ?? '—'}</td>
-                    <td className="p-4">{user.platform_role?.trim() ?? '—'}</td>
-                    <td className="p-4 text-muted-foreground">{formatDateTime(user.last_login_at)}</td>
+                    <td className="p-4">{platformRoleLabel(user.platform_role)}</td>
+                    <td className="p-4 text-muted-foreground">{accountTypeLabel(user.account_type)}</td>
                   </tr>
                 ))}
             </tbody>

@@ -1,62 +1,42 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ChevronDown } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { inputClass } from './pricingAdminUtils'
+import { isHubApplication, isSubscriptionCurrent } from '../../lib/moduleAccess'
+import { computeUserModuleAccess, type ProductAppOption, type UserModuleAccessRow } from './adminUserAccess'
 import type { MembershipWithOrg, ProfileDetailRow } from './usersAndOrgsTypes'
-import { nestedName } from './usersAndOrgsUtils'
-
-type ApplicationRow = {
-  id: string
-  name: string
-  is_active: boolean | null
-}
+import {
+  MEMBERSHIP_ROLE_OPTIONS,
+  isSimplifiedAccount,
+  membershipRoleLabel,
+  nestedName,
+} from './usersAndOrgsUtils'
 
 type OrgSubRow = {
-  id: string
   app_id: string
   status: string
   expires_at: string | null
-  plan_id: string | null
 }
 
-type PlanOption = {
-  id: string
-  app_id: string
-  name: string
-  max_users: number | null
+function rankMembershipRole(role: string): number {
+  const order = [
+    'owner',
+    'wlasciciel',
+    'admin',
+    'administrator',
+    'coordinator',
+    'koordynator',
+    'manager',
+    'technik',
+    'cleaner',
+    'staff',
+  ]
+  const idx = order.indexOf(role.trim().toLowerCase())
+  return idx === -1 ? 99 : idx
 }
 
-function defaultExpiresAtIso(): string {
-  return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-}
-
-/** Local calendar date for input[type=date] (YYYY-MM-DD). */
-function expiresAtToDateInputValue(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-/** Noon local time to reduce timezone edge cases when persisting a picked calendar day. */
-function dateInputToExpiresIso(ymd: string): string | null {
-  const t = ymd.trim()
-  if (!t) return null
-  const d = new Date(`${t}T12:00:00`)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toISOString()
-}
-
-const ROLE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'owner', label: 'Właściciel' },
-  { value: 'coordinator', label: 'Administrator' },
-  { value: 'cleaner', label: 'Pracownik' },
-]
-
-function isSubActive(status: string): boolean {
-  return status.trim().toLowerCase() === 'active'
+function pickPrimaryMembership(memberships: MembershipWithOrg[]): MembershipWithOrg | null {
+  if (memberships.length === 0) return null
+  return [...memberships].sort((a, b) => rankMembershipRole(a.role) - rankMembershipRole(b.role))[0]
 }
 
 type Props = {
@@ -76,76 +56,89 @@ export default function UserDetailModuleAccessSection({
   const [sandboxError, setSandboxError] = useState<string | null>(null)
   const [roleBusy, setRoleBusy] = useState(false)
   const [roleError, setRoleError] = useState<string | null>(null)
-  const [moduleError, setModuleError] = useState<string | null>(null)
-  const [togglingAppId, setTogglingAppId] = useState<string | null>(null)
-  const [expirySavingAppId, setExpirySavingAppId] = useState<string | null>(null)
+  const [roleMenuOpen, setRoleMenuOpen] = useState(false)
+  const roleMenuRef = useRef<HTMLDivElement | null>(null)
 
-  const [applications, setApplications] = useState<ApplicationRow[]>([])
-  const [subsByAppId, setSubsByAppId] = useState<Map<string, OrgSubRow>>(new Map())
-  const [plans, setPlans] = useState<PlanOption[]>([])
-  const [draftPlanByAppId, setDraftPlanByAppId] = useState<Record<string, string>>({})
+  const [moduleRows, setModuleRows] = useState<UserModuleAccessRow[]>([])
   const [appsLoading, setAppsLoading] = useState(false)
+  const [moduleError, setModuleError] = useState<string | null>(null)
 
-  const primaryMembership = memberships[0] ?? null
-  const primaryOrgId = primaryMembership?.org_id ?? null
+  const primaryMembership = pickPrimaryMembership(memberships)
   const primaryOrgName = primaryMembership ? nestedName(primaryMembership.organizations) : '—'
 
-  const loadAppsAndSubs = useCallback(async () => {
-    if (!primaryOrgId) {
-      setApplications([])
-      setSubsByAppId(new Map())
-      return
+  const roleOptions = useMemo(() => {
+    const current = (primaryMembership?.role ?? '').trim()
+    if (!current) return MEMBERSHIP_ROLE_OPTIONS
+    if (MEMBERSHIP_ROLE_OPTIONS.some((o) => o.value === current)) return MEMBERSHIP_ROLE_OPTIONS
+    return [{ value: current, label: membershipRoleLabel(current) }, ...MEMBERSHIP_ROLE_OPTIONS]
+  }, [primaryMembership?.role])
+
+  const currentRoleValue = primaryMembership?.role ?? ''
+
+  useEffect(() => {
+    if (!roleMenuOpen) return
+    const onDocClick = (event: MouseEvent) => {
+      if (roleMenuRef.current && !roleMenuRef.current.contains(event.target as Node)) {
+        setRoleMenuOpen(false)
+      }
     }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [roleMenuOpen])
+
+  const loadModuleAccess = useCallback(async () => {
     setAppsLoading(true)
     setModuleError(null)
     try {
-      const [appsRes, subsRes, plansRes] = await Promise.all([
-        supabase.from('applications').select('id,name,is_active').order('name'),
-        supabase.from('org_subscriptions').select('id,app_id,status,expires_at,plan_id').eq('org_id', primaryOrgId),
-        supabase
-          .from('pricing_plans')
-          .select('id,app_id,name,max_users,is_active')
-          .eq('is_active', true)
-          .order('name'),
+      const orgIds = [...new Set(memberships.map((m) => m.org_id))]
+      const [appsRes, subsRes] = await Promise.all([
+        supabase.from('applications').select('id,name,is_active,is_free,domain_url,api_url').eq('is_active', true),
+        orgIds.length > 0
+          ? supabase.from('org_subscriptions').select('app_id,status,expires_at').in('org_id', orgIds)
+          : Promise.resolve({ data: [] as OrgSubRow[], error: null }),
       ])
       if (appsRes.error) {
         console.error('[UserDetailModuleAccessSection] applications:', appsRes.error)
         setModuleError('Nie udało się pobrać listy modułów.')
-        setApplications([])
-      } else {
-        const list = (appsRes.data ?? []) as ApplicationRow[]
-        setApplications(list.filter((a) => a.is_active !== false))
+        setModuleRows([])
+        return
       }
       if (subsRes.error) {
         console.error('[UserDetailModuleAccessSection] org_subscriptions:', subsRes.error)
-        setModuleError((prev) => prev ?? 'Nie udało się pobrać subskrypcji organizacji.')
-        setSubsByAppId(new Map())
-      } else {
-        const map = new Map<string, OrgSubRow>()
-        for (const row of subsRes.data ?? []) {
-          const r = row as OrgSubRow
-          if (!map.has(r.app_id)) map.set(r.app_id, r)
-        }
-        setSubsByAppId(map)
       }
-      if (plansRes.error) {
-        console.error('[UserDetailModuleAccessSection] pricing_plans:', plansRes.error)
-        setModuleError((prev) => prev ?? 'Nie udało się pobrać planów cenowych.')
-        setPlans([])
-      } else {
-        setPlans((plansRes.data ?? []) as PlanOption[])
-      }
+      const productApps = ((appsRes.data ?? []) as ProductAppOption[]).filter(
+        (app) =>
+          !isHubApplication({
+            name: app.name,
+            domain_url: app.domain_url ?? '',
+            api_url: app.api_url,
+          }),
+      )
+      const subscribedAppIds = new Set(
+        ((subsRes.data ?? []) as OrgSubRow[])
+          .filter((row) => isSubscriptionCurrent(row.status, row.expires_at))
+          .map((row) => row.app_id),
+      )
+      setModuleRows(
+        computeUserModuleAccess({
+          applications: productApps,
+          membershipRoles: memberships.map((m) => m.role),
+          fleetRole: profile.fleet_role,
+          isPlatformAdmin: (profile.platform_role ?? '').trim().toLowerCase() === 'admin',
+          subscribedAppIds,
+        }),
+      )
     } catch (e) {
-      console.error('[UserDetailModuleAccessSection] loadAppsAndSubs:', e)
-      setModuleError('Wystąpił błąd podczas ładowania modułów.')
+      console.error('[UserDetailModuleAccessSection] loadModuleAccess:', e)
+      setModuleError('Wystąpił błąd podczas ładowania dostępu do modułów.')
     } finally {
       setAppsLoading(false)
     }
-  }, [primaryOrgId])
+  }, [memberships, profile.fleet_role, profile.platform_role])
 
   useEffect(() => {
-    void loadAppsAndSubs()
-  }, [loadAppsAndSubs])
+    void loadModuleAccess()
+  }, [loadModuleAccess])
 
   const createSandbox = async () => {
     setSandboxError(null)
@@ -196,9 +189,13 @@ export default function UserDetailModuleAccessSection({
   }
 
   const updatePrimaryRole = async (nextRole: string) => {
-    if (!primaryMembership) return
+    if (!primaryMembership || nextRole === primaryMembership.role) {
+      setRoleMenuOpen(false)
+      return
+    }
     setRoleError(null)
     setRoleBusy(true)
+    setRoleMenuOpen(false)
     try {
       const { error } = await supabase.from('memberships').update({ role: nextRole }).eq('id', primaryMembership.id)
       if (error) {
@@ -212,145 +209,6 @@ export default function UserDetailModuleAccessSection({
       setRoleError('Wystąpił błąd podczas zmiany roli.')
     } finally {
       setRoleBusy(false)
-    }
-  }
-
-  const updateSubscriptionExpiry = async (sub: OrgSubRow, ymd: string) => {
-    if (!isSubActive(sub.status)) return
-    const trimmed = ymd.trim()
-    const currentYmd = expiresAtToDateInputValue(sub.expires_at)
-    if (trimmed === currentYmd) return
-    setModuleError(null)
-    setExpirySavingAppId(sub.app_id)
-    const expires_at = dateInputToExpiresIso(ymd)
-    try {
-      const { data, error } = await supabase
-        .from('org_subscriptions')
-        .update({ expires_at })
-        .eq('id', sub.id)
-        .select('id,app_id,status,expires_at')
-        .maybeSingle()
-      if (error) {
-        console.error('[UserDetailModuleAccessSection] expires_at update:', error)
-        setModuleError(error.message || 'Nie udało się zaktualizować daty wygaśnięcia.')
-        return
-      }
-      if (data) {
-        const row = data as OrgSubRow
-        setSubsByAppId((prev) => {
-          const next = new Map(prev)
-          next.set(row.app_id, row)
-          return next
-        })
-      }
-    } catch (e) {
-      console.error('[UserDetailModuleAccessSection] updateSubscriptionExpiry:', e)
-      setModuleError('Wystąpił błąd podczas zapisu daty.')
-    } finally {
-      setExpirySavingAppId(null)
-    }
-  }
-
-  const updateSubscriptionPlan = async (sub: OrgSubRow, planId: string) => {
-    const nextPlanId = planId.trim() || null
-    if ((sub.plan_id ?? null) === nextPlanId) return
-    setModuleError(null)
-    try {
-      const { data, error } = await supabase
-        .from('org_subscriptions')
-        .update({ plan_id: nextPlanId })
-        .eq('id', sub.id)
-        .select('id,app_id,status,expires_at,plan_id')
-        .maybeSingle()
-      if (error) {
-        console.error('[UserDetailModuleAccessSection] plan_id update:', error)
-        setModuleError(error.message || 'Nie udało się przypisać planu.')
-        return
-      }
-      if (data) {
-        const row = data as OrgSubRow
-        setSubsByAppId((prev) => {
-          const next = new Map(prev)
-          next.set(row.app_id, row)
-          return next
-        })
-      }
-    } catch (e) {
-      console.error('[UserDetailModuleAccessSection] updateSubscriptionPlan:', e)
-      setModuleError('Wystąpił błąd podczas zapisu planu.')
-    }
-  }
-
-  const setModuleActive = async (appId: string, appName: string, nextActive: boolean) => {
-    if (!primaryOrgId) return
-    setModuleError(null)
-    const appPlans = plans.filter((p) => p.app_id === appId)
-    const chosenPlanId = draftPlanByAppId[appId] || subsByAppId.get(appId)?.plan_id || ''
-    if (nextActive && appPlans.length > 0 && !chosenPlanId) {
-      setModuleError(`Wybierz plan dla modułu „${appName}” przed włączeniem.`)
-      return
-    }
-    setTogglingAppId(appId)
-    const nextStatus = nextActive ? 'active' : 'inactive'
-    const expiresOnActivate = defaultExpiresAtIso()
-    try {
-      const existing = subsByAppId.get(appId)
-      if (existing) {
-        const { data, error } = await supabase
-          .from('org_subscriptions')
-          .update({
-            status: nextStatus,
-            expires_at: nextActive ? expiresOnActivate : null,
-            plan_id: nextActive ? chosenPlanId || existing.plan_id : existing.plan_id,
-          })
-          .eq('id', existing.id)
-          .select('id,app_id,status,expires_at,plan_id')
-          .maybeSingle()
-        if (error) {
-          console.error('[UserDetailModuleAccessSection] sub update:', error)
-          setModuleError(error.message || 'Nie udało się zaktualizować modułu.')
-          return
-        }
-        if (data) {
-          const row = data as OrgSubRow
-          setSubsByAppId((prev) => {
-            const next = new Map(prev)
-            next.set(appId, row)
-            return next
-          })
-        }
-        return
-      }
-      if (!nextActive) return
-      const { data: inserted, error: insErr } = await supabase
-        .from('org_subscriptions')
-        .insert({
-          org_id: primaryOrgId,
-          app_id: appId,
-          status: nextStatus,
-          expires_at: expiresOnActivate,
-          plan_id: chosenPlanId || null,
-        })
-        .select('id,app_id,status,expires_at,plan_id')
-        .maybeSingle()
-      if (insErr) {
-        console.error('[UserDetailModuleAccessSection] sub insert:', insErr)
-        setModuleError(insErr.message || `Nie udało się włączyć modułu „${appName}”.`)
-        return
-      }
-      if (inserted) {
-        const row = inserted as OrgSubRow
-        setSubsByAppId((prev) => {
-          const next = new Map(prev)
-          next.set(appId, row)
-          return next
-        })
-      }
-    } catch (e) {
-      console.error('[UserDetailModuleAccessSection] setModuleActive:', e)
-      setModuleError('Wystąpił błąd podczas zmiany modułu.')
-    } finally {
-      setTogglingAppId(null)
     }
   }
 
@@ -380,46 +238,74 @@ export default function UserDetailModuleAccessSection({
     )
   }
 
-  const envLabel = `Środowisko: ${profile.full_name?.trim() || 'Użytkownik'} - ${primaryOrgName}`
-
   return (
-    <section className="bento-card p-6 space-y-4">
+    <section className="bento-card p-6 space-y-6">
       <h2 className="font-display text-lg font-semibold">Dostęp do modułów i role</h2>
 
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <p className="text-sm font-medium text-foreground">{envLabel}</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor="primary-org-role" className="text-sm text-muted-foreground whitespace-nowrap">
-            Rola w firmie
-          </label>
-          <select
-            id="primary-org-role"
-            disabled={roleBusy || !primaryMembership}
-            className={`${inputClass} min-w-[12rem]`}
-            value={
-              ROLE_OPTIONS.some((o) => o.value === primaryMembership?.role)
-                ? primaryMembership!.role
-                : 'owner'
-            }
-            onChange={(e) => void updatePrimaryRole(e.target.value)}
-          >
-            {ROLE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          {roleBusy && <span className="text-xs text-muted-foreground">Zapisywanie…</span>}
+      <div className="space-y-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Rola w firmie</p>
+            <p className="text-xs text-muted-foreground">
+              {isSimplifiedAccount(profile.account_type)
+                ? 'Konto uproszczone — to nie jest konto właściciela platformy.'
+                : `Firma: ${primaryOrgName}`}
+            </p>
+          </div>
+          <div className="relative" ref={roleMenuRef}>
+            <button
+              type="button"
+              disabled={roleBusy || !primaryMembership}
+              onClick={() => setRoleMenuOpen((open) => !open)}
+              className="inline-flex min-w-[16rem] items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
+              aria-haspopup="listbox"
+              aria-expanded={roleMenuOpen}
+            >
+              <span>{currentRoleValue ? membershipRoleLabel(currentRoleValue) : 'Wybierz rolę'}</span>
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            </button>
+            {roleMenuOpen && (
+              <ul
+                role="listbox"
+                className="absolute right-0 z-20 mt-1 min-w-[16rem] overflow-hidden rounded-xl border border-border/70 bg-background shadow-lg"
+              >
+                {roleOptions.map((option) => {
+                  const selected = option.value === currentRoleValue
+                  return (
+                    <li key={option.value}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted ${
+                          selected ? 'font-medium text-primary' : ''
+                        }`}
+                        onClick={() => void updatePrimaryRole(option.value)}
+                      >
+                        <Check className={`h-4 w-4 ${selected ? 'opacity-100' : 'opacity-0'}`} aria-hidden />
+                        {option.label}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
         </div>
+        {roleBusy && <p className="text-xs text-muted-foreground">Zapisywanie roli…</p>}
+        {roleError && (
+          <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-xl text-sm">
+            {roleError}
+          </div>
+        )}
       </div>
-      {roleError && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-xl text-sm">
-          {roleError}
-        </div>
-      )}
 
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-muted-foreground">Moduły platformy</h3>
+        <h3 className="text-sm font-medium">Moduły tego konta</h3>
+        <p className="text-xs text-muted-foreground max-w-2xl">
+          Lista pokazuje, do których aplikacji ten użytkownik ma wejście (typ konta, rola w firmie, subskrypcja
+          organizacji). Włączanie pakietów dla całej firmy jest w karcie firmy — nie tutaj.
+        </p>
         {moduleError && (
           <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-xl text-sm">
             {moduleError}
@@ -427,85 +313,34 @@ export default function UserDetailModuleAccessSection({
         )}
         {appsLoading ? (
           <p className="text-sm text-muted-foreground">Ładowanie modułów…</p>
-        ) : applications.length === 0 ? (
+        ) : moduleRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">Brak zdefiniowanych modułów w systemie.</p>
         ) : (
           <ul className="divide-y divide-border/60 rounded-xl border border-border/60 overflow-hidden">
-            {applications.map((app) => {
-              const sub = subsByAppId.get(app.id)
-              const active = sub ? isSubActive(sub.status) : false
-              const busy = togglingAppId === app.id
-              const expiryBusy = expirySavingAppId === app.id
-              const appPlans = plans.filter((p) => p.app_id === app.id)
-              const planValue = sub?.plan_id ?? draftPlanByAppId[app.id] ?? ''
-              return (
-                <li key={app.id} className="flex flex-wrap items-center justify-between gap-4 px-4 py-3 bg-background/50">
-                  <div>
-                    <p className="font-medium">{app.name?.trim() || '—'}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {sub ? `Status: ${sub.status}` : 'Brak wpisu subskrypcji — włączenie utworzy rekord.'}
-                    </p>
+            {moduleRows.map((row) => (
+              <li key={row.id} className="flex items-center justify-between gap-4 px-4 py-3 bg-background/50">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+                      row.hasAccess ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
+                    }`}
+                    aria-hidden
+                  >
+                    {row.hasAccess ? <Check className="h-3.5 w-3.5" /> : null}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{row.name}</p>
+                    <p className="text-xs text-muted-foreground">{row.reason}</p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-3 shrink-0">
-                    {appPlans.length > 0 && (
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Plan</span>
-                        <select
-                          disabled={busy}
-                          className={`${inputClass} w-[14rem] text-sm py-1.5 h-9`}
-                          value={planValue}
-                          onChange={(e) => {
-                            const nextId = e.target.value
-                            setDraftPlanByAppId((prev) => ({ ...prev, [app.id]: nextId }))
-                            if (sub) void updateSubscriptionPlan(sub, nextId)
-                          }}
-                        >
-                          <option value="">— Wybierz plan —</option>
-                          {appPlans.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name}
-                              {p.max_users != null ? ` (${p.max_users} użytk.)` : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                    {active && sub && (
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Wygasa</span>
-                        <input
-                          type="date"
-                          disabled={busy || expiryBusy}
-                          className={`${inputClass} w-[11rem] text-sm py-1.5 h-9`}
-                          value={expiresAtToDateInputValue(sub.expires_at)}
-                          onChange={(e) => void updateSubscriptionExpiry(sub, e.target.value)}
-                        />
-                      </div>
-                    )}
-                    <label className="flex items-center gap-3 cursor-pointer select-none">
-                      <span className="text-sm text-muted-foreground">{active ? 'Włączony' : 'Wyłączony'}</span>
-                      <input
-                        type="checkbox"
-                        disabled={busy}
-                        className="h-4 w-4 rounded border-input text-primary focus:ring-ring disabled:opacity-50"
-                        checked={active}
-                        onChange={(e) => void setModuleActive(app.id, app.name, e.target.checked)}
-                      />
-                    </label>
-                  </div>
-                </li>
-              )
-            })}
+                </div>
+                <span className="text-xs text-muted-foreground shrink-0">
+                  {row.hasAccess ? 'Dostęp' : 'Brak'}
+                </span>
+              </li>
+            ))}
           </ul>
         )}
       </div>
-
-      {memberships.length > 1 && (
-        <p className="text-xs text-muted-foreground">
-          Użytkownik ma wiele przypisań do firm — powyżej zarządzasz pierwszą organizacją (najstarsze członkostwo).
-          Pełna lista znajduje się w sekcji „Członkostwa w firmach”.
-        </p>
-      )}
     </section>
   )
 }

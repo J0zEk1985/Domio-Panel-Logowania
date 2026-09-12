@@ -3,7 +3,7 @@ import { ArrowLeft } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { inputClass } from './pricingAdminUtils'
 import type { MembershipWithOrg, ProfileDetailRow, TaskExecutionLogRow } from './usersAndOrgsTypes'
-import { formatDateOnly, formatDateTime, membershipRoleLabel, nestedName } from './usersAndOrgsUtils'
+import { formatDateOnly, formatDateTime, membershipRoleLabel, nestedName, platformRoleLabel, accountTypeLabel, taskLogActionLabel } from './usersAndOrgsUtils'
 import UserDetailModuleAccessSection from './UserDetailModuleAccessSection'
 
 type Props = {
@@ -31,7 +31,7 @@ export default function UserDetail({ userId, onBack }: Props) {
         supabase
           .from('profiles')
           .select(
-            'id,full_name,email,phone,platform_role,accepted_terms_at,terms_version,marketing_consent,created_at,last_login_at',
+            'id,full_name,email,phone,platform_role,account_type,fleet_role,accepted_terms_at,terms_version,marketing_consent,created_at,last_login_at',
           )
           .eq('id', userId)
           .maybeSingle(),
@@ -229,8 +229,15 @@ export default function UserDetail({ userId, onBack }: Props) {
             <dd className="font-medium mt-0.5">{profile.email?.trim() ?? '—'}</dd>
           </div>
           <div>
+            <dt className="text-muted-foreground">Typ konta</dt>
+            <dd className="font-medium mt-0.5">{accountTypeLabel(profile.account_type)}</dd>
+          </div>
+          <div>
             <dt className="text-muted-foreground">Rola platformowa</dt>
-            <dd className="font-medium mt-0.5">{profile.platform_role?.trim() ?? '—'}</dd>
+            <dd className="font-medium mt-0.5">{platformRoleLabel(profile.platform_role)}</dd>
+            <dd className="text-xs text-muted-foreground mt-1">
+              Uprawnienia w całym DOMIO (np. dostęp do tego panelu). To nie jest rola w firmie.
+            </dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Akceptacja regulaminu</dt>
@@ -286,6 +293,10 @@ export default function UserDetail({ userId, onBack }: Props) {
 
       <section className="bento-card p-6 space-y-4">
         <h2 className="font-display text-lg font-semibold">Aktywność / logi</h2>
+        <p className="text-xs text-muted-foreground max-w-2xl">
+          To nie są logi logowania do platformy. Pokazujemy ostatnie zdarzenia operacyjne z zadań sprzątania (np.
+          zameldowanie lub wymeldowanie na obiekcie).
+        </p>
         {showLogsPlaceholder ? (
           <p className="text-sm text-muted-foreground">Brak ostatnich logów operacyjnych.</p>
         ) : (
@@ -302,7 +313,7 @@ export default function UserDetail({ userId, onBack }: Props) {
                 {logs!.map((log) => (
                   <tr key={log.id} className="border-b border-border/40 last:border-0">
                     <td className="p-3 text-muted-foreground whitespace-nowrap">{formatDateOnly(log.created_at)}</td>
-                    <td className="p-3 font-medium">{log.action_type}</td>
+                    <td className="p-3 font-medium">{taskLogActionLabel(log.action_type)}</td>
                     <td className="p-3 text-muted-foreground">{log.notes?.trim() ?? '—'}</td>
                   </tr>
                 ))}
