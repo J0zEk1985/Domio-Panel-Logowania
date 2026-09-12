@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowLeft, ArrowUp } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { OrgInboundMailboxesCard } from '../dashboard/OrgInboundMailboxesCard'
-import { inputClass } from './pricingAdminUtils'
+import { OrgCompanyProfileForm } from '../dashboard/OrgCompanyProfileForm'
 import type { MembershipWithProfile, OrganizationDetailRow, OrgSubscriptionRow } from './usersAndOrgsTypes'
 import { formatDateTime, membershipRoleLabel, nestedName } from './usersAndOrgsUtils'
 
@@ -78,17 +78,10 @@ function compareMembers(
 
 export default function OrganizationDetail({ organizationId, onBack, onUserClick }: OrganizationDetailProps) {
   const [org, setOrg] = useState<OrganizationDetailRow | null>(null)
-  const [name, setName] = useState('')
-  const [nip, setNip] = useState('')
-  const [address, setAddress] = useState('')
-  const [city, setCity] = useState('')
-  const [postalCode, setPostalCode] = useState('')
   const [subscriptions, setSubscriptions] = useState<OrgSubscriptionRow[]>([])
   const [memberships, setMemberships] = useState<MembershipWithProfile[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [saveError, setSaveError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
   const [subToggleError, setSubToggleError] = useState<string | null>(null)
   const [memberSort, setMemberSort] = useState<MemberSortConfig>({ key: 'role', direction: 'asc' })
 
@@ -128,13 +121,6 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
       }
       const row = orgRes.data as OrganizationDetailRow | null
       setOrg(row)
-      if (row) {
-        setName(row.name ?? '')
-        setNip(row.nip ?? '')
-        setAddress(row.address ?? '')
-        setCity(row.city ?? '')
-        setPostalCode(row.postal_code ?? '')
-      }
 
       if (subRes.error) {
         console.error('[OrganizationDetail] subscriptions:', subRes.error)
@@ -223,40 +209,6 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
     void load()
   }, [load])
 
-  const saveOrg = async () => {
-    setSaveError(null)
-    const trimmed = name.trim()
-    if (!trimmed) {
-      setSaveError('Nazwa firmy jest wymagana.')
-      return
-    }
-    setSaving(true)
-    try {
-      const { error } = await supabase
-        .from('organizations')
-        .update({
-          name: trimmed,
-          nip: nip.trim() || null,
-          address: address.trim() || null,
-          city: city.trim() || null,
-          postal_code: postalCode.trim() || null,
-        })
-        .eq('id', organizationId)
-
-      if (error) {
-        console.error('[OrganizationDetail] save:', error)
-        setSaveError(error.message || 'Nie udało się zapisać zmian.')
-        return
-      }
-      await load()
-    } catch (e) {
-      console.error('[OrganizationDetail] save:', e)
-      setSaveError('Wystąpił nieoczekiwany błąd podczas zapisu.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const toggleSubscriptionStatus = async (sub: OrgSubscriptionRow, nextActive: boolean) => {
     setSubToggleError(null)
     const nextStatus = nextActive ? 'active' : 'inactive'
@@ -317,56 +269,7 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
 
       <section className="bento-card p-6 space-y-4">
         <h2 className="font-display text-lg font-semibold">Dane podstawowe</h2>
-        {saveError && (
-          <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-xl text-sm">
-            {saveError}
-          </div>
-        )}
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5 sm:col-span-2">
-            <label className="block text-sm text-muted-foreground" htmlFor="org-name">
-              Nazwa
-            </label>
-            <input id="org-name" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <label className="block text-sm text-muted-foreground" htmlFor="org-nip">
-              NIP
-            </label>
-            <input id="org-nip" className={inputClass} value={nip} onChange={(e) => setNip(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <label className="block text-sm text-muted-foreground" htmlFor="org-city">
-              Miasto
-            </label>
-            <input id="org-city" className={inputClass} value={city} onChange={(e) => setCity(e.target.value)} />
-          </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <label className="block text-sm text-muted-foreground" htmlFor="org-address">
-              Adres
-            </label>
-            <input id="org-address" className={inputClass} value={address} onChange={(e) => setAddress(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <label className="block text-sm text-muted-foreground" htmlFor="org-postal">
-              Kod pocztowy
-            </label>
-            <input
-              id="org-postal"
-              className={inputClass}
-              value={postalCode}
-              onChange={(e) => setPostalCode(e.target.value)}
-            />
-          </div>
-        </div>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => void saveOrg()}
-          className="inline-flex items-center justify-center rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-        >
-          {saving ? 'Zapisywanie…' : 'Zapisz zmiany'}
-        </button>
+        <OrgCompanyProfileForm organizationId={organizationId} canManage idPrefix="admin-org" />
       </section>
 
       <section className="bento-card p-6 space-y-4">

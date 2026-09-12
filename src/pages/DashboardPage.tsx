@@ -19,6 +19,7 @@ import { Footer } from '../components/landing/Footer'
 import { DashboardModuleCard } from '../components/dashboard/DashboardModuleCard'
 import { ModulePlanDialog } from '../components/dashboard/ModulePlanDialog'
 import { OrgInboundMailboxesCard } from '../components/dashboard/OrgInboundMailboxesCard'
+import { OrgCompanyCard } from '../components/dashboard/OrgCompanyCard'
 import {
   applicationMatchesModuleSlug,
   catalogModuleForApplication,
@@ -80,6 +81,7 @@ export default function DashboardPage() {
     isPlatformAdmin,
     billingOrgId,
     canManageBilling,
+    canManageOrgProfile,
     canPurchaseExtraUsers,
     subsByAppId,
     setSubsByAppId,
@@ -229,8 +231,14 @@ export default function DashboardPage() {
           </motion.div>
 
           {billingOrgId ? (
-            <div className="mb-12">
-              <OrgInboundMailboxesCard orgId={billingOrgId} canManage={canManageBilling} />
+            <div className="mb-12 space-y-6">
+              <OrgCompanyCard orgId={billingOrgId} canManage={canManageOrgProfile} />
+              <OrgInboundMailboxesCard
+                orgId={billingOrgId}
+                canManage={canManageBilling}
+                moduleFilter="administracja"
+                companySettingsHref="/firma"
+              />
             </div>
           ) : null}
 

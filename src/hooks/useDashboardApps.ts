@@ -14,6 +14,7 @@ import {
   canPurchaseExtraUsers as canPurchaseExtraUsersForRole,
   isBillingManagerRole,
   isOrgBillingOwnerRole,
+  isOrgProfileManagerRole,
   mapOrgSubscriptionRow,
   mapPricingPlanRow,
   pickBillingMembership,
@@ -29,6 +30,7 @@ export function useDashboardApps() {
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [billingOrgId, setBillingOrgId] = useState<string | null>(null)
   const [canManageBilling, setCanManageBilling] = useState(false)
+  const [canManageOrgProfile, setCanManageOrgProfile] = useState(false)
   const [canPurchaseExtraUsers, setCanPurchaseExtraUsers] = useState(false)
   const [subsByAppId, setSubsByAppId] = useState<Map<string, OrgSubscriptionView>>(new Map())
   const [plansByAppId, setPlansByAppId] = useState<Map<string, PricingPlanView[]>>(new Map())
@@ -88,6 +90,12 @@ export function useDashboardApps() {
       const platformAdmin = (profile?.platform_role ?? '').toString().toLowerCase() === 'admin'
       const nextCanManage = Boolean(
         nextBillingOrgId && (isBillingManagerRole(billingMembership?.role) || platformAdmin),
+      )
+      const orgProfileMembership =
+        memberships.find((row) => row.org_id === nextBillingOrgId && isOrgProfileManagerRole(row.role)) ??
+        billingMembership
+      const nextCanManageOrgProfile = Boolean(
+        nextBillingOrgId && (isOrgProfileManagerRole(orgProfileMembership?.role) || platformAdmin),
       )
       const nextCanPurchaseExtraUsers = Boolean(
         nextBillingOrgId &&
@@ -175,6 +183,7 @@ export function useDashboardApps() {
       setIsPlatformAdmin(platformAdmin)
       setBillingOrgId(nextBillingOrgId)
       setCanManageBilling(nextCanManage)
+      setCanManageOrgProfile(nextCanManageOrgProfile)
       setCanPurchaseExtraUsers(nextCanPurchaseExtraUsers)
       setSubsByAppId(nextSubs)
       setPlansByAppId(nextPlans)
@@ -210,6 +219,7 @@ export function useDashboardApps() {
     isPlatformAdmin,
     billingOrgId,
     canManageBilling,
+    canManageOrgProfile,
     canPurchaseExtraUsers,
     subsByAppId,
     setSubsByAppId,

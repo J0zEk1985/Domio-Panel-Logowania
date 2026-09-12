@@ -7,6 +7,7 @@ import { buildChangePasswordPath } from './lib/postLoginRedirect'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
 import DashboardPage from './pages/DashboardPage'
+import CompanySettingsPage from './pages/CompanySettingsPage'
 import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
 import MarketingPage from './pages/MarketingPage'
@@ -222,6 +223,10 @@ function App() {
       <Route
         path="/dashboard"
         element={session ? <DashboardPage /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/firma"
+        element={session ? <CompanySettingsPage /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/admin"

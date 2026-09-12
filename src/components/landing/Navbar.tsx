@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Menu, Shield, X } from 'lucide-react'
+import { LayoutDashboard, Building2, Menu, Shield, X } from 'lucide-react'
 import { ThemeToggle } from './ThemeToggle'
 import domioLogo from '../../../lovable-design/src/assets/domio-logo.jpg'
 import { supabase } from '../../lib/supabase'
@@ -62,7 +62,7 @@ export function Navbar() {
       )
     }
 
-    if (pathname === '/dashboard') {
+    if (pathname === '/dashboard' || pathname === '/firma') {
       return (
         <button
           type="button"
@@ -105,6 +105,9 @@ export function Navbar() {
               <Link to="/dashboard" className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
                 <LayoutDashboard className="h-4 w-4" /> Panel
               </Link>
+              <Link to="/firma" className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                <Building2 className="h-4 w-4" /> Firma
+              </Link>
               <Link to="/admin" className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
                 <Shield className="h-4 w-4" /> Admin
               </Link>
@@ -139,6 +142,9 @@ export function Navbar() {
             <>
               <Link to="/dashboard" className="block text-sm text-muted-foreground" onClick={closeMobile}>
                 Panel
+              </Link>
+              <Link to="/firma" className="block text-sm text-muted-foreground" onClick={closeMobile}>
+                Firma
               </Link>
               <Link to="/admin" className="block text-sm text-muted-foreground" onClick={closeMobile}>
                 Admin

@@ -18,9 +18,15 @@ export type OrgSubscriptionView = {
 
 const BILLING_ROLES = new Set(['owner', 'admin', 'coordinator'])
 const BILLING_OWNER_ROLES = new Set(['owner', 'wlasciciel'])
+/** Matches organizations RLS CORE_Orgs_Manage (owner / admin / manager). */
+const ORG_PROFILE_ROLES = new Set(['owner', 'wlasciciel', 'admin', 'manager'])
 
 export function isBillingManagerRole(role: string | null | undefined): boolean {
   return BILLING_ROLES.has((role ?? '').trim().toLowerCase())
+}
+
+export function isOrgProfileManagerRole(role: string | null | undefined): boolean {
+  return ORG_PROFILE_ROLES.has((role ?? '').trim().toLowerCase())
 }
 
 export function isOrgBillingOwnerRole(role: string | null | undefined): boolean {

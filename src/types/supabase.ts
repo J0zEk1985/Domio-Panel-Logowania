@@ -3990,6 +3990,10 @@ export type Database = {
         Args: { p_org_id: string }
         Returns: Database["public"]["Tables"]["org_inbound_mailboxes"]["Row"][]
       }
+      sync_org_inbound_mailbox_aliases: {
+        Args: { p_org_id: string }
+        Returns: Database["public"]["Tables"]["org_inbound_mailboxes"]["Row"][]
+      }
       get_org_ai_quota: { Args: { p_org_id: string }; Returns: Json }
       ingest_email_issue: {
         Args: {

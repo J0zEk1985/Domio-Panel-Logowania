@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Copy, Mail, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '../../lib/supabase'
@@ -34,6 +35,8 @@ type Props = {
   orgId: string
   canManage: boolean
   moduleFilter?: InboundModule
+  /** Owner dashboard link to edit org name/slug used in aliases. Omit in platform admin. */
+  companySettingsHref?: string
 }
 
 function inboundAddress(alias: string): string {
@@ -46,7 +49,7 @@ function errMessage(err: unknown): string {
   return 'Nie udało się zapisać skrzynki.'
 }
 
-export function OrgInboundMailboxesCard({ orgId, canManage, moduleFilter }: Props) {
+export function OrgInboundMailboxesCard({ orgId, canManage, moduleFilter, companySettingsHref }: Props) {
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [boxes, setBoxes] = useState<MailboxRow[]>([])
@@ -154,8 +157,18 @@ export function OrgInboundMailboxesCard({ orgId, canManage, moduleFilter }: Prop
             Zgłoszenia e-mail
           </h2>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            Promujcie wzór zgłoszenia. W planie bazowym redagujecie mail i wysyłacie na alias Domio.
-            Forward od razu wymaga planu z automatyczną analizą.
+            {moduleFilter === 'administracja'
+              ? 'Skrzynka e-mail Administracji. Zgłoszenia Serwisu i Sprzątania przyjmujecie wyłącznie w aplikacjach — QR, formularz i panel.'
+              : 'Promujcie wzór zgłoszenia. W planie bazowym redagujecie mail i wysyłacie na alias Domio. Forward od razu wymaga planu z automatyczną analizą.'}
+            {companySettingsHref ? (
+              <>
+                {' '}
+                <Link to={companySettingsHref} className="text-primary hover:underline font-medium">
+                  Edytuj dane firmy
+                </Link>
+                , jeśli nazwa w aliasie jest nieaktualna.
+              </>
+            ) : null}
           </p>
         </div>
         <button
