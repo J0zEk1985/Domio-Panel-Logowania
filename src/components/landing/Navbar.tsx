@@ -96,17 +96,9 @@ export function Navbar() {
 
         <div className="hidden md:flex items-center gap-3">
           {isLanding && (
-            <>
-              <a href="#domio-modules" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                Moduły
-              </a>
-              <a href="#residents" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                Mieszkańcy
-              </a>
-              <a href="#business" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                Firmy
-              </a>
-            </>
+            <a href="#domio-modules" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              Moduły
+            </a>
           )}
           {isAuthenticated && (
             <>
@@ -136,17 +128,9 @@ export function Navbar() {
       {mobileOpen && (
         <div className="md:hidden border-t border-border/50 p-4 space-y-3 glass-strong">
           {isLanding && (
-            <>
-              <a href="#domio-modules" className="block text-sm text-muted-foreground" onClick={closeMobile}>
-                Moduły
-              </a>
-              <a href="#residents" className="block text-sm text-muted-foreground" onClick={closeMobile}>
-                Mieszkańcy
-              </a>
-              <a href="#business" className="block text-sm text-muted-foreground" onClick={closeMobile}>
-                Firmy
-              </a>
-            </>
+            <a href="#domio-modules" className="block text-sm text-muted-foreground" onClick={closeMobile}>
+              Moduły
+            </a>
           )}
           <div className="pt-1">
             <ThemeToggle />

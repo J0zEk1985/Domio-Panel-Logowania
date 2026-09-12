@@ -3,7 +3,8 @@ import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { validatePassword } from '../lib/validation'
 import ValidationChecklist from '../components/ValidationChecklist'
-import { DOC_LABELS, type LegalDocType } from '../components/admin/legalAdminTypes'
+import PasswordInput from '../components/PasswordInput'
+import { DOC_LABELS, DOC_PATHS, type LegalDocType } from '../components/admin/legalAdminTypes'
 
 type ActiveLegalDoc = {
   id: string
@@ -200,38 +201,6 @@ export default function SignupPage() {
     }
   }
 
-  const renderDocCheckboxLabel = (doc: ActiveLegalDoc) => {
-    const label = DOC_LABELS[doc.document_type]
-    const href =
-      doc.document_type === 'terms'
-        ? '/regulamin'
-        : doc.document_type === 'privacy'
-          ? '/polityka-prywatnosci'
-          : doc.document_type === 'marketing'
-            ? '/zgody-marketingowe'
-            : null
-
-    if (href) {
-      return (
-        <>
-          Akceptuję{' '}
-          <Link to={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
-            {label}
-          </Link>{' '}
-          w wersji {doc.version}
-          {doc.is_required ? ' *' : ''}
-        </>
-      )
-    }
-
-    return (
-      <>
-        Akceptuję {label} w wersji {doc.version}
-        {doc.is_required ? ' *' : ''}
-      </>
-    )
-  }
-
   const canSubmitEmail =
     !legalDocsLoading &&
     !legalDocsError &&
@@ -243,12 +212,13 @@ export default function SignupPage() {
       <div className="w-full max-w-md">
         <div className="bg-gray-800 rounded-lg shadow-xl p-8">
           <h1 className="text-3xl font-bold text-white mb-2">Utwórz konto</h1>
-          <p className="text-gray-400 mb-8">Podaj swój email, aby utworzyć konto</p>
+          <p className="text-gray-400 mb-2">Podaj swój email, aby utworzyć konto</p>
+          <p className="text-sm text-gray-400 mb-8">Pola oznaczone * są obowiązkowe.</p>
 
           <form onSubmit={handleSignup} className="space-y-6">
             <div>
               <label htmlFor="signup-email" className="block text-sm font-medium text-gray-300 mb-2">
-                Email
+                Email *
               </label>
               <input
                 id="signup-email"
@@ -257,38 +227,37 @@ export default function SignupPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="nazwa@przykład.pl"
                 required
+                autoComplete="email"
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
             <div>
               <label htmlFor="signup-password" className="block text-sm font-medium text-gray-300 mb-2">
-                Hasło
+                Hasło *
               </label>
-              <input
+              <PasswordInput
                 id="signup-password"
-                type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 placeholder="********"
                 required
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                autoComplete="new-password"
               />
               <ValidationChecklist value={password} type="password" />
             </div>
 
             <div>
               <label htmlFor="repeat-password" className="block text-sm font-medium text-gray-300 mb-2">
-                Powtórz hasło
+                Powtórz hasło *
               </label>
-              <input
+              <PasswordInput
                 id="repeat-password"
-                type="password"
                 value={repeatPassword}
-                onChange={(e) => setRepeatPassword(e.target.value)}
+                onChange={setRepeatPassword}
                 placeholder="********"
                 required
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                autoComplete="new-password"
               />
             </div>
 
@@ -317,11 +286,27 @@ export default function SignupPage() {
                           [doc.document_type]: e.target.checked,
                         }))
                       }
+                      aria-label={`Akceptuję ${DOC_LABELS[doc.document_type]} w wersji ${doc.version}${
+                        doc.is_required ? ' (wymagane)' : ''
+                      }`}
                       className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-600 rounded bg-gray-700"
                     />
-                    <label htmlFor={`legal-accept-${doc.id}`} className="ml-3 text-sm text-gray-300">
-                      {renderDocCheckboxLabel(doc)}
-                    </label>
+                    <p className="ml-3 text-sm text-gray-300">
+                      <label htmlFor={`legal-accept-${doc.id}`}>Akceptuję </label>
+                      <Link
+                        to={DOC_PATHS[doc.document_type]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 underline"
+                      >
+                        {DOC_LABELS[doc.document_type]}
+                      </Link>
+                      <label htmlFor={`legal-accept-${doc.id}`}>
+                        {' '}
+                        w wersji {doc.version}
+                        {doc.is_required ? ' *' : ''}
+                      </label>
+                    </p>
                   </div>
                 ))}
             </div>

@@ -27,3 +27,9 @@ export const DOC_LABELS: Record<LegalDocType, string> = {
   privacy: 'Polityka prywatności',
   marketing: 'Zgody marketingowe',
 }
+
+export const DOC_PATHS: Record<LegalDocType, string> = {
+  terms: '/regulamin',
+  privacy: '/polityka-prywatnosci',
+  marketing: '/zgody-marketingowe',
+}
