@@ -85,7 +85,7 @@ export const PLATFORM_CONTACT_FIELDS: PlatformContactFieldDef[] = [
     description: 'Adres e-mail do kontaktu',
     inputType: 'email',
     autoComplete: 'email',
-    placeholder: 'kontakt@przyklad.pl',
+    placeholder: 'biuro@domio.com.pl',
     sortOrder: 50,
   },
 ]
