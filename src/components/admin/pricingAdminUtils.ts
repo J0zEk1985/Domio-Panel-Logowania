@@ -47,10 +47,15 @@ export function parseOptionalLimitInt(
 }
 
 /** Short summary for the plans table (Polish UI). */
-export function formatPlanLimitsSummary(row: PricingPlanRow): string {
+export function formatPlanLimitsSummary(
+  row: PricingPlanRow,
+  opts?: { hideLocations?: boolean },
+): string {
   const parts: string[] = []
   if (row.max_users != null) parts.push(`Użytkownicy: ${row.max_users}`)
-  if (row.max_locations != null) parts.push(`Lokalizacje: ${row.max_locations}`)
+  if (!opts?.hideLocations && row.max_locations != null) {
+    parts.push(`Lokalizacje: ${row.max_locations}`)
+  }
   if (row.max_storage_gb != null) parts.push(`Pamięć: ${row.max_storage_gb} GB`)
   if (row.ai_monthly_parse_limit != null) {
     parts.push(`Analizy AI: ${row.ai_monthly_parse_limit}/mies.`)

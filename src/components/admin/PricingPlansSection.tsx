@@ -11,6 +11,7 @@ import {
   parseOptionalMoney,
 } from './pricingAdminUtils'
 import { applicationName, emptyPlanForm, type PricingPlanRow } from './pricingAdminTypes'
+import { isFleetApp } from '../../lib/moduleAccess'
 
 type Props = {
   applications: Application[]
@@ -24,6 +25,14 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
   const [planForm, setPlanForm] = useState(emptyPlanForm)
   const [planSaving, setPlanSaving] = useState(false)
   const [sectionError, setSectionError] = useState<string | null>(null)
+
+  const selectedApp = applications.find((app) => app.id === planForm.appId) ?? null
+  const hideLocationLimit = selectedApp != null && isFleetApp(selectedApp)
+
+  const appHidesLocationLimit = (appId: string): boolean => {
+    const app = applications.find((row) => row.id === appId)
+    return app != null && isFleetApp(app)
+  }
 
   const resetPlanForm = () => {
     setPlanForm(emptyPlanForm())
@@ -81,7 +90,9 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
       setSectionError(maxUsersParsed.message)
       return
     }
-    const maxLocationsParsed = parseOptionalLimitInt(planForm.maxLocations, 'Limit lokalizacji')
+    const maxLocationsParsed = hideLocationLimit
+      ? ({ ok: true, value: null } as const)
+      : parseOptionalLimitInt(planForm.maxLocations, 'Limit lokalizacji')
     if (!maxLocationsParsed.ok) {
       setSectionError(maxLocationsParsed.message)
       return
@@ -221,7 +232,15 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
               <select
                 className={inputClass}
                 value={planForm.appId}
-                onChange={(e) => setPlanForm((f) => ({ ...f, appId: e.target.value }))}
+                onChange={(e) => {
+                  const appId = e.target.value
+                  const app = applications.find((row) => row.id === appId)
+                  setPlanForm((f) => ({
+                    ...f,
+                    appId,
+                    maxLocations: app && isFleetApp(app) ? '' : f.maxLocations,
+                  }))
+                }}
               >
                 <option value="">— Wybierz —</option>
                 {applications.map((a) => (
@@ -264,9 +283,10 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
             </label>
           </div>
           <div className="border-t border-border/60 pt-4 space-y-4">
-            <p className="text-sm font-medium text-foreground">Limity systemowe</p>
+            <p className="text-sm font-medium text-foreground">Limity i dodatkowe miejsca</p>
             <p className="text-xs text-muted-foreground -mt-2">
-              Użytkownicy, lokalizacje i pamięć: puste pole = bez limitu. Analizy AI: puste = 20 (próbka planu bazowego).
+              Puste pole użytkowników lub pamięci = bez limitu. Cena dodatkowego użytkownika wymaga ustawionego limitu
+              użytkowników. Analizy AI: puste = 20 (próbka planu bazowego).
             </p>
             <div className="grid sm:grid-cols-3 gap-4">
               <label className="block space-y-1.5 text-sm">
@@ -282,17 +302,43 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
                 />
               </label>
               <label className="block space-y-1.5 text-sm">
-                <span className="text-muted-foreground">Limit lokalizacji / obiektów</span>
+                <span className="text-muted-foreground">Koszt +1 użytkownika (zł / mies.)</span>
                 <input
                   type="number"
                   min={0}
-                  step={1}
+                  step={0.01}
                   className={inputClass}
-                  value={planForm.maxLocations}
-                  onChange={(e) => setPlanForm((f) => ({ ...f, maxLocations: e.target.value }))}
-                  placeholder="np. 5 lub puste"
+                  value={planForm.extraUserPriceMonthly}
+                  onChange={(e) => setPlanForm((f) => ({ ...f, extraUserPriceMonthly: e.target.value }))}
+                  placeholder="np. 50"
                 />
               </label>
+              <label className="block space-y-1.5 text-sm">
+                <span className="text-muted-foreground">Koszt +1 użytkownika (zł / rok)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className={inputClass}
+                  value={planForm.extraUserPriceYearly}
+                  onChange={(e) => setPlanForm((f) => ({ ...f, extraUserPriceYearly: e.target.value }))}
+                  placeholder="np. 500"
+                />
+              </label>
+              {!hideLocationLimit && (
+                <label className="block space-y-1.5 text-sm">
+                  <span className="text-muted-foreground">Limit lokalizacji / obiektów</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    className={inputClass}
+                    value={planForm.maxLocations}
+                    onChange={(e) => setPlanForm((f) => ({ ...f, maxLocations: e.target.value }))}
+                    placeholder="np. 5 lub puste"
+                  />
+                </label>
+              )}
               <label className="block space-y-1.5 text-sm">
                 <span className="text-muted-foreground">Limit pamięci (GB)</span>
                 <input
@@ -315,36 +361,6 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
                   value={planForm.aiMonthlyParseLimit}
                   onChange={(e) => setPlanForm((f) => ({ ...f, aiMonthlyParseLimit: e.target.value }))}
                   placeholder="20 baza, 300 add-on AI"
-                />
-              </label>
-            </div>
-            <p className="text-sm font-medium text-foreground">Dodatkowi użytkownicy</p>
-            <p className="text-xs text-muted-foreground -mt-2">
-              Cena dokupu +1 miejsca. Puste = nie można dokupić. 0 = bezpłatnie. Wymaga limitu użytkowników.
-            </p>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <label className="block space-y-1.5 text-sm">
-                <span className="text-muted-foreground">+1 użytkownik (zł / mies.)</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  className={inputClass}
-                  value={planForm.extraUserPriceMonthly}
-                  onChange={(e) => setPlanForm((f) => ({ ...f, extraUserPriceMonthly: e.target.value }))}
-                  placeholder="np. 50"
-                />
-              </label>
-              <label className="block space-y-1.5 text-sm">
-                <span className="text-muted-foreground">+1 użytkownik (zł / rok)</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  className={inputClass}
-                  value={planForm.extraUserPriceYearly}
-                  onChange={(e) => setPlanForm((f) => ({ ...f, extraUserPriceYearly: e.target.value }))}
-                  placeholder="np. 500"
                 />
               </label>
             </div>
@@ -416,7 +432,7 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
                   {formatMoneyPln(row.price_monthly)} / {formatMoneyPln(row.price_yearly)}
                 </td>
                 <td className="p-4 text-muted-foreground max-w-[14rem] whitespace-normal">
-                  {formatPlanLimitsSummary(row)}
+                  {formatPlanLimitsSummary(row, { hideLocations: appHidesLocationLimit(row.app_id) })}
                 </td>
                 <td className="p-4">
                   <span

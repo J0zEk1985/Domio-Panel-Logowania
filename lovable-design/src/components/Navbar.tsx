@@ -25,12 +25,6 @@ export function Navbar() {
               <a href="#domio-modules" className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
                 Moduły
               </a>
-              <a href="#residents" className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                Mieszkańcy
-              </a>
-              <a href="#business" className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                Firmy
-              </a>
             </>
           )}
           <ThemeToggle />

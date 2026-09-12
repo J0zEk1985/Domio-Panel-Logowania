@@ -52,7 +52,7 @@ function matchesModuleApplication(appName: string, moduleName: string, moduleSlu
   return false
 }
 
-function toDisplayPlan(row: DbPricingPlanRow, highlighted: boolean): PricingPlan {
+function toDisplayPlan(row: DbPricingPlanRow, highlighted: boolean, omitLocations: boolean): PricingPlan {
   const fromDb = parseFeaturesFromDb(row.features)
   return {
     id: row.id,
@@ -62,7 +62,7 @@ function toDisplayPlan(row: DbPricingPlanRow, highlighted: boolean): PricingPlan
     features: [
       ...planLimitLines({
         max_users: row.max_users,
-        max_locations: row.max_locations,
+        max_locations: omitLocations ? null : row.max_locations,
         max_storage_gb: row.max_storage_gb,
         ai_monthly_parse_limit: row.ai_monthly_parse_limit,
         has_ai_features: row.has_ai_features,
@@ -141,8 +141,10 @@ export function PricingSection({ moduleName, moduleSlug }: PricingSectionProps) 
     const sorted = [...dbPlans].sort((a, b) => Number(a.price_monthly) - Number(b.price_monthly))
     const highlightId =
       sorted.length >= 2 ? sorted[Math.min(1, sorted.length - 1)]?.id : sorted[0]?.id
-    return sorted.map((row) => toDisplayPlan(row, row.id === highlightId && sorted.length > 1))
-  }, [dbPlans])
+    return sorted.map((row) =>
+      toDisplayPlan(row, row.id === highlightId && sorted.length > 1, moduleSlug === 'flota'),
+    )
+  }, [dbPlans, moduleSlug])
 
   return (
     <section className="py-20 px-4">

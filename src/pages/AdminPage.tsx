@@ -76,6 +76,7 @@ export default function AdminPage() {
   const [statsError, setStatsError] = useState<string | null>(null)
   const [tableError, setTableError] = useState<string | null>(null)
   const [verificationCount, setVerificationCount] = useState(0)
+  const [editUserId, setEditUserId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -186,7 +187,10 @@ export default function AdminPage() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setActiveTab(item.id)}
+                    onClick={() => {
+                      if (item.id !== 'users') setEditUserId(null)
+                      setActiveTab(item.id)
+                    }}
                     className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
                       isActive
                         ? 'bg-primary/10 text-primary font-medium'
@@ -296,7 +300,8 @@ export default function AdminPage() {
                                   type="button"
                                   className="text-primary font-medium hover:underline"
                                   onClick={() => {
-                                    console.log('[AdminPage] edit user id:', row.id)
+                                    setEditUserId(row.id)
+                                    setActiveTab('users')
                                   }}
                                 >
                                   Edytuj
@@ -321,7 +326,7 @@ export default function AdminPage() {
               <EntityVerificationAdminTab onCountChange={setVerificationCount} />
             )}
 
-            {activeTab === 'users' && <UsersAndOrgsTab />}
+            {activeTab === 'users' && <UsersAndOrgsTab initialUserId={editUserId} />}
 
             {activeTab === 'subscriptions' && <SubscriptionsAdminTab />}
 

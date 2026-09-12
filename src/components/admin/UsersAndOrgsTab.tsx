@@ -91,14 +91,18 @@ function UserSortableTh({
   )
 }
 
-export default function UsersAndOrgsTab() {
-  const [activeSubTab, setActiveSubTab] = useState<UsersOrgsSubTab>('orgs')
+type Props = {
+  initialUserId?: string | null
+}
+
+export default function UsersAndOrgsTab({ initialUserId }: Props) {
+  const [activeSubTab, setActiveSubTab] = useState<UsersOrgsSubTab>(initialUserId ? 'users' : 'orgs')
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [orgSort, setOrgSort] = useState<OrgSortConfig>({ key: 'name', direction: 'asc' })
   const [userSort, setUserSort] = useState<UserSortConfig>({ key: 'full_name', direction: 'asc' })
   const [selectedOrg, setSelectedOrg] = useState<string | null>(null)
-  const [selectedUser, setSelectedUser] = useState<string | null>(null)
+  const [selectedUser, setSelectedUser] = useState<string | null>(initialUserId ?? null)
   const [moduleFilterAppId, setModuleFilterAppId] = useState<string | null>(null)
   const [productApps, setProductApps] = useState<ProductAppOption[]>([])
 

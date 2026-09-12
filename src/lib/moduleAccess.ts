@@ -45,7 +45,7 @@ function isCleaningApp(app: Application): boolean {
   return appBlob(app).includes("clean");
 }
 
-function isFleetApp(app: Application): boolean {
+export function isFleetApp(app: Pick<Application, "name" | "domain_url" | "api_url">): boolean {
   const blob = appBlob(app);
   return blob.includes("flot") || blob.includes("fleet");
 }

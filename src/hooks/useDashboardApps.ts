@@ -6,6 +6,7 @@ import { buildChangePasswordPath, resolvePostLoginTarget } from '../lib/postLogi
 import {
   filterAppsByOrgAccess,
   filterHubApplications,
+  isFleetApp,
   isSubscriptionCurrent,
   sortApplicationsByCatalog,
 } from '../lib/moduleAccess'
@@ -144,11 +145,14 @@ export function useDashboardApps() {
       }
 
       const nextPlans = new Map<string, PricingPlanView[]>()
+      const productCatalog = (appsData ?? []) as Application[]
       for (const row of plansRes.data ?? []) {
         const plan = mapPricingPlanRow(row)
-        const list = nextPlans.get(plan.app_id) ?? []
-        list.push(plan)
-        nextPlans.set(plan.app_id, list)
+        const app = productCatalog.find((item) => item.id === plan.app_id)
+        const mapped = app && isFleetApp(app) ? { ...plan, max_locations: null } : plan
+        const list = nextPlans.get(mapped.app_id) ?? []
+        list.push(mapped)
+        nextPlans.set(mapped.app_id, list)
       }
       for (const [appId, list] of nextPlans) {
         nextPlans.set(
