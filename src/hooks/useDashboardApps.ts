@@ -10,7 +10,10 @@ import {
   sortApplicationsByCatalog,
 } from '../lib/moduleAccess'
 import {
+  canPurchaseExtraUsers as canPurchaseExtraUsersForRole,
   isBillingManagerRole,
+  isOrgBillingOwnerRole,
+  mapOrgSubscriptionRow,
   mapPricingPlanRow,
   pickBillingMembership,
   type OrgSubscriptionView,
@@ -25,6 +28,7 @@ export function useDashboardApps() {
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [billingOrgId, setBillingOrgId] = useState<string | null>(null)
   const [canManageBilling, setCanManageBilling] = useState(false)
+  const [canPurchaseExtraUsers, setCanPurchaseExtraUsers] = useState(false)
   const [subsByAppId, setSubsByAppId] = useState<Map<string, OrgSubscriptionView>>(new Map())
   const [plansByAppId, setPlansByAppId] = useState<Map<string, PricingPlanView[]>>(new Map())
   const navigate = useNavigate()
@@ -84,6 +88,14 @@ export function useDashboardApps() {
       const nextCanManage = Boolean(
         nextBillingOrgId && (isBillingManagerRole(billingMembership?.role) || platformAdmin),
       )
+      const nextCanPurchaseExtraUsers = Boolean(
+        nextBillingOrgId &&
+          canPurchaseExtraUsersForRole({
+            role: memberships.find((row) => row.org_id === nextBillingOrgId && isOrgBillingOwnerRole(row.role))
+              ?.role ?? billingMembership?.role,
+            isPlatformAdmin: platformAdmin,
+          }),
+      )
 
       const hasFleetAccess = fleetRole === 'admin' || fleetRole === 'driver'
       const hasCleaningAccess = memberships.length > 0
@@ -105,13 +117,13 @@ export function useDashboardApps() {
         nextBillingOrgId
           ? supabase
               .from('org_subscriptions')
-              .select('id, org_id, app_id, status, expires_at, plan_id, billing_interval, cancelled_at')
+              .select('id, org_id, app_id, status, expires_at, plan_id, billing_interval, cancelled_at, extra_users')
               .eq('org_id', nextBillingOrgId)
           : Promise.resolve({ data: [] as OrgSubscriptionView[], error: null }),
         supabase
           .from('pricing_plans')
           .select(
-            'id, app_id, name, price_monthly, price_yearly, features, is_active, max_users, max_locations, max_storage_gb, ai_monthly_parse_limit, has_ai_features',
+            'id, app_id, name, price_monthly, price_yearly, features, is_active, max_users, max_locations, max_storage_gb, ai_monthly_parse_limit, has_ai_features, extra_user_price_monthly, extra_user_price_yearly',
           )
           .eq('is_active', true),
       ])
@@ -123,7 +135,9 @@ export function useDashboardApps() {
         console.error('[DashboardPage] pricing_plans:', plansRes.error.message)
       }
 
-      const subsList = (subsRes.data ?? []) as OrgSubscriptionView[]
+      const subsList = (subsRes.data ?? []).map((row) =>
+        mapOrgSubscriptionRow(row as Parameters<typeof mapOrgSubscriptionRow>[0]),
+      )
       const nextSubs = new Map<string, OrgSubscriptionView>()
       for (const row of subsList) {
         if (!nextSubs.has(row.app_id)) nextSubs.set(row.app_id, row)
@@ -157,6 +171,7 @@ export function useDashboardApps() {
       setIsPlatformAdmin(platformAdmin)
       setBillingOrgId(nextBillingOrgId)
       setCanManageBilling(nextCanManage)
+      setCanPurchaseExtraUsers(nextCanPurchaseExtraUsers)
       setSubsByAppId(nextSubs)
       setPlansByAppId(nextPlans)
       setAllProductApps(productApps)
@@ -191,6 +206,7 @@ export function useDashboardApps() {
     isPlatformAdmin,
     billingOrgId,
     canManageBilling,
+    canPurchaseExtraUsers,
     subsByAppId,
     setSubsByAppId,
     plansByAppId,

@@ -1903,6 +1903,7 @@ export type Database = {
           cancelled_at: string | null
           created_at: string | null
           expires_at: string | null
+          extra_users: number
           id: string
           org_id: string
           plan_id: string | null
@@ -1914,6 +1915,7 @@ export type Database = {
           cancelled_at?: string | null
           created_at?: string | null
           expires_at?: string | null
+          extra_users?: number
           id?: string
           org_id: string
           plan_id?: string | null
@@ -1925,6 +1927,7 @@ export type Database = {
           cancelled_at?: string | null
           created_at?: string | null
           expires_at?: string | null
+          extra_users?: number
           id?: string
           org_id?: string
           plan_id?: string | null
@@ -2120,6 +2123,8 @@ export type Database = {
         Row: {
           app_id: string
           created_at: string
+          extra_user_price_monthly: number | null
+          extra_user_price_yearly: number | null
           features: Json
           has_ai_features: boolean | null
           id: string
@@ -2136,6 +2141,8 @@ export type Database = {
         Insert: {
           app_id: string
           created_at?: string
+          extra_user_price_monthly?: number | null
+          extra_user_price_yearly?: number | null
           features?: Json
           has_ai_features?: boolean | null
           id?: string
@@ -2152,6 +2159,8 @@ export type Database = {
         Update: {
           app_id?: string
           created_at?: string
+          extra_user_price_monthly?: number | null
+          extra_user_price_yearly?: number | null
           features?: Json
           has_ai_features?: boolean | null
           id?: string
@@ -4007,6 +4016,12 @@ export type Database = {
       }
       cancel_org_subscription: {
         Args: { p_org_id: string; p_app_id: string }
+        Returns: Database["public"]["Tables"]["org_subscriptions"]["Row"]
+      }
+      is_org_billing_owner: { Args: { p_org_id: string }; Returns: boolean }
+      org_effective_user_limit: { Args: { p_org_id: string }; Returns: number }
+      set_org_subscription_extra_users: {
+        Args: { p_org_id: string; p_app_id: string; p_extra_users: number }
         Returns: Database["public"]["Tables"]["org_subscriptions"]["Row"]
       }
       is_admin_safe: { Args: { target_org_id: string }; Returns: boolean }

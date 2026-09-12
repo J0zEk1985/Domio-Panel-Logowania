@@ -10,6 +10,8 @@ export type PricingPlanView = {
   max_storage_gb: number | null
   ai_monthly_parse_limit: number | null
   has_ai_features: boolean | null
+  extra_user_price_monthly: number | null
+  extra_user_price_yearly: number | null
 }
 
 export function parseFeatureList(raw: unknown): string[] {
@@ -21,7 +23,13 @@ export function parseFeatureList(raw: unknown): string[] {
 
 export function planLimitLines(plan: Pick<
   PricingPlanView,
-  'max_users' | 'max_locations' | 'max_storage_gb' | 'ai_monthly_parse_limit' | 'has_ai_features'
+  | 'max_users'
+  | 'max_locations'
+  | 'max_storage_gb'
+  | 'ai_monthly_parse_limit'
+  | 'has_ai_features'
+  | 'extra_user_price_monthly'
+  | 'extra_user_price_yearly'
 >): string[] {
   const lines: string[] = []
   if (plan.max_users != null) {
@@ -29,6 +37,7 @@ export function planLimitLines(plan: Pick<
   } else {
     lines.push('Użytkownicy bez limitu')
   }
+  lines.push(...extraUserPriceLines(plan))
   if (plan.max_locations != null) {
     lines.push(`Do ${plan.max_locations} lokalizacji`)
   }
@@ -65,4 +74,18 @@ export function formatDatePl(iso: string | null | undefined): string {
 export function planPriceLabel(plan: Pick<PricingPlanView, 'price_monthly' | 'price_yearly'>, yearly: boolean): string {
   const amount = yearly ? plan.price_yearly : plan.price_monthly
   return `${formatMoneyPln(amount)} / ${yearly ? 'rok' : 'mies.'}`
+}
+
+export function extraUserPriceLines(
+  plan: Pick<PricingPlanView, 'max_users' | 'extra_user_price_monthly' | 'extra_user_price_yearly'>,
+): string[] {
+  if (plan.max_users == null) return []
+  const lines: string[] = []
+  if (plan.extra_user_price_monthly != null) {
+    lines.push(`+1 użytkownik / ${formatMoneyPln(plan.extra_user_price_monthly)} mies.`)
+  }
+  if (plan.extra_user_price_yearly != null) {
+    lines.push(`+1 użytkownik / ${formatMoneyPln(plan.extra_user_price_yearly)} rok`)
+  }
+  return lines
 }

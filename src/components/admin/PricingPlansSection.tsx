@@ -8,6 +8,7 @@ import {
   inputClass,
   parseFeaturesFromDb,
   parseOptionalLimitInt,
+  parseOptionalMoney,
 } from './pricingAdminUtils'
 import { applicationName, emptyPlanForm, type PricingPlanRow } from './pricingAdminTypes'
 
@@ -52,6 +53,8 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
       maxStorageGb: row.max_storage_gb != null ? String(row.max_storage_gb) : '',
       aiMonthlyParseLimit: row.ai_monthly_parse_limit != null ? String(row.ai_monthly_parse_limit) : '20',
       hasAiFeatures: row.has_ai_features === true,
+      extraUserPriceMonthly: row.extra_user_price_monthly != null ? String(row.extra_user_price_monthly) : '',
+      extraUserPriceYearly: row.extra_user_price_yearly != null ? String(row.extra_user_price_yearly) : '',
     })
   }
 
@@ -93,6 +96,23 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
       setSectionError(aiLimitParsed.message)
       return
     }
+    const extraMonthlyParsed = parseOptionalMoney(planForm.extraUserPriceMonthly, 'Cena +1 użytkownika / mies.')
+    if (!extraMonthlyParsed.ok) {
+      setSectionError(extraMonthlyParsed.message)
+      return
+    }
+    const extraYearlyParsed = parseOptionalMoney(planForm.extraUserPriceYearly, 'Cena +1 użytkownika / rok')
+    if (!extraYearlyParsed.ok) {
+      setSectionError(extraYearlyParsed.message)
+      return
+    }
+    if (
+      maxUsersParsed.value == null &&
+      (extraMonthlyParsed.value != null || extraYearlyParsed.value != null)
+    ) {
+      setSectionError('Cena dodatkowego użytkownika wymaga ustawionego limitu użytkowników.')
+      return
+    }
 
     setPlanSaving(true)
     try {
@@ -107,6 +127,8 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
         max_storage_gb: maxStorageParsed.value,
         ai_monthly_parse_limit: aiLimitParsed.value ?? 20,
         has_ai_features: planForm.hasAiFeatures,
+        extra_user_price_monthly: extraMonthlyParsed.value,
+        extra_user_price_yearly: extraYearlyParsed.value,
         updated_at: new Date().toISOString(),
       }
 
@@ -293,6 +315,36 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
                   value={planForm.aiMonthlyParseLimit}
                   onChange={(e) => setPlanForm((f) => ({ ...f, aiMonthlyParseLimit: e.target.value }))}
                   placeholder="20 baza, 300 add-on AI"
+                />
+              </label>
+            </div>
+            <p className="text-sm font-medium text-foreground">Dodatkowi użytkownicy</p>
+            <p className="text-xs text-muted-foreground -mt-2">
+              Cena dokupu +1 miejsca. Puste = nie można dokupić. 0 = bezpłatnie. Wymaga limitu użytkowników.
+            </p>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <label className="block space-y-1.5 text-sm">
+                <span className="text-muted-foreground">+1 użytkownik (zł / mies.)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className={inputClass}
+                  value={planForm.extraUserPriceMonthly}
+                  onChange={(e) => setPlanForm((f) => ({ ...f, extraUserPriceMonthly: e.target.value }))}
+                  placeholder="np. 50"
+                />
+              </label>
+              <label className="block space-y-1.5 text-sm">
+                <span className="text-muted-foreground">+1 użytkownik (zł / rok)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className={inputClass}
+                  value={planForm.extraUserPriceYearly}
+                  onChange={(e) => setPlanForm((f) => ({ ...f, extraUserPriceYearly: e.target.value }))}
+                  placeholder="np. 500"
                 />
               </label>
             </div>

@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { CheckCircle2, Star } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { parseFeaturesFromDb } from '../admin/pricingAdminUtils'
+import { planLimitLines } from '../../lib/pricingDisplay'
 
 export interface PricingPlan {
   id: string
@@ -27,6 +28,8 @@ type DbPricingPlanRow = {
   max_storage_gb: number | null
   ai_monthly_parse_limit: number | null
   has_ai_features: boolean | null
+  extra_user_price_monthly: number | null
+  extra_user_price_yearly: number | null
 }
 
 type ApplicationRow = { id: string; name: string }
@@ -49,32 +52,6 @@ function matchesModuleApplication(appName: string, moduleName: string, moduleSlu
   return false
 }
 
-function limitFeatureLines(row: DbPricingPlanRow): string[] {
-  const lines: string[] = []
-  if (row.max_users != null) {
-    lines.push(row.max_users === 0 ? 'Bez użytkowników' : `Do ${row.max_users} użytkowników`)
-  } else {
-    lines.push('Użytkownicy bez limitu')
-  }
-  if (row.max_locations != null) {
-    lines.push(`Do ${row.max_locations} lokalizacji`)
-  }
-  if (row.max_storage_gb != null) {
-    lines.push(`${row.max_storage_gb} GB pamięci`)
-  }
-  if (row.ai_monthly_parse_limit != null) {
-    lines.push(
-      row.ai_monthly_parse_limit === 0
-        ? 'Bez analiz AI e-maili'
-        : `${row.ai_monthly_parse_limit} analiz AI e-maili / mies.`,
-    )
-  }
-  if (row.has_ai_features === true) {
-    lines.push('Automatyczna analiza e-maili (forward)')
-  }
-  return lines
-}
-
 function toDisplayPlan(row: DbPricingPlanRow, highlighted: boolean): PricingPlan {
   const fromDb = parseFeaturesFromDb(row.features)
   return {
@@ -82,7 +59,18 @@ function toDisplayPlan(row: DbPricingPlanRow, highlighted: boolean): PricingPlan
     name: row.name,
     monthlyPrice: Number(row.price_monthly) || 0,
     yearlyPrice: Number(row.price_yearly) || 0,
-    features: [...limitFeatureLines(row), ...fromDb],
+    features: [
+      ...planLimitLines({
+        max_users: row.max_users,
+        max_locations: row.max_locations,
+        max_storage_gb: row.max_storage_gb,
+        ai_monthly_parse_limit: row.ai_monthly_parse_limit,
+        has_ai_features: row.has_ai_features,
+        extra_user_price_monthly: row.extra_user_price_monthly,
+        extra_user_price_yearly: row.extra_user_price_yearly,
+      }),
+      ...fromDb,
+    ],
     highlighted,
   }
 }
@@ -105,7 +93,7 @@ export function PricingSection({ moduleName, moduleSlug }: PricingSectionProps) 
       const plansRes = await supabase
         .from('pricing_plans')
         .select(
-          'id, app_id, name, price_monthly, price_yearly, features, is_active, max_users, max_locations, max_storage_gb, ai_monthly_parse_limit, has_ai_features',
+          'id, app_id, name, price_monthly, price_yearly, features, is_active, max_users, max_locations, max_storage_gb, ai_monthly_parse_limit, has_ai_features, extra_user_price_monthly, extra_user_price_yearly',
         )
         .eq('is_active', true)
 

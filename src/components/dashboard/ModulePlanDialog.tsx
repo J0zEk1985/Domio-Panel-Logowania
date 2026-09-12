@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -6,6 +6,7 @@ import {
   cancelOrgSubscription,
   currentPlanForApp,
   isOrgSubscriptionActive,
+  setOrgSubscriptionExtraUsers,
   upgradePlansFor,
   type BillingInterval,
   type OrgSubscriptionView,
@@ -16,12 +17,14 @@ import {
   planPriceLabel,
   type PricingPlanView,
 } from '../../lib/pricingDisplay'
+import { ExtraUsersStepper } from './ExtraUsersStepper'
 
 type Props = {
   appName: string
   appId: string
   orgId: string
   canManage: boolean
+  canPurchaseExtraUsers: boolean
   subscription: OrgSubscriptionView | null
   plans: PricingPlanView[]
   onClose: () => void
@@ -47,6 +50,7 @@ export function ModulePlanDialog({
   appId,
   orgId,
   canManage,
+  canPurchaseExtraUsers,
   subscription,
   plans,
   onClose,
@@ -61,6 +65,12 @@ export function ModulePlanDialog({
   const [selectedPlanId, setSelectedPlanId] = useState(purchasePlans[0]?.id ?? '')
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [busy, setBusy] = useState(false)
+  const savedExtraUsers = subscription?.extra_users ?? 0
+  const [draftExtraUsers, setDraftExtraUsers] = useState(savedExtraUsers)
+
+  useEffect(() => {
+    setDraftExtraUsers(savedExtraUsers)
+  }, [savedExtraUsers, subscription?.id])
 
   const selected = useMemo(
     () => purchasePlans.find((plan) => plan.id === selectedPlanId) ?? purchasePlans[0] ?? null,
@@ -101,6 +111,25 @@ export function ModulePlanDialog({
       setBusy(false)
     }
   }
+
+  const saveExtraUsers = async (next: number) => {
+    setBusy(true)
+    try {
+      const nextSub = await setOrgSubscriptionExtraUsers({
+        orgId,
+        appId,
+        extraUsers: next,
+      })
+      toast.success('Zapisano dodatkowe miejsca.')
+      onChanged(nextSub)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Nie udało się zapisać dodatkowych użytkowników.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const currentInterval: BillingInterval = subscription?.billing_interval === 'yearly' ? 'yearly' : 'monthly'
 
   return (
     <div
@@ -157,6 +186,18 @@ export function ModulePlanDialog({
                 <p className="text-xs text-muted-foreground">Wygasa: {formatDatePl(subscription?.expires_at)}</p>
               )}
               <PlanFeatureList plan={current} />
+              {active && current && (
+                <ExtraUsersStepper
+                  plan={current}
+                  interval={currentInterval}
+                  extraUsers={draftExtraUsers}
+                  savedExtraUsers={savedExtraUsers}
+                  canEdit={canPurchaseExtraUsers}
+                  busy={busy}
+                  onChange={setDraftExtraUsers}
+                  onSave={(next) => void saveExtraUsers(next)}
+                />
+              )}
             </section>
           )}
 

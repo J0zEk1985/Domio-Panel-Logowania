@@ -11,6 +11,8 @@ export type PricingPlanRow = {
   max_storage_gb?: number | null
   ai_monthly_parse_limit?: number | null
   has_ai_features?: boolean
+  extra_user_price_monthly?: number | null
+  extra_user_price_yearly?: number | null
   created_at?: string
   updated_at?: string
   /** Supabase may return a single object or one-element array for the FK embed. */
@@ -47,6 +49,8 @@ export function emptyPlanForm() {
     maxStorageGb: '',
     aiMonthlyParseLimit: '20',
     hasAiFeatures: false,
+    extraUserPriceMonthly: '',
+    extraUserPriceYearly: '',
   }
 }
 

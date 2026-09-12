@@ -56,6 +56,26 @@ export function formatPlanLimitsSummary(row: PricingPlanRow): string {
     parts.push(`Analizy AI: ${row.ai_monthly_parse_limit}/mies.`)
   }
   if (row.has_ai_features === true) parts.push('AI auto: Tak')
+  if (row.extra_user_price_monthly != null) {
+    parts.push(`+1 użytk. / ${formatMoneyPln(row.extra_user_price_monthly)} mies.`)
+  }
+  if (row.extra_user_price_yearly != null) {
+    parts.push(`+1 użytk. / ${formatMoneyPln(row.extra_user_price_yearly)} rok`)
+  }
   if (parts.length === 0) return 'Bez limitu'
   return parts.join(', ')
+}
+
+/** Empty or whitespace → null; otherwise non-negative number (decimals allowed). */
+export function parseOptionalMoney(
+  raw: string,
+  label: string,
+): { ok: true; value: number | null } | { ok: false; message: string } {
+  const t = raw.trim().replace(',', '.')
+  if (t === '') return { ok: true, value: null }
+  const n = Number(t)
+  if (!Number.isFinite(n) || n < 0) {
+    return { ok: false, message: `${label} musi być pustym polem lub liczbą ≥ 0.` }
+  }
+  return { ok: true, value: n }
 }

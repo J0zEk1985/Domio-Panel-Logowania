@@ -80,6 +80,7 @@ export default function DashboardPage() {
     isPlatformAdmin,
     billingOrgId,
     canManageBilling,
+    canPurchaseExtraUsers,
     subsByAppId,
     setSubsByAppId,
     plansByAppId,
@@ -122,7 +123,9 @@ export default function DashboardPage() {
     if (!isOrgSubscriptionActive(sub)) return 'Brak aktywnego planu'
     const plan = currentPlanForApp(plans, sub)
     if (!plan) return 'Subskrypcja aktywna'
-    return `Plan ${plan.name} · ${planPriceLabel(plan, sub?.billing_interval === 'yearly')}`
+    const extra = sub?.extra_users ?? 0
+    const extraLabel = extra > 0 ? ` · +${extra} użytk.` : ''
+    return `Plan ${plan.name} · ${planPriceLabel(plan, sub?.billing_interval === 'yearly')}${extraLabel}`
   }
 
   const applySubscriptionChange = (next: OrgSubscriptionView) => {
@@ -288,6 +291,7 @@ export default function DashboardPage() {
           appId={planDialogApp.id}
           orgId={billingOrgId}
           canManage={canManageBilling}
+          canPurchaseExtraUsers={canPurchaseExtraUsers}
           subscription={subsByAppId.get(planDialogApp.id) ?? null}
           plans={plansByAppId.get(planDialogApp.id) ?? []}
           onClose={() => setPlanDialogApp(null)}
