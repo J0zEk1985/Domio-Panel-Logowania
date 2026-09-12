@@ -1,9 +1,9 @@
 import { supabase } from '../../lib/supabase'
 import {
-  applicationMatchesModuleSlug,
   filterAppsByOrgAccess,
   filterHubApplications,
   isSubscriptionCurrent,
+  moduleSlugForApplication,
   sortApplicationsByCatalog,
 } from '../../lib/moduleAccess'
 import type { Application } from '../../types/database'
@@ -49,15 +49,13 @@ const ADMINISTRACJA_MEMBERSHIP_ROLES = [
 ]
 
 export function productAppSlug(app: Pick<ProductAppOption, 'name' | 'domain_url' | 'api_url'>): string | null {
-  const probe = {
-    name: app.name,
-    domain_url: app.domain_url ?? '',
-    api_url: app.api_url,
-  }
-  for (const slug of ['cleaning', 'serwis', 'flota', 'administracja', 'home'] as const) {
-    if (applicationMatchesModuleSlug(probe, slug)) return slug
-  }
-  return null
+  return (
+    moduleSlugForApplication({
+      name: app.name,
+      domain_url: app.domain_url ?? '',
+      api_url: app.api_url,
+    }) ?? null
+  )
 }
 
 function toApplication(app: ProductAppOption): Application {

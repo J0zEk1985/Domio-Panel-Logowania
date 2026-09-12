@@ -1,10 +1,16 @@
 import type { Application } from "../types/database";
 import { getLandingModules, modules, type ModuleData } from "../data/modules";
 
+export type AppModuleProbe = {
+  name: string;
+  domain_url?: string | null;
+  api_url?: string | null;
+};
+
 const CLEANING_WORKER_ROLES = new Set(["cleaner", "staff"]);
 
 const SLUG_HINTS: Record<string, string[]> = {
-  cleaning: ["clean"],
+  cleaning: ["cleaning", "clean"],
   flota: ["flot", "fleet"],
   serwis: ["serwis", "service"],
   administracja: ["administr", "nieruchom", "admin.domio", "adm.domio"],
@@ -28,7 +34,7 @@ export function isCleaningWorkerOnly(roles: Array<string | null | undefined>): b
   });
 }
 
-function appBlob(app: Pick<Application, "name" | "domain_url" | "api_url">): string {
+function appBlob(app: AppModuleProbe): string {
   return `${app.name} ${app.domain_url ?? ""} ${app.api_url ?? ""}`.toLowerCase();
 }
 
@@ -45,39 +51,57 @@ function isCleaningApp(app: Application): boolean {
   return appBlob(app).includes("clean");
 }
 
-export function isFleetApp(app: Pick<Application, "name" | "domain_url" | "api_url">): boolean {
+export function isFleetApp(app: AppModuleProbe): boolean {
   const blob = appBlob(app);
   return blob.includes("flot") || blob.includes("fleet");
 }
 
-export function isHubApplication(app: Pick<Application, "name" | "domain_url" | "api_url">): boolean {
+export function isHubApplication(app: AppModuleProbe): boolean {
   const name = app.name.trim().toLowerCase();
   if (name.includes("auth hub") || name.includes("panel logowania")) return true;
   const host = hostnameFromUrl(app.domain_url) ?? hostnameFromUrl(app.api_url);
   return host != null && HUB_HOSTNAMES.has(host);
 }
 
-export function applicationMatchesModuleSlug(
-  app: Pick<Application, "name" | "domain_url" | "api_url">,
-  slug: string,
-): boolean {
+/**
+ * Pick the catalog slug for an application by the longest matching hint.
+ * Never fall back to a shared brand word such as "Domio" — that would map
+ * Administracja checkout to the first Domio-* app that has a published plan.
+ */
+export function moduleSlugForApplication(app: AppModuleProbe): string | undefined {
   const blob = appBlob(app);
-  return (SLUG_HINTS[slug] ?? []).some((hint) => blob.includes(hint));
+  let bestSlug: string | undefined;
+  let bestHintLen = 0;
+  for (const [slug, hints] of Object.entries(SLUG_HINTS)) {
+    for (const hint of hints) {
+      if (hint.length > bestHintLen && blob.includes(hint)) {
+        bestSlug = slug;
+        bestHintLen = hint.length;
+      }
+    }
+  }
+  return bestSlug;
 }
 
-export function catalogModuleForApplication(
-  app: Pick<Application, "name" | "domain_url" | "api_url">,
-): ModuleData | undefined {
-  const listed = getLandingModules().find((mod) => applicationMatchesModuleSlug(app, mod.slug));
-  if (listed) return listed;
-  return modules.find((mod) => applicationMatchesModuleSlug(app, mod.slug));
+export function applicationMatchesModuleSlug(app: AppModuleProbe, slug: string): boolean {
+  return moduleSlugForApplication(app) === slug;
+}
+
+export function applicationForModuleSlug<T extends AppModuleProbe>(apps: T[], slug: string): T | undefined {
+  return apps.find((app) => applicationMatchesModuleSlug(app, slug));
+}
+
+export function catalogModuleForApplication(app: AppModuleProbe): ModuleData | undefined {
+  const slug = moduleSlugForApplication(app);
+  if (!slug) return undefined;
+  return getLandingModules().find((mod) => mod.slug === slug) ?? modules.find((mod) => mod.slug === slug);
 }
 
 export function sortApplicationsByCatalog(apps: Application[]): Application[] {
   const order = getLandingModules().map((mod) => mod.slug);
   return [...apps].sort((a, b) => {
-    const ia = order.findIndex((slug) => applicationMatchesModuleSlug(a, slug));
-    const ib = order.findIndex((slug) => applicationMatchesModuleSlug(b, slug));
+    const ia = order.indexOf(moduleSlugForApplication(a) ?? "");
+    const ib = order.indexOf(moduleSlugForApplication(b) ?? "");
     const ra = ia === -1 ? order.length : ia;
     const rb = ib === -1 ? order.length : ib;
     if (ra !== rb) return ra - rb;

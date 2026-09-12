@@ -36,7 +36,7 @@ function PlanFeatureList({ plan }: { plan: PricingPlanView }) {
   return (
     <ul className="space-y-2">
       {lines.map((line) => (
-        <li key={line} className="flex items-start gap-2 text-sm text-muted-foreground">
+        <li key={line} className="flex items-start gap-2 text-sm text-foreground">
           <CheckCircle2 className="h-4 w-4 text-primary shrink-0 mt-0.5" aria-hidden />
           <span>{line}</span>
         </li>
@@ -133,22 +133,22 @@ export function ModulePlanDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
       role="dialog"
       aria-modal="true"
       aria-labelledby="module-plan-title"
       onClick={onClose}
     >
       <div
-        className="bento-card max-w-lg w-full max-h-[85vh] flex flex-col shadow-lg border border-border"
+        className="bg-card text-card-foreground rounded-2xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl border border-border overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4 p-4 border-b border-border/60">
+        <div className="flex items-start justify-between gap-4 p-4 border-b border-border bg-card">
           <div>
             <h3 id="module-plan-title" className="font-display font-semibold text-lg">
               Plan — {appName}
             </h3>
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               {active && current
                 ? `Aktualny plan: ${current.name}`
                 : active
@@ -166,13 +166,13 @@ export function ModulePlanDialog({
           </button>
         </div>
 
-        <div className="overflow-y-auto p-4 space-y-6 flex-1">
+        <div className="overflow-y-auto p-5 space-y-6 flex-1 bg-card">
           {current && (
-            <section className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-3">
+            <section className="rounded-xl border border-border bg-muted p-4 space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="font-display font-semibold">{current.name}</p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="font-display font-semibold text-lg">{current.name}</p>
+                  <p className="text-sm text-foreground/80">
                     {planPriceLabel(current, subscription?.billing_interval === 'yearly')}
                   </p>
                 </div>
@@ -183,7 +183,7 @@ export function ModulePlanDialog({
                 )}
               </div>
               {active && (
-                <p className="text-xs text-muted-foreground">Wygasa: {formatDatePl(subscription?.expires_at)}</p>
+                <p className="text-sm text-foreground/80">Wygasa: {formatDatePl(subscription?.expires_at)}</p>
               )}
               <PlanFeatureList plan={current} />
               {active && current && (

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { CheckCircle2, Star } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { applicationForModuleSlug } from '../../lib/moduleAccess'
 import { parseFeaturesFromDb } from '../admin/pricingAdminUtils'
 import { planLimitLines } from '../../lib/pricingDisplay'
 
@@ -33,25 +34,7 @@ type DbPricingPlanRow = {
   extra_user_price_yearly: number | null
 }
 
-type ApplicationRow = { id: string; name: string }
-
-function matchesModuleApplication(appName: string, moduleName: string, moduleSlug: string): boolean {
-  const a = appName.trim().toLowerCase()
-  const m = moduleName.trim().toLowerCase()
-  if (a === m) return true
-  const slugHints: Record<string, string[]> = {
-    cleaning: ['cleaning', 'clean'],
-    flota: ['flota', 'fleet'],
-    serwis: ['serwis'],
-    administracja: ['administrac', 'nieruchomo', 'admin.domio', 'adm.domio'],
-    home: ['home', 'mieszkan'],
-  }
-  const hints = slugHints[moduleSlug]
-  if (hints?.some((h) => a.includes(h))) return true
-  const first = m.split(/\s+/)[0]
-  if (first.length >= 4 && a.includes(first)) return true
-  return false
-}
+type ApplicationRow = { id: string; name: string; domain_url: string | null; api_url: string | null }
 
 function toDisplayPlan(row: DbPricingPlanRow, highlighted: boolean, omitLocations: boolean): PricingPlan {
   const fromDb = parseFeaturesFromDb(row.features)
@@ -94,31 +77,10 @@ export function PricingSection({ moduleName, moduleSlug, onSelectPlan }: Pricing
 
     const load = async () => {
       setLoading(true)
-      const plansRes = await supabase
-        .from('pricing_plans')
-        .select(
-          'id, app_id, name, price_monthly, price_yearly, features, is_active, max_users, max_locations, max_storage_gb, ai_monthly_parse_limit, has_ai_features, extra_user_price_monthly, extra_user_price_yearly',
-        )
+      const appsRes = await supabase
+        .from('applications')
+        .select('id, name, domain_url, api_url, is_active')
         .eq('is_active', true)
-
-      if (cancelled) return
-
-      if (plansRes.error) {
-        console.error('[PricingSection] pricing_plans:', plansRes.error)
-        setDbPlans([])
-        setLoading(false)
-        return
-      }
-
-      const rows = (plansRes.data as DbPricingPlanRow[]) ?? []
-      const appIds = [...new Set(rows.map((r) => r.app_id))]
-      if (appIds.length === 0) {
-        setDbPlans([])
-        setLoading(false)
-        return
-      }
-
-      const appsRes = await supabase.from('applications').select('id, name').in('id', appIds)
 
       if (cancelled) return
 
@@ -129,9 +91,31 @@ export function PricingSection({ moduleName, moduleSlug, onSelectPlan }: Pricing
         return
       }
 
-      const apps = (appsRes.data as ApplicationRow[]) ?? []
-      const app = apps.find((row) => matchesModuleApplication(row.name, moduleName, moduleSlug))
-      setDbPlans(app ? rows.filter((p) => p.app_id === app.id) : [])
+      const app = applicationForModuleSlug((appsRes.data as ApplicationRow[]) ?? [], moduleSlug)
+      if (!app) {
+        setDbPlans([])
+        setLoading(false)
+        return
+      }
+
+      const plansRes = await supabase
+        .from('pricing_plans')
+        .select(
+          'id, app_id, name, price_monthly, price_yearly, features, is_active, max_users, max_locations, max_storage_gb, ai_monthly_parse_limit, has_ai_features, extra_user_price_monthly, extra_user_price_yearly',
+        )
+        .eq('is_active', true)
+        .eq('app_id', app.id)
+
+      if (cancelled) return
+
+      if (plansRes.error) {
+        console.error('[PricingSection] pricing_plans:', plansRes.error)
+        setDbPlans([])
+        setLoading(false)
+        return
+      }
+
+      setDbPlans((plansRes.data as DbPricingPlanRow[]) ?? [])
       setLoading(false)
     }
 
