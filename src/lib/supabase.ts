@@ -10,6 +10,15 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  const root = document.getElementById('root')
+  if (root) {
+    root.innerHTML =
+      '<div style="font-family:sans-serif;max-width:32rem;margin:4rem auto;padding:1.5rem;line-height:1.5">' +
+      '<h1 style="font-size:1.25rem">Aplikacja nie może się uruchomić</h1>' +
+      '<p>Brak konfiguracji połączenia z bazą. To zwykle oznacza, że wgrano build bez pliku .env.</p>' +
+      '<p>Zbuduj panel lokalnie (`npm run build`) z uzupełnionym .env i wgraj nowy folder dist.</p>' +
+      '</div>'
+  }
   throw new Error('Missing Supabase environment variables')
 }
 
