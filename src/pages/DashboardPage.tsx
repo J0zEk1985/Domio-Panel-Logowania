@@ -236,7 +236,7 @@ export default function DashboardPage() {
               <OrgInboundMailboxesCard
                 orgId={billingOrgId}
                 canManage={canManageBilling}
-                moduleFilter="administracja"
+                moduleFilter={['serwis', 'administracja']}
                 companySettingsHref="/firma"
               />
             </div>

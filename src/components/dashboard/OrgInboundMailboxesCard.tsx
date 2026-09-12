@@ -14,6 +14,9 @@ const MODULE_LABEL: Record<InboundModule, string> = {
   administracja: 'Administracja',
 }
 
+/** Cleaning accepts tickets in-app only. Email aliases stay on Serwis and Administracja. */
+const EMAIL_INBOUND_MODULES: InboundModule[] = ['serwis', 'administracja']
+
 type MailboxRow = {
   id: string
   org_id: string
@@ -34,9 +37,28 @@ type Quota = {
 type Props = {
   orgId: string
   canManage: boolean
-  moduleFilter?: InboundModule
+  moduleFilter?: InboundModule | InboundModule[]
   /** Owner dashboard link to edit org name/slug used in aliases. Omit in platform admin. */
   companySettingsHref?: string
+}
+
+function mailboxVisible(module: InboundModule, filter?: InboundModule | InboundModule[]): boolean {
+  if (!EMAIL_INBOUND_MODULES.includes(module)) return false
+  if (!filter) return true
+  return (Array.isArray(filter) ? filter : [filter]).includes(module)
+}
+
+function mailboxHelpText(filter?: InboundModule | InboundModule[]): string {
+  const allowed = filter == null ? null : Array.isArray(filter) ? filter : [filter]
+  const showsSerwis = !allowed || allowed.includes('serwis')
+  const showsAdmin = !allowed || allowed.includes('administracja')
+  if (showsSerwis && showsAdmin) {
+    return 'Skrzynki e-mail Serwisu i Administracji. Zgłoszenia Sprzątania przyjmujecie wyłącznie w aplikacji — QR, formularz i panel.'
+  }
+  if (showsAdmin) {
+    return 'Skrzynka e-mail Administracji. Zgłoszenia Sprzątania przyjmujecie wyłącznie w aplikacji — QR, formularz i panel.'
+  }
+  return 'Promujcie wzór zgłoszenia. W planie bazowym redagujecie mail i wysyłacie na alias Domio. Forward od razu wymaga planu z automatyczną analizą.'
 }
 
 function inboundAddress(alias: string): string {
@@ -83,7 +105,7 @@ export function OrgInboundMailboxesCard({ orgId, canManage, moduleFilter, compan
         setBoxes([])
       } else {
         const rows = ((listRes.data ?? []) as MailboxRow[]).filter((row) =>
-          moduleFilter ? row.module === moduleFilter : true,
+          mailboxVisible(row.module, moduleFilter),
         )
         setBoxes(rows)
       }
@@ -157,9 +179,7 @@ export function OrgInboundMailboxesCard({ orgId, canManage, moduleFilter, compan
             Zgłoszenia e-mail
           </h2>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            {moduleFilter === 'administracja'
-              ? 'Skrzynka e-mail Administracji. Zgłoszenia Serwisu i Sprzątania przyjmujecie wyłącznie w aplikacjach — QR, formularz i panel.'
-              : 'Promujcie wzór zgłoszenia. W planie bazowym redagujecie mail i wysyłacie na alias Domio. Forward od razu wymaga planu z automatyczną analizą.'}
+            {mailboxHelpText(moduleFilter)}
             {companySettingsHref ? (
               <>
                 {' '}

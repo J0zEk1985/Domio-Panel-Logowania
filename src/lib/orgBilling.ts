@@ -170,6 +170,87 @@ export function mapPricingPlanRow(row: {
   }
 }
 
+export type BillingInvoicePrefill = {
+  fullName: string
+  companyName: string
+  nip: string
+  address: string
+  city: string
+  postalCode: string
+  listedInProviderDirectory: boolean
+}
+
+const EMPTY_BILLING_INVOICE_PREFILL: BillingInvoicePrefill = {
+  fullName: '',
+  companyName: '',
+  nip: '',
+  address: '',
+  city: '',
+  postalCode: '',
+  listedInProviderDirectory: false,
+}
+
+type BillingOrgInvoiceRow = {
+  name: string | null
+  nip: string | null
+  address: string | null
+  city: string | null
+  postal_code: string | null
+  listed_in_provider_directory: boolean | null
+}
+
+export async function fetchMyBillingInvoicePrefill(): Promise<BillingInvoicePrefill> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) {
+    console.error('[orgBilling] fetch invoice prefill user:', userError)
+    return EMPTY_BILLING_INVOICE_PREFILL
+  }
+  if (!user) return EMPTY_BILLING_INVOICE_PREFILL
+
+  const [profileRes, membershipsRes] = await Promise.all([
+    supabase.from('profiles').select('full_name').eq('id', user.id).maybeSingle(),
+    supabase.from('memberships').select('role, org_id').eq('user_id', user.id),
+  ])
+
+  if (profileRes.error) {
+    console.error('[orgBilling] fetch invoice prefill profile:', profileRes.error)
+  }
+  if (membershipsRes.error) {
+    console.error('[orgBilling] fetch invoice prefill memberships:', membershipsRes.error)
+  }
+
+  const fullName = (profileRes.data as { full_name: string | null } | null)?.full_name?.trim() ?? ''
+  const billing = pickBillingMembership(membershipsRes.data ?? [])
+  if (!billing?.org_id) {
+    return { ...EMPTY_BILLING_INVOICE_PREFILL, fullName }
+  }
+
+  const { data: org, error: orgError } = await supabase
+    .from('organizations')
+    .select('name, nip, address, city, postal_code, listed_in_provider_directory')
+    .eq('id', billing.org_id)
+    .maybeSingle()
+
+  if (orgError) {
+    console.error('[orgBilling] fetch invoice prefill org:', orgError)
+    return { ...EMPTY_BILLING_INVOICE_PREFILL, fullName }
+  }
+
+  const row = org as BillingOrgInvoiceRow | null
+  return {
+    fullName,
+    companyName: row?.name?.trim() ?? '',
+    nip: (row?.nip ?? '').replace(/\D/g, ''),
+    address: row?.address?.trim() ?? '',
+    city: row?.city?.trim() ?? '',
+    postalCode: row?.postal_code?.trim() ?? '',
+    listedInProviderDirectory: row?.listed_in_provider_directory === true,
+  }
+}
+
 export async function ensureMyBillingOrganization(input: {
   name: string
   nip?: string | null

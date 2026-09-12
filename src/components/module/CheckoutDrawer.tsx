@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import {
   activateOrgSubscriptionPlan,
   ensureMyBillingOrganization,
+  fetchMyBillingInvoicePrefill,
   type BillingInterval,
 } from '../../lib/orgBilling'
 import {
@@ -43,6 +44,12 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
   const [fullName, setFullName] = useState('')
   const [companyName, setCompanyName] = useState('')
   const [nip, setNip] = useState('')
+  const [address, setAddress] = useState('')
+  const [city, setCity] = useState('')
+  const [postalCode, setPostalCode] = useState('')
+  const [listedInProviderDirectory, setListedInProviderDirectory] = useState(false)
+  const [prefillFromOrg, setPrefillFromOrg] = useState(false)
+  const [prefillLoading, setPrefillLoading] = useState(false)
   const [gusPreview, setGusPreview] = useState<BillingGusPreview | null>(null)
   const [promoInput, setPromoInput] = useState('')
   const [promo, setPromo] = useState<PromoPreview | null>(null)
@@ -53,16 +60,46 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
 
   useEffect(() => {
     if (!open) return
+    let cancelled = false
     setPaymentMethod('card')
     setFullName('')
     setCompanyName('')
     setNip('')
+    setAddress('')
+    setCity('')
+    setPostalCode('')
+    setListedInProviderDirectory(false)
+    setPrefillFromOrg(false)
     setGusPreview(null)
     setPromoInput('')
     setPromo(null)
     setPromoError(null)
     setBusy(false)
     setSuccess(false)
+    setPrefillLoading(true)
+
+    void (async () => {
+      try {
+        const prefill = await fetchMyBillingInvoicePrefill()
+        if (cancelled) return
+        setFullName(prefill.fullName)
+        setCompanyName(prefill.companyName)
+        setNip(prefill.nip)
+        setAddress(prefill.address)
+        setCity(prefill.city)
+        setPostalCode(prefill.postalCode)
+        setListedInProviderDirectory(prefill.listedInProviderDirectory)
+        setPrefillFromOrg(Boolean(prefill.companyName || prefill.nip))
+      } catch (err) {
+        console.error('[CheckoutDrawer] prefill:', err)
+      } finally {
+        if (!cancelled) setPrefillLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [open, plan.id, yearly])
 
   const basePrice = yearly ? plan.yearlyPrice : plan.monthlyPrice
@@ -91,7 +128,7 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
       toast.error('Podaj imię i nazwisko albo nazwę firmy.')
       return
     }
-    const nipDigits = nip.replace(/\s+/g, '')
+    const nipDigits = nip.replace(/\D/g, '')
     if (nipDigits && !/^\d{10}$/.test(nipDigits)) {
       toast.error('NIP musi składać się z 10 cyfr.')
       return
@@ -102,6 +139,9 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
       const orgId = await ensureMyBillingOrganization({
         name: orgName,
         nip: nipDigits || null,
+        address,
+        city,
+        postalCode,
       })
       if (nipDigits) {
         try {
@@ -109,12 +149,12 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
             orgId,
             nip: nipDigits,
             legalName: orgName,
-            city: '',
-            postalCode: '',
-            address: '',
+            city,
+            postalCode,
+            address,
             phone: '',
             gus: gusPreview,
-            listedInProviderDirectory: false,
+            listedInProviderDirectory,
           })
         } catch (leErr) {
           console.error('[CheckoutDrawer] legal entity:', leErr)
@@ -254,11 +294,16 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
 
               <div className="space-y-3">
                 <p className="text-sm font-semibold">Dane do faktury</p>
+                {prefillLoading ? (
+                  <p className="text-xs text-muted-foreground">Pobieranie danych firmy…</p>
+                ) : prefillFromOrg ? (
+                  <p className="text-xs text-muted-foreground">Dane pobrane z Twojej firmy. Możesz je jeszcze poprawić.</p>
+                ) : null}
                 <input
                   className={fieldClass}
                   placeholder="Imię i nazwisko"
                   value={fullName}
-                  disabled={busy}
+                  disabled={busy || prefillLoading}
                   autoComplete="name"
                   onChange={(e) => setFullName(e.target.value)}
                 />
@@ -266,14 +311,14 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
                   className={fieldClass}
                   placeholder="Firma (opcjonalnie)"
                   value={companyName}
-                  disabled={busy}
+                  disabled={busy || prefillLoading}
                   autoComplete="organization"
                   onChange={(e) => setCompanyName(e.target.value)}
                 />
                 <OrgNipLookupField
                   idPrefix="checkout"
                   nip={nip}
-                  disabled={busy}
+                  disabled={busy || prefillLoading}
                   onNipChange={(value) => {
                     setNip(value)
                     setGusPreview(null)
@@ -281,6 +326,9 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
                   onFilled={(filled) => {
                     setNip(filled.nip)
                     setCompanyName(filled.name)
+                    setAddress(filled.address)
+                    setCity(filled.city)
+                    setPostalCode(filled.postalCode)
                     setGusPreview(filled.gusPreview)
                   }}
                 />
@@ -309,10 +357,10 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
                 {promoError ? <p className="text-xs text-destructive">{promoError}</p> : null}
               </div>
 
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void confirmPay()}
+                  <button
+                    type="button"
+                    disabled={busy || prefillLoading}
+                    onClick={() => void confirmPay()}
                 className="w-full rounded-md px-4 py-3 text-sm font-medium gradient-brand text-primary-foreground disabled:opacity-50 inline-flex items-center justify-center gap-2"
               >
                 <Lock className="h-4 w-4" />
