@@ -60,6 +60,7 @@ export function mapPricingPlanRow(row: {
   max_users: number | null
   max_locations: number | null
   max_storage_gb: number | null
+  ai_monthly_parse_limit: number | null
   has_ai_features: boolean | null
 }): PricingPlanView {
   return {
@@ -72,6 +73,7 @@ export function mapPricingPlanRow(row: {
     max_users: row.max_users,
     max_locations: row.max_locations,
     max_storage_gb: row.max_storage_gb,
+    ai_monthly_parse_limit: row.ai_monthly_parse_limit,
     has_ai_features: row.has_ai_features,
   }
 }

@@ -8,6 +8,7 @@ export type PricingPlanView = {
   max_users: number | null
   max_locations: number | null
   max_storage_gb: number | null
+  ai_monthly_parse_limit: number | null
   has_ai_features: boolean | null
 }
 
@@ -20,7 +21,7 @@ export function parseFeatureList(raw: unknown): string[] {
 
 export function planLimitLines(plan: Pick<
   PricingPlanView,
-  'max_users' | 'max_locations' | 'max_storage_gb' | 'has_ai_features'
+  'max_users' | 'max_locations' | 'max_storage_gb' | 'ai_monthly_parse_limit' | 'has_ai_features'
 >): string[] {
   const lines: string[] = []
   if (plan.max_users != null) {
@@ -34,8 +35,15 @@ export function planLimitLines(plan: Pick<
   if (plan.max_storage_gb != null) {
     lines.push(`${plan.max_storage_gb} GB pamięci`)
   }
+  if (plan.ai_monthly_parse_limit != null) {
+    lines.push(
+      plan.ai_monthly_parse_limit === 0
+        ? 'Bez analiz AI e-maili'
+        : `${plan.ai_monthly_parse_limit} analiz AI e-maili / mies.`,
+    )
+  }
   if (plan.has_ai_features === true) {
-    lines.push('Dostęp do funkcji AI')
+    lines.push('Automatyczna analiza e-maili (forward)')
   }
   return lines
 }

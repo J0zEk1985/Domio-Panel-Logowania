@@ -50,6 +50,7 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
       maxUsers: row.max_users != null ? String(row.max_users) : '',
       maxLocations: row.max_locations != null ? String(row.max_locations) : '',
       maxStorageGb: row.max_storage_gb != null ? String(row.max_storage_gb) : '',
+      aiMonthlyParseLimit: row.ai_monthly_parse_limit != null ? String(row.ai_monthly_parse_limit) : '20',
       hasAiFeatures: row.has_ai_features === true,
     })
   }
@@ -87,6 +88,11 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
       setSectionError(maxStorageParsed.message)
       return
     }
+    const aiLimitParsed = parseOptionalLimitInt(planForm.aiMonthlyParseLimit, 'Limit analiz AI / mies.')
+    if (!aiLimitParsed.ok) {
+      setSectionError(aiLimitParsed.message)
+      return
+    }
 
     setPlanSaving(true)
     try {
@@ -99,6 +105,7 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
         max_users: maxUsersParsed.value,
         max_locations: maxLocationsParsed.value,
         max_storage_gb: maxStorageParsed.value,
+        ai_monthly_parse_limit: aiLimitParsed.value ?? 20,
         has_ai_features: planForm.hasAiFeatures,
         updated_at: new Date().toISOString(),
       }
@@ -237,7 +244,7 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
           <div className="border-t border-border/60 pt-4 space-y-4">
             <p className="text-sm font-medium text-foreground">Limity systemowe</p>
             <p className="text-xs text-muted-foreground -mt-2">
-              Pozostaw pole puste, aby oznaczyć brak limitu (nielimitowane).
+              Użytkownicy, lokalizacje i pamięć: puste pole = bez limitu. Analizy AI: puste = 20 (próbka planu bazowego).
             </p>
             <div className="grid sm:grid-cols-3 gap-4">
               <label className="block space-y-1.5 text-sm">
@@ -276,6 +283,18 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
                   placeholder="np. 100 lub puste"
                 />
               </label>
+              <label className="block space-y-1.5 text-sm">
+                <span className="text-muted-foreground">Limit analiz AI e-maili / mies.</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  className={inputClass}
+                  value={planForm.aiMonthlyParseLimit}
+                  onChange={(e) => setPlanForm((f) => ({ ...f, aiMonthlyParseLimit: e.target.value }))}
+                  placeholder="20 baza, 300 add-on AI"
+                />
+              </label>
             </div>
             <label className="flex items-start gap-3 cursor-pointer select-none">
               <input
@@ -285,9 +304,9 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
                 className="mt-1 h-4 w-4 rounded border-input text-primary focus:ring-ring"
               />
               <span className="text-sm text-foreground">
-                Dostęp do funkcji AI
+                Automatyczna analiza e-maili (forward)
                 <span className="block text-xs text-muted-foreground mt-1">
-                  Włącza flagę planu dla modułów korzystających z funkcji sztucznej inteligencji.
+                  Odblokowuje tryb ai_auto. Plan bazowy ma 20 analiz jako próbkę; plan AI zwykle 300.
                 </span>
               </span>
             </label>

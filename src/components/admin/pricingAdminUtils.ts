@@ -52,7 +52,10 @@ export function formatPlanLimitsSummary(row: PricingPlanRow): string {
   if (row.max_users != null) parts.push(`Użytkownicy: ${row.max_users}`)
   if (row.max_locations != null) parts.push(`Lokalizacje: ${row.max_locations}`)
   if (row.max_storage_gb != null) parts.push(`Pamięć: ${row.max_storage_gb} GB`)
-  if (row.has_ai_features === true) parts.push('AI: Tak')
+  if (row.ai_monthly_parse_limit != null) {
+    parts.push(`Analizy AI: ${row.ai_monthly_parse_limit}/mies.`)
+  }
+  if (row.has_ai_features === true) parts.push('AI auto: Tak')
   if (parts.length === 0) return 'Bez limitu'
   return parts.join(', ')
 }

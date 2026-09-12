@@ -18,6 +18,7 @@ import { Navbar } from '../components/landing/Navbar'
 import { Footer } from '../components/landing/Footer'
 import { DashboardModuleCard } from '../components/dashboard/DashboardModuleCard'
 import { ModulePlanDialog } from '../components/dashboard/ModulePlanDialog'
+import { OrgInboundMailboxesCard } from '../components/dashboard/OrgInboundMailboxesCard'
 import {
   applicationMatchesModuleSlug,
   catalogModuleForApplication,
@@ -223,6 +224,12 @@ export default function DashboardPage() {
               </div>
             )}
           </motion.div>
+
+          {billingOrgId ? (
+            <div className="mb-12">
+              <OrgInboundMailboxesCard orgId={billingOrgId} canManage={canManageBilling} />
+            </div>
+          ) : null}
 
           {!loading && extraModules.length > 0 && (
             <motion.div

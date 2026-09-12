@@ -111,7 +111,7 @@ export function useDashboardApps() {
         supabase
           .from('pricing_plans')
           .select(
-            'id, app_id, name, price_monthly, price_yearly, features, is_active, max_users, max_locations, max_storage_gb, has_ai_features',
+            'id, app_id, name, price_monthly, price_yearly, features, is_active, max_users, max_locations, max_storage_gb, ai_monthly_parse_limit, has_ai_features',
           )
           .eq('is_active', true),
       ])

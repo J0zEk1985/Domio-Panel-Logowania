@@ -25,6 +25,7 @@ type DbPricingPlanRow = {
   max_users: number | null
   max_locations: number | null
   max_storage_gb: number | null
+  ai_monthly_parse_limit: number | null
   has_ai_features: boolean | null
 }
 
@@ -61,8 +62,15 @@ function limitFeatureLines(row: DbPricingPlanRow): string[] {
   if (row.max_storage_gb != null) {
     lines.push(`${row.max_storage_gb} GB pamięci`)
   }
+  if (row.ai_monthly_parse_limit != null) {
+    lines.push(
+      row.ai_monthly_parse_limit === 0
+        ? 'Bez analiz AI e-maili'
+        : `${row.ai_monthly_parse_limit} analiz AI e-maili / mies.`,
+    )
+  }
   if (row.has_ai_features === true) {
-    lines.push('Dostęp do funkcji AI')
+    lines.push('Automatyczna analiza e-maili (forward)')
   }
   return lines
 }
@@ -97,7 +105,7 @@ export function PricingSection({ moduleName, moduleSlug }: PricingSectionProps) 
       const plansRes = await supabase
         .from('pricing_plans')
         .select(
-          'id, app_id, name, price_monthly, price_yearly, features, is_active, max_users, max_locations, max_storage_gb, has_ai_features',
+          'id, app_id, name, price_monthly, price_yearly, features, is_active, max_users, max_locations, max_storage_gb, ai_monthly_parse_limit, has_ai_features',
         )
         .eq('is_active', true)
 

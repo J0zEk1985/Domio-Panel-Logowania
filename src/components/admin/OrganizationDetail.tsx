@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowLeft, ArrowUp } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { OrgInboundMailboxesCard } from '../dashboard/OrgInboundMailboxesCard'
 import { inputClass } from './pricingAdminUtils'
 import type { MembershipWithProfile, OrganizationDetailRow, OrgSubscriptionRow } from './usersAndOrgsTypes'
 import { formatDateTime, membershipRoleLabel, nestedName } from './usersAndOrgsUtils'
@@ -405,6 +406,8 @@ export default function OrganizationDetail({ organizationId, onBack, onUserClick
           </ul>
         )}
       </section>
+
+      <OrgInboundMailboxesCard orgId={organizationId} canManage />
 
       <section className="bento-card p-6 space-y-4">
         <h2 className="font-display text-lg font-semibold">Pracownicy i członkowie</h2>

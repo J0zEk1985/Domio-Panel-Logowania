@@ -9,6 +9,7 @@ export type PricingPlanRow = {
   max_users?: number | null
   max_locations?: number | null
   max_storage_gb?: number | null
+  ai_monthly_parse_limit?: number | null
   has_ai_features?: boolean
   created_at?: string
   updated_at?: string
@@ -44,6 +45,7 @@ export function emptyPlanForm() {
     maxUsers: '',
     maxLocations: '',
     maxStorageGb: '',
+    aiMonthlyParseLimit: '20',
     hasAiFeatures: false,
   }
 }

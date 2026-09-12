@@ -1770,6 +1770,132 @@ export type Database = {
           },
         ]
       }
+      inbound_email_ingest: {
+        Row: {
+          ai_confidence: number | null
+          body_text: string | null
+          created_at: string
+          error_detail: string | null
+          from_address: string | null
+          id: string
+          issue_id: string | null
+          mailbox_id: string | null
+          matched_location_id: string | null
+          message_id: string
+          org_id: string | null
+          output_tokens: number
+          parse_method: string
+          prompt_tokens: number
+          raw_payload: Json
+          status: string
+          subject: string | null
+          to_address: string
+        }
+        Insert: {
+          ai_confidence?: number | null
+          body_text?: string | null
+          created_at?: string
+          error_detail?: string | null
+          from_address?: string | null
+          id?: string
+          issue_id?: string | null
+          mailbox_id?: string | null
+          matched_location_id?: string | null
+          message_id: string
+          org_id?: string | null
+          output_tokens?: number
+          parse_method?: string
+          prompt_tokens?: number
+          raw_payload?: Json
+          status?: string
+          subject?: string | null
+          to_address: string
+        }
+        Update: {
+          ai_confidence?: number | null
+          body_text?: string | null
+          created_at?: string
+          error_detail?: string | null
+          from_address?: string | null
+          id?: string
+          issue_id?: string | null
+          mailbox_id?: string | null
+          matched_location_id?: string | null
+          message_id?: string
+          org_id?: string | null
+          output_tokens?: number
+          parse_method?: string
+          prompt_tokens?: number
+          raw_payload?: Json
+          status?: string
+          subject?: string | null
+          to_address?: string
+        }
+        Relationships: []
+      }
+      org_ai_usage_monthly: {
+        Row: {
+          org_id: string
+          output_tokens: number
+          parse_count: number
+          prompt_tokens: number
+          year_month: string
+        }
+        Insert: {
+          org_id: string
+          output_tokens?: number
+          parse_count?: number
+          prompt_tokens?: number
+          year_month: string
+        }
+        Update: {
+          org_id?: string
+          output_tokens?: number
+          parse_count?: number
+          prompt_tokens?: number
+          year_month?: string
+        }
+        Relationships: []
+      }
+      org_inbound_mailboxes: {
+        Row: {
+          alias_local_part: string
+          auto_create_threshold: number
+          created_at: string
+          display_address: string | null
+          id: string
+          ingest_mode: string
+          is_enabled: boolean
+          module: string
+          org_id: string
+          updated_at: string
+        }
+        Insert: {
+          alias_local_part: string
+          auto_create_threshold?: number
+          created_at?: string
+          display_address?: string | null
+          id?: string
+          ingest_mode?: string
+          is_enabled?: boolean
+          module: string
+          org_id: string
+          updated_at?: string
+        }
+        Update: {
+          alias_local_part?: string
+          auto_create_threshold?: number
+          created_at?: string
+          display_address?: string | null
+          id?: string
+          ingest_mode?: string
+          is_enabled?: boolean
+          module?: string
+          org_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       org_subscriptions: {
         Row: {
           app_id: string
@@ -2001,6 +2127,7 @@ export type Database = {
           max_locations: number | null
           max_storage_gb: number | null
           max_users: number | null
+          ai_monthly_parse_limit: number | null
           name: string
           price_monthly: number
           price_yearly: number
@@ -2016,6 +2143,7 @@ export type Database = {
           max_locations?: number | null
           max_storage_gb?: number | null
           max_users?: number | null
+          ai_monthly_parse_limit?: number | null
           name: string
           price_monthly?: number
           price_yearly?: number
@@ -2031,6 +2159,7 @@ export type Database = {
           max_locations?: number | null
           max_storage_gb?: number | null
           max_users?: number | null
+          ai_monthly_parse_limit?: number | null
           name?: string
           price_monthly?: number
           price_yearly?: number
@@ -3847,6 +3976,34 @@ export type Database = {
           p_billing_interval: string
         }
         Returns: Database["public"]["Tables"]["org_subscriptions"]["Row"]
+      }
+      ensure_org_inbound_mailboxes: {
+        Args: { p_org_id: string }
+        Returns: Database["public"]["Tables"]["org_inbound_mailboxes"]["Row"][]
+      }
+      get_org_ai_quota: { Args: { p_org_id: string }; Returns: Json }
+      ingest_email_issue: {
+        Args: {
+          p_to_address: string
+          p_message_id: string
+          p_from_address: string
+          p_subject: string
+          p_body_text: string
+          p_parsed?: Json
+          p_raw_payload?: Json
+        }
+        Returns: Json
+      }
+      resolve_inbound_mailbox: { Args: { p_to_address: string }; Returns: Json }
+      update_org_inbound_mailbox: {
+        Args: {
+          p_id: string
+          p_display_address?: string
+          p_is_enabled?: boolean
+          p_ingest_mode?: string
+          p_auto_create_threshold?: number
+        }
+        Returns: Database["public"]["Tables"]["org_inbound_mailboxes"]["Row"]
       }
       cancel_org_subscription: {
         Args: { p_org_id: string; p_app_id: string }
