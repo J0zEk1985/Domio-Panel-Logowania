@@ -122,11 +122,11 @@ export function computeUserModuleAccess(opts: {
         })
       : null
     const fromDashboard = visibleIds.has(app.id)
-    const hasAccess = fromDashboard || inferred != null
+    const hasAccess = fromDashboard
     let reason = 'Brak dostępu'
     if (opts.isPlatformAdmin) reason = 'Administrator platformy'
-    else if (inferred) reason = inferred
-    else if (opts.subscribedAppIds.has(app.id)) reason = 'Subskrypcja firmy'
+    else if (fromDashboard && inferred) reason = inferred
+    else if (fromDashboard && opts.subscribedAppIds.has(app.id)) reason = 'Subskrypcja firmy'
     else if (app.is_free && fromDashboard) reason = 'Moduł darmowy'
     else if (fromDashboard) reason = 'Dostęp z panelu logowania'
     return { id: app.id, name: app.name, hasAccess, reason }
@@ -137,6 +137,7 @@ export async function fetchUserIdsWithModuleAccess(app: ProductAppOption): Promi
   const ids = new Set<string>()
   const slug = productAppSlug(app)
 
+  let subscribedOrgIds: string[] = []
   const { data: subs, error: subsErr } = await supabase
     .from('org_subscriptions')
     .select('org_id, status, expires_at')
@@ -144,11 +145,14 @@ export async function fetchUserIdsWithModuleAccess(app: ProductAppOption): Promi
   if (subsErr) {
     console.error('[adminUserAccess] org_subscriptions:', subsErr)
   } else {
-    const orgIds = (subs ?? [])
+    subscribedOrgIds = (subs ?? [])
       .filter((row) => isSubscriptionCurrent(row.status, row.expires_at))
       .map((row) => row.org_id)
-    if (orgIds.length > 0) {
-      const { data: mems, error: memErr } = await supabase.from('memberships').select('user_id').in('org_id', orgIds)
+    if (subscribedOrgIds.length > 0) {
+      const { data: mems, error: memErr } = await supabase
+        .from('memberships')
+        .select('user_id')
+        .in('org_id', subscribedOrgIds)
       if (memErr) console.error('[adminUserAccess] memberships by org:', memErr)
       for (const m of mems ?? []) ids.add(m.user_id)
     }
@@ -159,9 +163,29 @@ export async function fetchUserIdsWithModuleAccess(app: ProductAppOption): Promi
   else for (const p of admins ?? []) ids.add(p.id)
 
   if (slug === 'flota') {
-    const { data, error } = await supabase.from('profiles').select('id').not('fleet_role', 'is', null)
-    if (error) console.error('[adminUserAccess] fleet_role:', error)
-    else for (const p of data ?? []) ids.add(p.id)
+    const { data: fleetProfiles, error: fleetErr } = await supabase
+      .from('profiles')
+      .select('id')
+      .not('fleet_role', 'is', null)
+    if (fleetErr) console.error('[adminUserAccess] fleet_role:', fleetErr)
+    const fleetIds = new Set((fleetProfiles ?? []).map((row) => row.id))
+    for (const id of [...ids]) {
+      if (!fleetIds.has(id)) ids.delete(id)
+    }
+    if (subscribedOrgIds.length > 0) {
+      const { data: vehicles, error: vehicleErr } = await supabase
+        .from('vehicles')
+        .select('assigned_driver_id')
+        .in('org_id', subscribedOrgIds)
+        .not('assigned_driver_id', 'is', null)
+      if (vehicleErr) console.error('[adminUserAccess] fleet vehicles:', vehicleErr)
+      for (const row of vehicles ?? []) {
+        if (row.assigned_driver_id && fleetIds.has(row.assigned_driver_id)) {
+          ids.add(row.assigned_driver_id)
+        }
+      }
+    }
+    for (const p of admins ?? []) ids.add(p.id)
   } else if (slug === 'home') {
     const { data, error } = await supabase
       .from('profiles')

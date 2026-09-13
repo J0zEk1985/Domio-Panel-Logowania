@@ -231,14 +231,8 @@ export default function DashboardPage() {
           </motion.div>
 
           {billingOrgId ? (
-            <div className="mb-12 space-y-6">
+            <div className="mb-12">
               <OrgCompanyCard orgId={billingOrgId} canManage={canManageOrgProfile} />
-              <OrgInboundMailboxesCard
-                orgId={billingOrgId}
-                canManage={canManageBilling}
-                moduleFilter={['serwis', 'administracja']}
-                companySettingsHref="/firma"
-              />
             </div>
           ) : (
             <section className="mb-12 rounded-2xl border border-border bg-card p-5 space-y-3">
@@ -264,6 +258,7 @@ export default function DashboardPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
+              className="mb-12"
             >
               <h2 className="font-display text-xl font-semibold mb-4 flex items-center gap-2">
                 <ShoppingCart className="h-5 w-5 text-accent" aria-hidden />
@@ -297,6 +292,15 @@ export default function DashboardPage() {
               </div>
             </motion.div>
           )}
+
+          {billingOrgId ? (
+            <OrgInboundMailboxesCard
+              orgId={billingOrgId}
+              canManage={canManageBilling}
+              moduleFilter={['serwis', 'administracja']}
+              companySettingsHref="/firma"
+            />
+          ) : null}
         </div>
       </div>
 

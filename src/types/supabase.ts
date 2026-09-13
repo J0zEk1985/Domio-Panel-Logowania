@@ -4083,6 +4083,7 @@ export type Database = {
       is_org_manager_safe: { Args: { target_org_id: string }; Returns: boolean }
       is_org_member: { Args: { target_org_id: string }; Returns: boolean }
       is_platform_admin: { Args: never; Returns: boolean }
+      user_has_module_access: { Args: { p_module_slug: string }; Returns: boolean }
       link_user_to_org: {
         Args: {
           target_email: string

@@ -106,10 +106,15 @@ export function useDashboardApps() {
           }),
       )
 
-      const hasFleetAccess = fleetRole === 'admin' || fleetRole === 'driver'
       const hasCleaningAccess = memberships.length > 0
-
-      if (hasFleetAccess && !hasCleaningAccess) {
+      const { data: canOpenFleet, error: fleetAccessError } = await supabase.rpc(
+        'user_has_module_access',
+        { p_module_slug: 'flota' },
+      )
+      if (fleetAccessError) {
+        console.error('[SSO] user_has_module_access(flota):', fleetAccessError.message)
+      }
+      if (canOpenFleet === true && !hasCleaningAccess && !platformAdmin) {
         window.location.href = 'https://flota.domio.com.pl'
         return
       }
