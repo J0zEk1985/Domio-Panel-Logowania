@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { Application } from '../types/database'
-import { buildChangePasswordPath, resolvePostLoginTarget } from '../lib/postLoginRedirect'
+import { buildChangePasswordPath, resolvePostLoginTarget, shouldForcePasswordChange } from '../lib/postLoginRedirect'
 import {
   filterAppsByOrgAccess,
   filterHubApplications,
@@ -50,7 +50,7 @@ export function useDashboardApps() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('fleet_role, is_first_login, platform_role')
+        .select('fleet_role, is_first_login, platform_role, account_type')
         .eq('id', user.id)
         .maybeSingle()
 
@@ -59,7 +59,7 @@ export function useDashboardApps() {
       }
 
       const returnTo = searchParams.get('returnTo')
-      if (profile?.is_first_login === true) {
+      if (shouldForcePasswordChange(profile)) {
         navigate(buildChangePasswordPath(returnTo))
         return
       }

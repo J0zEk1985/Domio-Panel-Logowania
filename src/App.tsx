@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { Toaster } from 'sonner'
 import { supabase } from './lib/supabase'
-import { buildChangePasswordPath } from './lib/postLoginRedirect'
+import { buildChangePasswordPath, shouldForcePasswordChange } from './lib/postLoginRedirect'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
 import DashboardPage from './pages/DashboardPage'
@@ -86,7 +86,7 @@ function App() {
       try {
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('is_first_login')
+          .select('is_first_login, account_type, fleet_role')
           .eq('id', userId)
           .single()
 
@@ -95,7 +95,7 @@ function App() {
           return
         }
 
-        if (profile?.is_first_login === true) {
+        if (shouldForcePasswordChange(profile)) {
           const currentPath = window.location.pathname
           // Landing at `/` always stays visible; DashboardPage enforces password change when entering the panel.
           if (currentPath !== '/change-password' && currentPath !== '/') {

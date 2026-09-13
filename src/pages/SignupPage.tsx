@@ -143,7 +143,10 @@ export default function SignupPage() {
 
       const { error: profileError } = await supabase.from('profiles').insert({
         id: authData.user.id,
+        email,
         ip_address: ipAddress,
+        account_type: 'hub',
+        is_first_login: false,
         accepted_terms_at: new Date().toISOString(),
         terms_version: termsDoc && acceptedDocs.terms ? termsDoc.version : '1.0',
         privacy_version: privacyDoc && acceptedDocs.privacy ? privacyDoc.version : null,

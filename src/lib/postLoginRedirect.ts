@@ -33,6 +33,27 @@ export const buildChangePasswordPath = (returnToParam: string | null): string =>
   return `/change-password?returnTo=${encodeURIComponent(target)}`;
 };
 
+export type FirstLoginProfile = {
+  is_first_login?: boolean | null;
+  account_type?: string | null;
+  fleet_role?: string | null;
+};
+
+/**
+ * Temporary PIN/password change applies only to simplified workers and fleet
+ * drivers created by an admin. Hub/standard owners already set a password.
+ */
+export function shouldForcePasswordChange(
+  profile: FirstLoginProfile | null | undefined
+): boolean {
+  if (!profile || profile.is_first_login !== true) return false;
+  const accountType = (profile.account_type ?? "").trim().toLowerCase();
+  const fleetRole = (profile.fleet_role ?? "").trim().toLowerCase();
+  if (accountType === "simplified") return true;
+  if (fleetRole === "driver") return true;
+  return false;
+}
+
 export function resolveAuthLanding(
   isFirstLogin: boolean,
   returnToParam: string | null

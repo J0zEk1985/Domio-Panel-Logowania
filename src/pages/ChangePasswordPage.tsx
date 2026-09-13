@@ -107,13 +107,16 @@ export default function ChangePasswordPage() {
       if (updateError) throw updateError
 
       // CRITICAL: Reset is_first_login flag in profiles table
-      // Wait for successful database update before redirecting
-      const { error: profileError } = await supabase
+      // Wait for successful database update before redirecting.
+      // PostgREST returns no error when RLS matches 0 rows — require a returned id.
+      const { data: updatedProfile, error: profileError } = await supabase
         .from('profiles')
         .update({ is_first_login: false })
         .eq('id', user.id)
+        .select('id')
+        .maybeSingle()
 
-      if (profileError) {
+      if (profileError || !updatedProfile?.id) {
         console.error('[ChangePasswordPage] Błąd aktualizacji profilu:', profileError)
         throw new Error('Nie udało się zaktualizować profilu. Hasło zostało zmienione, ale proszę odświeżyć stronę.')
       }

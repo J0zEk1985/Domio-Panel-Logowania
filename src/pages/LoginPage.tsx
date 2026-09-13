@@ -1,7 +1,7 @@
 import { useState, FormEvent, useEffect, useRef } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { navigateToHref, resolveAuthLanding, resolvePostLoginTarget } from '../lib/postLoginRedirect'
+import { navigateToHref, resolveAuthLanding, resolvePostLoginTarget, shouldForcePasswordChange } from '../lib/postLoginRedirect'
 
 /**
  * Hard reset function - completely clears session, cookies, and localStorage
@@ -128,10 +128,10 @@ export default function LoginPage() {
           const returnToParam = searchParams.get('returnTo') || returnTo
           const { data: profile } = await supabase
             .from('profiles')
-            .select('is_first_login')
+            .select('is_first_login, account_type, fleet_role')
             .eq('id', userId)
             .maybeSingle()
-          const landing = resolveAuthLanding(profile?.is_first_login === true, returnToParam)
+          const landing = resolveAuthLanding(shouldForcePasswordChange(profile), returnToParam)
 
           lastRedirectedUserIdRef.current = userId
           navigateToHref(landing.href, landing.external, navigate)
@@ -186,7 +186,7 @@ export default function LoginPage() {
       const targetOrgId = searchParams.get('orgId') ?? null
       const { data: profile } = await supabase
         .from('profiles')
-        .select('account_type, is_first_login')
+        .select('account_type, is_first_login, fleet_role')
         .eq('id', userId)
         .maybeSingle()
       const accountType = (profile?.account_type ?? '').toString().toLowerCase()
@@ -211,7 +211,7 @@ export default function LoginPage() {
       }
 
       const returnToParam = searchParams.get('returnTo')
-      const landing = resolveAuthLanding(profile?.is_first_login === true, returnToParam)
+      const landing = resolveAuthLanding(shouldForcePasswordChange(profile), returnToParam)
       navigateToHref(landing.href, landing.external, navigate)
     } catch (err: unknown) {
       // Translate Supabase errors to Polish messages
