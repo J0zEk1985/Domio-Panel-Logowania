@@ -224,6 +224,30 @@ Deno.serve(async function (req) {
       return json(corsHeaders, 403, { error: 'Forbidden' })
     }
 
+    // Rolę właścicielską może nadać wyłącznie owner/admin organizacji.
+    // Bez tego koordynator mógł utworzyć konto z rolą owner i zalogować
+    // się na nie własnym PIN-em. Odpowiednik reguły w link_user_to_org.
+    const ownerClassRoles = new Set([
+      'owner',
+      'admin',
+      'administrator',
+      'wlasciciel',
+      'właściciel',
+    ])
+    const callerIsOwnerClass = (callerMemberships ?? []).some(function (m) {
+      const role = String(m.role ?? '').trim().toLowerCase()
+      return m.is_active !== false && ownerClassRoles.has(role)
+    })
+    const requestedRole = String(body.membershipRole || body.role || 'cleaner')
+      .trim()
+      .toLowerCase()
+    if (ownerClassRoles.has(requestedRole) && !callerIsOwnerClass) {
+      return json(corsHeaders, 403, {
+        error: 'Forbidden',
+        details: 'Brak uprawnień do nadania roli właścicielskiej',
+      })
+    }
+
     const technicalEmail = `${String(body.slug).toLowerCase()}@staff.domio.com.pl`
     const fullName = `${body.firstName} ${body.lastName}`
 
