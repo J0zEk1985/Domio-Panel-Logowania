@@ -5,6 +5,7 @@ import { validatePassword } from '../lib/validation'
 import ValidationChecklist from '../components/ValidationChecklist'
 import PasswordInput from '../components/PasswordInput'
 import { DOC_LABELS, DOC_PATHS, type LegalDocType } from '../components/admin/legalAdminTypes'
+import { fetchClientIp, recordPlatformLegalConsent } from '../lib/legalConsentApi'
 
 type ActiveLegalDoc = {
   id: string
@@ -17,7 +18,7 @@ type ActiveLegalDoc = {
 const DOC_ORDER: LegalDocType[] = ['terms', 'privacy', 'marketing']
 
 function emptyAcceptedDocs(): Record<LegalDocType, boolean> {
-  return { terms: false, privacy: false, marketing: false }
+  return { terms: false, privacy: false, marketing: false, cookies: false }
 }
 
 function sortLegalDocs(docs: ActiveLegalDoc[]): ActiveLegalDoc[] {
@@ -59,7 +60,10 @@ export default function SignupPage() {
           return
         }
 
-        setActiveLegalDocs(sortLegalDocs((data as ActiveLegalDoc[]) ?? []))
+        const signupDocs = ((data as ActiveLegalDoc[]) ?? []).filter((doc) =>
+          DOC_ORDER.includes(doc.document_type),
+        )
+        setActiveLegalDocs(sortLegalDocs(signupDocs))
         setAcceptedDocs(emptyAcceptedDocs())
       } catch (e) {
         console.error('[SignupPage] loadLegalDocs:', e)
@@ -77,17 +81,6 @@ export default function SignupPage() {
       cancelled = true
     }
   }, [])
-
-  const fetchIPAddress = async (): Promise<string | null> => {
-    try {
-      const response = await fetch('https://api.ipify.org?format=json')
-      const data = await response.json()
-      return data.ip || null
-    } catch (err) {
-      console.error('Failed to fetch IP address:', err)
-      return null
-    }
-  }
 
   const handleSignup = async (e: FormEvent) => {
     e.preventDefault()
@@ -124,7 +117,7 @@ export default function SignupPage() {
         }
       }
 
-      const ipAddress = await fetchIPAddress()
+      const ipAddress = await fetchClientIp()
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
@@ -137,25 +130,22 @@ export default function SignupPage() {
         throw new Error('Nie udało się utworzyć konta')
       }
 
-      const termsDoc = activeLegalDocs.find((d) => d.document_type === 'terms')
-      const privacyDoc = activeLegalDocs.find((d) => d.document_type === 'privacy')
-      const marketingDoc = activeLegalDocs.find((d) => d.document_type === 'marketing')
+      if (!authData.session) {
+        await supabase.auth.getSession()
+      }
 
-      const { error: profileError } = await supabase.from('profiles').insert({
-        id: authData.user.id,
-        email,
-        ip_address: ipAddress,
-        account_type: 'hub',
-        is_first_login: false,
-        accepted_terms_at: new Date().toISOString(),
-        terms_version: termsDoc && acceptedDocs.terms ? termsDoc.version : '1.0',
-        privacy_version: privacyDoc && acceptedDocs.privacy ? privacyDoc.version : null,
-        marketing_consent: marketingDoc ? acceptedDocs.marketing : false,
-        marketing_version: marketingDoc && acceptedDocs.marketing ? marketingDoc.version : null,
+      const acceptedDocumentIds = activeLegalDocs
+        .filter((doc) => acceptedDocs[doc.document_type])
+        .map((doc) => doc.id)
+
+      const consent = await recordPlatformLegalConsent({
+        acceptedDocumentIds,
+        source: 'signup_email',
+        ipAddress,
       })
 
-      if (profileError) {
-        console.error('Profile creation error:', profileError)
+      if (!consent.ok) {
+        console.error('[SignupPage] recordPlatformLegalConsent:', consent.error)
       }
 
       navigate('/dashboard')
@@ -216,7 +206,9 @@ export default function SignupPage() {
         <div className="bg-gray-800 rounded-lg shadow-xl p-8">
           <h1 className="text-3xl font-bold text-white mb-2">Utwórz konto</h1>
           <p className="text-gray-400 mb-2">Podaj swój email, aby utworzyć konto</p>
-          <p className="text-sm text-gray-400 mb-8">Pola oznaczone * są obowiązkowe.</p>
+          <p className="text-sm text-gray-400 mb-8">
+            Pola oznaczone * są obowiązkowe. Na podany e-mail wyślemy Regulamin i Politykę prywatności w pliku PDF.
+          </p>
 
           <form onSubmit={handleSignup} className="space-y-6">
             <div>
@@ -372,6 +364,9 @@ export default function SignupPage() {
               </svg>
               Zaloguj przez Facebook
             </button>
+            <p className="text-xs text-gray-400 text-center">
+              Po zalogowaniu przez Google lub Facebook zaakceptujesz aktualny Regulamin — wyślemy Ci go na e-mail w PDF.
+            </p>
           </div>
 
           <p className="mt-6 text-center text-sm text-gray-400">

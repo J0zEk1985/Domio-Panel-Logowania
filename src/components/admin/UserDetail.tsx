@@ -5,6 +5,7 @@ import { inputClass } from './pricingAdminUtils'
 import type { MembershipWithOrg, ProfileDetailRow, TaskExecutionLogRow } from './usersAndOrgsTypes'
 import { formatDateOnly, formatDateTime, membershipRoleLabel, nestedName, platformRoleLabel, accountTypeLabel, taskLogActionLabel } from './usersAndOrgsUtils'
 import UserDetailModuleAccessSection from './UserDetailModuleAccessSection'
+import UserDetailLegalConsents from './UserDetailLegalConsents'
 
 type Props = {
   userId: string
@@ -240,8 +241,11 @@ export default function UserDetail({ userId, onBack }: Props) {
             </dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Akceptacja regulaminu</dt>
+            <dt className="text-muted-foreground">Akceptacja regulaminu (cache)</dt>
             <dd className="font-medium mt-0.5">{formatDateTime(profile.accepted_terms_at)}</dd>
+            <dd className="text-xs text-muted-foreground mt-1">
+              Pole poglądowe. Dowód prawny jest w logu zgód poniżej.
+            </dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Wersja regulaminu</dt>
@@ -265,6 +269,8 @@ export default function UserDetail({ userId, onBack }: Props) {
           </div>
         </dl>
       </section>
+
+      <UserDetailLegalConsents userId={userId} />
 
       <section className="bento-card p-6 space-y-4">
         <h2 className="font-display text-lg font-semibold">Członkostwa w firmach</h2>

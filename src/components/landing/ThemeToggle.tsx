@@ -1,6 +1,8 @@
 import { Moon, Sun } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { persistIfFunctional } from '../../lib/cookieConsent'
+
 const THEME_KEY = 'domio-theme'
 
 export function ThemeToggle() {
@@ -18,7 +20,7 @@ export function ThemeToggle() {
     const nextIsDark = !isDark
     setIsDark(nextIsDark)
     document.documentElement.classList.toggle('dark', nextIsDark)
-    localStorage.setItem(THEME_KEY, nextIsDark ? 'dark' : 'light')
+    persistIfFunctional(THEME_KEY, nextIsDark ? 'dark' : 'light')
   }
 
   return (

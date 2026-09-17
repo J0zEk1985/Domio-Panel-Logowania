@@ -1353,36 +1353,92 @@ export type Database = {
       }
       legal_documents: {
         Row: {
+          active_from: string
+          active_until: string | null
           content: string
+          content_hash: string
           created_by: string | null
           document_type: string
           id: string
-          is_active: boolean | null
-          is_required: boolean | null
+          is_active: boolean
+          is_required: boolean
           published_at: string | null
           version: string
         }
         Insert: {
+          active_from?: string
+          active_until?: string | null
           content: string
+          content_hash?: string
           created_by?: string | null
           document_type: string
           id?: string
-          is_active?: boolean | null
-          is_required?: boolean | null
+          is_active?: boolean
+          is_required?: boolean
           published_at?: string | null
           version: string
         }
         Update: {
+          active_from?: string
+          active_until?: string | null
           content?: string
+          content_hash?: string
           created_by?: string | null
           document_type?: string
           id?: string
-          is_active?: boolean | null
-          is_required?: boolean | null
+          is_active?: boolean
+          is_required?: boolean
           published_at?: string | null
           version?: string
         }
         Relationships: []
+      }
+      legal_welcome_dispatches: {
+        Row: {
+          attempt_count: number
+          batch_id: string
+          created_at: string
+          id: string
+          last_error: string | null
+          next_attempt_at: string
+          provider: string
+          provider_message_id: string | null
+          sent_at: string | null
+          status: string
+        }
+        Insert: {
+          attempt_count?: number
+          batch_id: string
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          next_attempt_at?: string
+          provider?: string
+          provider_message_id?: string | null
+          sent_at?: string | null
+          status?: string
+        }
+        Update: {
+          attempt_count?: number
+          batch_id?: string
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          next_attempt_at?: string
+          provider?: string
+          provider_message_id?: string | null
+          sent_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legal_welcome_dispatches_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: true
+            referencedRelation: "user_consent_batches"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       location_access: {
         Row: {
@@ -2215,6 +2271,7 @@ export type Database = {
           phone: string | null
           platform_role: string | null
           preferences: Json | null
+          privacy_version: string | null
           snow_hourly_rate: number | null
           terms_version: string | null
           updated_at: string | null
@@ -2243,6 +2300,7 @@ export type Database = {
           phone?: string | null
           platform_role?: string | null
           preferences?: Json | null
+          privacy_version?: string | null
           snow_hourly_rate?: number | null
           terms_version?: string | null
           updated_at?: string | null
@@ -2271,6 +2329,7 @@ export type Database = {
           phone?: string | null
           platform_role?: string | null
           preferences?: Json | null
+          privacy_version?: string | null
           snow_hourly_rate?: number | null
           terms_version?: string | null
           updated_at?: string | null
@@ -3366,6 +3425,102 @@ export type Database = {
           },
         ]
       }
+      user_consent_batches: {
+        Row: {
+          accepted_at: string
+          created_at: string
+          email: string
+          id: string
+          ip_address: string | null
+          pdf_sha256: string | null
+          pdf_storage_path: string | null
+          source: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          accepted_at?: string
+          created_at?: string
+          email: string
+          id?: string
+          ip_address?: string | null
+          pdf_sha256?: string | null
+          pdf_storage_path?: string | null
+          source: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          accepted_at?: string
+          created_at?: string
+          email?: string
+          id?: string
+          ip_address?: string | null
+          pdf_sha256?: string | null
+          pdf_storage_path?: string | null
+          source?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_consents: {
+        Row: {
+          acceptance_hash: string
+          accepted_at: string
+          batch_id: string
+          created_at: string
+          document_id: string
+          document_type: string
+          document_version: string
+          id: string
+          ip_address: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          acceptance_hash: string
+          accepted_at: string
+          batch_id: string
+          created_at?: string
+          document_id: string
+          document_type: string
+          document_version: string
+          id?: string
+          ip_address?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          acceptance_hash?: string
+          accepted_at?: string
+          batch_id?: string
+          created_at?: string
+          document_id?: string
+          document_type?: string
+          document_version?: string
+          id?: string
+          ip_address?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_consents_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "user_consent_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_consents_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "legal_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vehicles: {
         Row: {
           assigned_driver_id: string | null
@@ -4083,6 +4238,47 @@ export type Database = {
       is_org_manager_safe: { Args: { target_org_id: string }; Returns: boolean }
       is_org_member: { Args: { target_org_id: string }; Returns: boolean }
       is_platform_admin: { Args: never; Returns: boolean }
+      can_read_legal_acceptance_object: { Args: { p_name: string }; Returns: boolean }
+      pending_required_legal_documents: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          active_from: string
+          document_type: string
+          id: string
+          version: string
+        }[]
+      }
+      verify_user_consent: { Args: { p_consent_id: string }; Returns: Json }
+      begin_legal_consent: {
+        Args: {
+          p_document_ids: string[]
+          p_email: string
+          p_ip_address: string
+          p_source: string
+          p_user_agent: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      finalize_legal_consent: {
+        Args: {
+          p_batch_id: string
+          p_document_ids: string[]
+          p_pdf_sha256: string
+          p_pdf_storage_path: string
+        }
+        Returns: Json
+      }
+      get_legal_welcome_email_payload: { Args: { p_dispatch_id: string }; Returns: Json }
+      claim_legal_welcome_jobs: { Args: { p_limit?: number }; Returns: Json }
+      mark_legal_welcome_sent: {
+        Args: { p_dispatch_id: string; p_message_id?: string }
+        Returns: undefined
+      }
+      mark_legal_welcome_failed: {
+        Args: { p_dispatch_id: string; p_error: string }
+        Returns: undefined
+      }
       user_has_module_access: { Args: { p_module_slug: string }; Returns: boolean }
       link_user_to_org: {
         Args: {

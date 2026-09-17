@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import domioLogo from '../../../lovable-design/src/assets/domio-logo.jpg'
 import { ContactDetails } from './ContactDetails'
 import { hasVisibleContact, parsePlatformContact } from '../../lib/platformContact'
 import { supabase } from '../../lib/supabase'
+import { CookieConsentSettingsButton } from '../cookie-consent/CookieConsentRoot'
 
 const DEFAULT_COPYRIGHT = `© ${new Date().getFullYear()} DOMIO. Wszelkie prawa zastrzeżone.`
 
@@ -55,9 +57,18 @@ export function Footer({ copyrightLine }: FooterProps) {
             <img src={domioLogo} alt="DOMIO" className="h-6 w-6 rounded object-cover" />
             <span className="font-display font-semibold gradient-brand-text">DOMIO</span>
           </div>
-          <p className="text-sm text-muted-foreground">
-            {resolvedCopyright.trim() ? resolvedCopyright : DEFAULT_COPYRIGHT}
-          </p>
+          <div className="flex flex-col items-center gap-2 text-sm text-muted-foreground md:items-end">
+            <p>{resolvedCopyright.trim() ? resolvedCopyright : DEFAULT_COPYRIGHT}</p>
+            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+              <Link to="/polityka-prywatnosci" className="underline underline-offset-2 hover:text-foreground">
+                Polityka prywatności
+              </Link>
+              <Link to="/polityka-cookies" className="underline underline-offset-2 hover:text-foreground">
+                Polityka cookies
+              </Link>
+              <CookieConsentSettingsButton />
+            </div>
+          </div>
         </div>
       </div>
     </footer>

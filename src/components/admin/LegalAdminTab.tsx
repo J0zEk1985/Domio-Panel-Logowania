@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Eye, FileText, Megaphone, Scale } from 'lucide-react'
+import { Cookie, Eye, FileText, Megaphone, Scale } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { inputClass } from './pricingAdminUtils'
 import LegalDocumentPreviewModal from './LegalDocumentPreviewModal'
@@ -21,7 +21,7 @@ export default function LegalAdminTab() {
   const [previewRow, setPreviewRow] = useState<LegalDocumentRow | null>(null)
 
   useEffect(() => {
-    setIsRequired(activeDocType !== 'marketing')
+    setIsRequired(activeDocType !== 'marketing' && activeDocType !== 'cookies')
   }, [activeDocType])
 
   const loadHistory = useCallback(async () => {
@@ -31,7 +31,7 @@ export default function LegalAdminTab() {
     try {
       const { data, error } = await supabase
         .from('legal_documents')
-        .select('id, document_type, version, content, is_active, is_required, published_at, created_by')
+        .select('id, document_type, version, content, content_hash, is_active, is_required, published_at, active_from, active_until, created_by')
         .eq('document_type', activeDocType)
         .order('published_at', { ascending: false })
 
@@ -172,6 +172,18 @@ export default function LegalAdminTab() {
           <Megaphone className="h-4 w-4 shrink-0" />
           Zgody marketingowe
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveDocType('cookies')}
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
+            activeDocType === 'cookies'
+              ? 'bg-primary/10 text-primary'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+          }`}
+        >
+          <Cookie className="h-4 w-4 shrink-0" />
+          Polityka cookies
+        </button>
       </div>
 
       <section aria-labelledby="legal-publish-heading" className="bento-card p-6 space-y-4">
@@ -196,11 +208,9 @@ export default function LegalAdminTab() {
             onChange={(e) => setNewVersion(e.target.value)}
             placeholder={latestVersionHint ? `np. wyższa niż „${latestVersionHint}” (np. 1.1)` : 'np. 1.0'}
           />
-          <p className="text-xs text-muted-foreground">
-            {latestVersionHint
-              ? `Ostatnia znana wersja dla tego typu: ${latestVersionHint}. Użyj wyższego numeru wersji.`
-              : 'Brak opublikowanych wersji — możesz ustawić np. 1.0.'}
-          </p>
+        <p className="text-xs text-muted-foreground">
+          Opublikowanej treści nie edytujesz. Zawsze wstawiasz nową wersję — poprzednia zostaje w archiwum z hashem.
+        </p>
         </div>
 
         <div className="space-y-1.5">
@@ -251,7 +261,8 @@ export default function LegalAdminTab() {
             <thead>
               <tr className="border-b border-border/60 text-left text-muted-foreground">
                 <th className="p-4 font-medium">Wersja</th>
-                <th className="p-4 font-medium">Data publikacji</th>
+                <th className="p-4 font-medium">Obowiązuje od</th>
+                <th className="p-4 font-medium">SHA-256</th>
                 <th className="p-4 font-medium">Wymagany</th>
                 <th className="p-4 font-medium">Status</th>
                 <th className="p-4 font-medium text-right">Akcje</th>
@@ -260,7 +271,7 @@ export default function LegalAdminTab() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={6} className="p-8 text-center text-muted-foreground">
                     Ładowanie historii…
                   </td>
                 </tr>
@@ -269,7 +280,12 @@ export default function LegalAdminTab() {
                 documentHistory.map((row) => (
                 <tr key={row.id} className="border-b border-border/40 last:border-0">
                   <td className="p-4 font-medium">{row.version}</td>
-                  <td className="p-4 text-muted-foreground">{formatPublishedLegal(row.published_at)}</td>
+                  <td className="p-4 text-muted-foreground">
+                    {formatPublishedLegal(row.active_from || row.published_at)}
+                  </td>
+                  <td className="p-4 font-mono text-xs text-muted-foreground">
+                    {row.content_hash ? `${row.content_hash.slice(0, 12)}…` : '—'}
+                  </td>
                   <td className="p-4 text-muted-foreground">
                     {row.is_required ? 'Tak' : 'Nie'}
                   </td>

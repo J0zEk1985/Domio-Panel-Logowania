@@ -10,6 +10,7 @@ import DashboardPage from './pages/DashboardPage'
 import CompanySettingsPage from './pages/CompanySettingsPage'
 import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
+import CookiesPage from './pages/CookiesPage'
 import MarketingPage from './pages/MarketingPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
@@ -18,6 +19,7 @@ import LandingPage from './pages/LandingPage'
 import ModuleDetail from './pages/ModuleDetail'
 import AdminPage from './pages/AdminPage'
 import ProtectedRoute from './components/ProtectedRoute'
+import LegalConsentGate from './components/LegalConsentGate'
 
 /** Paths where we never force redirect to /login after auth edge cases (e.g. simplified account without org). */
 const PUBLIC_PATHS = new Set([
@@ -28,6 +30,7 @@ const PUBLIC_PATHS = new Set([
   '/reset-password',
   '/regulamin',
   '/polityka-prywatnosci',
+  '/polityka-cookies',
   '/zgody-marketingowe',
 ])
 
@@ -223,22 +226,25 @@ function App() {
       />
       <Route
         path="/dashboard"
-        element={session ? <DashboardPage /> : <Navigate to="/login" replace />}
+        element={session ? <LegalConsentGate><DashboardPage /></LegalConsentGate> : <Navigate to="/login" replace />}
       />
       <Route
         path="/firma"
-        element={session ? <CompanySettingsPage /> : <Navigate to="/login" replace />}
+        element={session ? <LegalConsentGate><CompanySettingsPage /></LegalConsentGate> : <Navigate to="/login" replace />}
       />
       <Route
         path="/admin"
         element={
           <ProtectedRoute requireAdmin={true}>
-            <AdminPage />
+            <LegalConsentGate>
+              <AdminPage />
+            </LegalConsentGate>
           </ProtectedRoute>
         }
       />
       <Route path="/regulamin" element={<TermsPage />} />
       <Route path="/polityka-prywatnosci" element={<PrivacyPage />} />
+      <Route path="/polityka-cookies" element={<CookiesPage />} />
       <Route path="/zgody-marketingowe" element={<MarketingPage />} />
       <Route path="/module/:slug" element={<ModuleDetail />} />
       <Route path="/" element={<LandingPage />} />

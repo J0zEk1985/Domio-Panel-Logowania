@@ -2,6 +2,7 @@ import { useState, FormEvent, useEffect, useRef } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { navigateToHref, resolveAuthLanding, resolvePostLoginTarget, shouldForcePasswordChange } from '../lib/postLoginRedirect'
+import { CookieConsentSettingsButton } from '../components/cookie-consent/CookieConsentRoot'
 
 /**
  * Hard reset function - completely clears session, cookies, and localStorage
@@ -431,6 +432,12 @@ export default function LoginPage() {
               Zarejestruj się
             </Link>
           </p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-gray-500">
+            <Link to="/polityka-cookies" className="underline underline-offset-2 hover:text-gray-800">
+              Polityka cookies
+            </Link>
+            <CookieConsentSettingsButton className="text-sm text-gray-500 underline underline-offset-2 hover:text-gray-800" />
+          </div>
         </div>
       </div>
     </div>

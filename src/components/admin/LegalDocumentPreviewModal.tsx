@@ -37,7 +37,8 @@ export default function LegalDocumentPreviewModal({ row, onClose, onUseAsBase }:
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              {DOC_LABELS[row.document_type]} · {formatPublishedLegal(row.published_at)} · tylko do odczytu
+              {DOC_LABELS[row.document_type]} · {formatPublishedLegal(row.active_from || row.published_at)} · tylko do odczytu
+              {row.content_hash ? ` · SHA-256 ${row.content_hash.slice(0, 16)}…` : ''}
             </p>
           </div>
           <div className="flex items-center gap-2">
