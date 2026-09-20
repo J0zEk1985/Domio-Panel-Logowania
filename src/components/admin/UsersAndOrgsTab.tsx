@@ -93,10 +93,13 @@ function UserSortableTh({
 
 type Props = {
   initialUserId?: string | null
+  initialSubTab?: UsersOrgsSubTab
 }
 
-export default function UsersAndOrgsTab({ initialUserId }: Props) {
-  const [activeSubTab, setActiveSubTab] = useState<UsersOrgsSubTab>(initialUserId ? 'users' : 'orgs')
+export default function UsersAndOrgsTab({ initialUserId, initialSubTab }: Props) {
+  const [activeSubTab, setActiveSubTab] = useState<UsersOrgsSubTab>(
+    initialUserId ? 'users' : (initialSubTab ?? 'orgs'),
+  )
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [orgSort, setOrgSort] = useState<OrgSortConfig>({ key: 'name', direction: 'asc' })

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   AlertTriangle,
+  ChevronRight,
   CreditCard,
   DollarSign,
   FileText,
@@ -24,33 +25,20 @@ import SubscriptionsAdminTab from '../components/admin/SubscriptionsAdminTab'
 import PartnerOffersAdminTab from '../components/admin/PartnerOffersAdminTab'
 import EntityVerificationAdminTab from '../components/admin/EntityVerificationAdminTab'
 import PlatformContactAdminCard from '../components/admin/PlatformContactAdminCard'
-
-type ProfileRow = {
-  id: string
-  full_name: string | null
-  email: string | null
-  platform_role: string | null
-  account_type: string | null
-  created_at: string | null
-  updated_at: string | null
-  last_login_at: string | null
-}
-
-function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  try {
-    return new Intl.DateTimeFormat('pl-PL', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    }).format(new Date(iso))
-  } catch {
-    return '—'
-  }
-}
+import type { UsersOrgsSubTab } from '../components/admin/usersAndOrgsTypes'
 
 function formatInt(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return '—'
   return n.toLocaleString('pl-PL')
+}
+
+function pendingVerificationCopy(count: number): string {
+  const lastTwo = count % 100
+  const last = count % 10
+  if (count === 1) return '1 pozycja czeka na obsługę'
+  if (lastTwo >= 12 && lastTwo <= 14) return `${count} pozycji czeka na obsługę`
+  if (last >= 2 && last <= 4) return `${count} pozycje czekają na obsługę`
+  return `${count} pozycji czeka na obsługę`
 }
 
 type AdminTab = 'dashboard' | 'users' | 'subscriptions' | 'pricing' | 'partner-offers' | 'legal' | 'settings' | 'entity-verification'
@@ -71,12 +59,15 @@ export default function AdminPage() {
   const [totalUsersCount, setTotalUsersCount] = useState<number | null>(null)
   const [activeSubscriptionsCount, setActiveSubscriptionsCount] = useState<number | null>(null)
   const [organizationsCount, setOrganizationsCount] = useState<number | null>(null)
-  const [profiles, setProfiles] = useState<ProfileRow[]>([])
   const [loading, setLoading] = useState(true)
   const [statsError, setStatsError] = useState<string | null>(null)
-  const [tableError, setTableError] = useState<string | null>(null)
   const [verificationCount, setVerificationCount] = useState(0)
-  const [editUserId, setEditUserId] = useState<string | null>(null)
+  const [usersTabSubTab, setUsersTabSubTab] = useState<UsersOrgsSubTab>('orgs')
+
+  const openUsersTab = (subTab: UsersOrgsSubTab) => {
+    setUsersTabSubTab(subTab)
+    setActiveTab('users')
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -85,17 +76,9 @@ export default function AdminPage() {
       try {
         setLoading(true)
         setStatsError(null)
-        setTableError(null)
 
-        const [usersCountRes, profilesRes, subsRes, orgsRes] = await Promise.all([
+        const [usersCountRes, subsRes, orgsRes] = await Promise.all([
           supabase.from('profiles').select('*', { count: 'exact', head: true }),
-          supabase
-            .from('profiles')
-            .select(
-              'id, full_name, email, platform_role, account_type, created_at, updated_at, last_login_at',
-            )
-            .order('updated_at', { ascending: false })
-            .limit(20),
           supabase
             .from('org_subscriptions')
             .select('*', { count: 'exact', head: true })
@@ -117,15 +100,10 @@ export default function AdminPage() {
           console.error('[AdminPage] organizations count error:', orgsRes.error)
           setStatsError((prev) => prev ?? 'Nie udało się pobrać części statystyk.')
         }
-        if (profilesRes.error) {
-          console.error('[AdminPage] profiles list error:', profilesRes.error)
-          setTableError('Nie udało się pobrać listy użytkowników (sprawdź polityki RLS).')
-        }
 
         setTotalUsersCount(usersCountRes.count ?? null)
         setActiveSubscriptionsCount(subsRes.count ?? null)
         setOrganizationsCount(orgsRes.count ?? null)
-        setProfiles((profilesRes.data as ProfileRow[] | null) ?? [])
         try {
           const pending = await countPlatformVerificationAlerts()
           if (!cancelled) setVerificationCount(pending)
@@ -136,7 +114,6 @@ export default function AdminPage() {
         console.error('[AdminPage] load error:', e)
         if (!cancelled) {
           setStatsError('Wystąpił błąd podczas ładowania danych.')
-          setTableError('Wystąpił błąd podczas ładowania tabeli.')
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -149,29 +126,29 @@ export default function AdminPage() {
     }
   }, [])
 
-  const metrics = useMemo(
-    () => [
-      {
-        label: 'Użytkownicy',
-        value: formatInt(totalUsersCount),
-        icon: Users,
-        change: '—',
-      },
-      {
-        label: 'Aktywne subskrypcje',
-        value: formatInt(activeSubscriptionsCount),
-        icon: DollarSign,
-        change: '—',
-      },
-      {
-        label: 'Organizacje',
-        value: formatInt(organizationsCount),
-        icon: Server,
-        change: '—',
-      },
-    ],
-    [totalUsersCount, activeSubscriptionsCount, organizationsCount],
-  )
+  const metrics = [
+    {
+      label: 'Użytkownicy',
+      value: formatInt(totalUsersCount),
+      icon: Users,
+      hint: 'Otwórz listę',
+      onOpen: () => openUsersTab('users'),
+    },
+    {
+      label: 'Aktywne subskrypcje',
+      value: formatInt(activeSubscriptionsCount),
+      icon: DollarSign,
+      hint: 'Otwórz listę',
+      onOpen: () => setActiveTab('subscriptions'),
+    },
+    {
+      label: 'Organizacje',
+      value: formatInt(organizationsCount),
+      icon: Server,
+      hint: 'Otwórz listę',
+      onOpen: () => openUsersTab('orgs'),
+    },
+  ]
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -188,7 +165,7 @@ export default function AdminPage() {
                     key={item.id}
                     type="button"
                     onClick={() => {
-                      if (item.id !== 'users') setEditUserId(null)
+                      if (item.id === 'users') setUsersTabSubTab('orgs')
                       setActiveTab(item.id)
                     }}
                     className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
@@ -235,90 +212,51 @@ export default function AdminPage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1 }}
-                  className="grid sm:grid-cols-3 gap-4 mb-12"
+                  className="grid sm:grid-cols-3 gap-4 mb-8"
                 >
                   {metrics.map((m) => (
-                    <div key={m.label} className="bento-card">
+                    <button
+                      key={m.label}
+                      type="button"
+                      onClick={m.onOpen}
+                      className="bento-card text-left w-full transition-shadow hover:shadow-lg hover:shadow-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
                       <div className="flex items-center justify-between mb-3">
                         <div className="p-2.5 rounded-xl bg-muted">
                           <m.icon className="h-5 w-5 text-primary" />
                         </div>
-                        <span className="text-xs text-primary font-medium bg-primary/5 px-2 py-1 rounded-full">
-                          {m.change}
+                        <span className="inline-flex items-center gap-1 text-xs text-primary font-medium bg-primary/5 px-2 py-1 rounded-full">
+                          {m.hint}
+                          <ChevronRight className="h-3.5 w-3.5" aria-hidden />
                         </span>
                       </div>
                       <p className="text-sm text-muted-foreground mb-1">{m.label}</p>
                       <p className="font-display text-2xl font-bold">{loading ? '…' : m.value}</p>
-                    </div>
+                    </button>
                   ))}
                 </motion.div>
 
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.25 }}
-                >
-                  <h2 className="font-display text-xl font-semibold mb-4">Użytkownicy</h2>
-
-                  {tableError && (
-                    <div className="mb-4 bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-xl">
-                      {tableError}
+                {verificationCount > 0 && (
+                  <motion.button
+                    type="button"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    onClick={() => setActiveTab('entity-verification')}
+                    className="w-full bento-card text-left flex items-center gap-4 hover:shadow-lg hover:shadow-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <div className="p-2.5 rounded-xl bg-amber-500/15">
+                      <AlertTriangle className="h-5 w-5 text-amber-600" />
                     </div>
-                  )}
-
-                  <div className="bento-card overflow-x-auto p-0 sm:p-0">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border/60 text-left text-muted-foreground">
-                          <th className="p-4 font-medium">Imię i nazwisko</th>
-                          <th className="p-4 font-medium">E-mail</th>
-                          <th className="p-4 font-medium">Rola</th>
-                          <th className="p-4 font-medium">Utworzono</th>
-                          <th className="p-4 font-medium">Ostatnie logowanie</th>
-                          <th className="p-4 font-medium text-right">Akcje</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {!loading &&
-                          profiles.map((row) => (
-                            <tr key={row.id} className="border-b border-border/40 last:border-0">
-                              <td className="p-4 font-medium">
-                                {row.full_name?.trim() ? row.full_name : '—'}
-                              </td>
-                              <td className="p-4 text-muted-foreground">{row.email ?? '—'}</td>
-                              <td className="p-4">
-                                {row.platform_role?.trim()
-                                  ? row.platform_role
-                                  : row.account_type?.trim()
-                                    ? row.account_type
-                                    : '—'}
-                              </td>
-                              <td className="p-4 text-muted-foreground">{formatDateTime(row.created_at)}</td>
-                              <td className="p-4 text-muted-foreground">{formatDateTime(row.last_login_at)}</td>
-                              <td className="p-4 text-right">
-                                <button
-                                  type="button"
-                                  className="text-primary font-medium hover:underline"
-                                  onClick={() => {
-                                    setEditUserId(row.id)
-                                    setActiveTab('users')
-                                  }}
-                                >
-                                  Edytuj
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                    {loading && (
-                      <div className="p-8 text-center text-muted-foreground">Ładowanie użytkowników…</div>
-                    )}
-                    {!loading && profiles.length === 0 && !tableError && (
-                      <div className="p-8 text-center text-muted-foreground">Brak rekordów do wyświetlenia.</div>
-                    )}
-                  </div>
-                </motion.div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-display font-semibold">Wymagają uwagi</p>
+                      <p className="text-sm text-muted-foreground">
+                        Weryfikacja NIP — {pendingVerificationCopy(verificationCount)}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" aria-hidden />
+                  </motion.button>
+                )}
               </>
             )}
 
@@ -326,7 +264,9 @@ export default function AdminPage() {
               <EntityVerificationAdminTab onCountChange={setVerificationCount} />
             )}
 
-            {activeTab === 'users' && <UsersAndOrgsTab initialUserId={editUserId} />}
+            {activeTab === 'users' && (
+              <UsersAndOrgsTab initialSubTab={usersTabSubTab} />
+            )}
 
             {activeTab === 'subscriptions' && <SubscriptionsAdminTab />}
 

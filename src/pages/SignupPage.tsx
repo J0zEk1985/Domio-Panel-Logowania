@@ -15,7 +15,8 @@ type ActiveLegalDoc = {
   is_required: boolean
 }
 
-const DOC_ORDER: LegalDocType[] = ['terms', 'privacy', 'marketing']
+const DOC_ORDER: LegalDocType[] = ['terms', 'privacy', 'cookies', 'marketing']
+const PLATFORM_CONSENT_TYPES: LegalDocType[] = ['terms', 'privacy', 'marketing']
 
 function emptyAcceptedDocs(): Record<LegalDocType, boolean> {
   return { terms: false, privacy: false, marketing: false, cookies: false }
@@ -135,7 +136,10 @@ export default function SignupPage() {
       }
 
       const acceptedDocumentIds = activeLegalDocs
-        .filter((doc) => acceptedDocs[doc.document_type])
+        .filter(
+          (doc) =>
+            acceptedDocs[doc.document_type] && PLATFORM_CONSENT_TYPES.includes(doc.document_type),
+        )
         .map((doc) => doc.id)
 
       const consent = await recordPlatformLegalConsent({
@@ -269,41 +273,49 @@ export default function SignupPage() {
                 </div>
               )}
               {!legalDocsLoading &&
-                activeLegalDocs.map((doc) => (
-                  <div key={doc.id} className="flex items-start">
-                    <input
-                      id={`legal-accept-${doc.id}`}
-                      type="checkbox"
-                      checked={acceptedDocs[doc.document_type]}
-                      onChange={(e) =>
-                        setAcceptedDocs((prev) => ({
-                          ...prev,
-                          [doc.document_type]: e.target.checked,
-                        }))
-                      }
-                      aria-label={`Akceptuję ${DOC_LABELS[doc.document_type]} w wersji ${doc.version}${
-                        doc.is_required ? ' (wymagane)' : ''
-                      }`}
-                      className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-600 rounded bg-gray-700"
-                    />
-                    <p className="ml-3 text-sm text-gray-300">
-                      <label htmlFor={`legal-accept-${doc.id}`}>Akceptuję </label>
-                      <Link
-                        to={DOC_PATHS[doc.document_type]}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-400 hover:text-blue-300 underline"
-                      >
-                        {DOC_LABELS[doc.document_type]}
-                      </Link>
-                      <label htmlFor={`legal-accept-${doc.id}`}>
-                        {' '}
-                        w wersji {doc.version}
-                        {doc.is_required ? ' *' : ''}
-                      </label>
-                    </p>
-                  </div>
-                ))}
+                activeLegalDocs.map((doc) => {
+                  const label = DOC_LABELS[doc.document_type] ?? doc.document_type
+                  const path = DOC_PATHS[doc.document_type]
+                  return (
+                    <div key={doc.id} className="flex items-start">
+                      <input
+                        id={`legal-accept-${doc.id}`}
+                        type="checkbox"
+                        checked={acceptedDocs[doc.document_type]}
+                        onChange={(e) =>
+                          setAcceptedDocs((prev) => ({
+                            ...prev,
+                            [doc.document_type]: e.target.checked,
+                          }))
+                        }
+                        aria-label={`Akceptuję ${label} w wersji ${doc.version}${
+                          doc.is_required ? ' (wymagane)' : ''
+                        }`}
+                        className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-600 rounded bg-gray-700"
+                      />
+                      <p className="ml-3 text-sm text-gray-300">
+                        <label htmlFor={`legal-accept-${doc.id}`}>Akceptuję </label>
+                        {path ? (
+                          <Link
+                            to={path}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 underline"
+                          >
+                            {label}
+                          </Link>
+                        ) : (
+                          <span>{label}</span>
+                        )}
+                        <label htmlFor={`legal-accept-${doc.id}`}>
+                          {' '}
+                          w wersji {doc.version}
+                          {doc.is_required ? ' *' : ''}
+                        </label>
+                      </p>
+                    </div>
+                  )
+                })}
             </div>
 
             {error && (

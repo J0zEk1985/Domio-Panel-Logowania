@@ -66,6 +66,9 @@ export function Footer({ copyrightLine }: FooterProps) {
               <Link to="/polityka-cookies" className="underline underline-offset-2 hover:text-foreground">
                 Polityka cookies
               </Link>
+              <Link to="/zgody-marketingowe" className="underline underline-offset-2 hover:text-foreground">
+                Zgody marketingowe
+              </Link>
               <CookieConsentSettingsButton />
             </div>
           </div>

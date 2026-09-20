@@ -436,6 +436,9 @@ export default function LoginPage() {
             <Link to="/polityka-cookies" className="underline underline-offset-2 hover:text-gray-800">
               Polityka cookies
             </Link>
+            <Link to="/zgody-marketingowe" className="underline underline-offset-2 hover:text-gray-800">
+              Zgody marketingowe
+            </Link>
             <CookieConsentSettingsButton className="text-sm text-gray-500 underline underline-offset-2 hover:text-gray-800" />
           </div>
         </div>
