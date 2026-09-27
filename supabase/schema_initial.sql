@@ -460,7 +460,7 @@ CREATE TABLE IF NOT EXISTS public."cleaning_tasks" (
   "total_cost" numeric(10,2),
   "is_paid" boolean DEFAULT false,
   "source_template_id" uuid,
-  "scheduled_on" date DEFAULT ((scheduled_at AT TIME ZONE 'UTC'::text))::date
+  "scheduled_on" date GENERATED ALWAYS AS (((scheduled_at AT TIME ZONE 'UTC'::text))::date) STORED
 );
 CREATE TABLE IF NOT EXISTS public."cleaning_work_sessions" (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -839,11 +839,11 @@ CREATE TABLE IF NOT EXISTS public."legal_entities" (
   "kind" legal_entity_kind NOT NULL,
   "status" legal_entity_status DEFAULT 'active'::legal_entity_status NOT NULL,
   "nip" text NOT NULL,
-  "nip_normalized" text DEFAULT regexp_replace(nip, '[^0-9]'::text, ''::text, 'g'::text),
+  "nip_normalized" text GENERATED ALWAYS AS (regexp_replace(nip, '[^0-9]'::text, ''::text, 'g'::text)) STORED,
   "regon" text,
-  "regon_normalized" text DEFAULT regexp_replace(regon, '[^0-9]'::text, ''::text, 'g'::text),
+  "regon_normalized" text GENERATED ALWAYS AS (regexp_replace(regon, '[^0-9]'::text, ''::text, 'g'::text)) STORED,
   "krs" text,
-  "krs_normalized" text DEFAULT NULLIF(regexp_replace(COALESCE(krs, ''::text), '[^0-9]'::text, ''::text, 'g'::text), ''::text),
+  "krs_normalized" text GENERATED ALWAYS AS (NULLIF(regexp_replace(COALESCE(krs, ''::text), '[^0-9]'::text, ''::text, 'g'::text), ''::text)) STORED,
   "short_name" text NOT NULL,
   "legal_name" text NOT NULL,
   "voivodeship" text NOT NULL,
@@ -1119,7 +1119,7 @@ CREATE TABLE IF NOT EXISTS public."pricing_plans" (
 CREATE TABLE IF NOT EXISTS public."profiles" (
   "id" uuid NOT NULL,
   "full_name" text,
-  "accepted_terms_at" timestamp with time zone NOT NULL,
+  "accepted_terms_at" timestamp with time zone DEFAULT now() NOT NULL,
   "ip_address" text,
   "marketing_consent" boolean DEFAULT false,
   "updated_at" timestamp with time zone DEFAULT now(),
@@ -2068,10 +2068,6 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
-  ALTER TABLE public."spatial_ref_sys" ADD CONSTRAINT "spatial_ref_sys_pkey" PRIMARY KEY (srid);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-DO $$ BEGIN
   ALTER TABLE public."staff_equipment" ADD CONSTRAINT "staff_equipment_pkey" PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
@@ -2623,6 +2619,88 @@ DO $$ BEGIN
   ALTER TABLE public."legal_entities" ADD CONSTRAINT "legal_entities_legal_name_chk" CHECK ((char_length(btrim(legal_name)) >= 3));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+CREATE OR REPLACE FUNCTION public.nip_checksum_ok(digits text)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ IMMUTABLE PARALLEL SAFE
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  s integer;
+  c integer;
+BEGIN
+  IF digits IS NULL OR digits !~ '^[0-9]{10}$' THEN
+    RETURN false;
+  END IF;
+
+  s :=
+    6 * substr(digits, 1, 1)::integer
+    + 5 * substr(digits, 2, 1)::integer
+    + 7 * substr(digits, 3, 1)::integer
+    + 2 * substr(digits, 4, 1)::integer
+    + 3 * substr(digits, 5, 1)::integer
+    + 4 * substr(digits, 6, 1)::integer
+    + 5 * substr(digits, 7, 1)::integer
+    + 6 * substr(digits, 8, 1)::integer
+    + 7 * substr(digits, 9, 1)::integer;
+  c := s % 11;
+  IF c = 10 THEN
+    RETURN false;
+  END IF;
+  RETURN c = substr(digits, 10, 1)::integer;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.regon_checksum_ok(digits text)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ IMMUTABLE PARALLEL SAFE
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  s integer;
+  c integer;
+  w integer[];
+  i integer;
+  body text;
+BEGIN
+  IF digits IS NULL OR digits !~ '^[0-9]{9}([0-9]{5})?$' THEN
+    RETURN false;
+  END IF;
+
+  IF length(digits) = 9 THEN
+    w := ARRAY[8, 9, 2, 3, 4, 5, 6, 7];
+    body := substr(digits, 1, 8);
+  ELSE
+    w := ARRAY[2, 4, 8, 5, 0, 9, 7, 3, 6, 1, 2, 4, 8];
+    body := substr(digits, 1, 13);
+  END IF;
+
+  s := 0;
+  FOR i IN 1..array_length(w, 1) LOOP
+    s := s + w[i] * substr(body, i, 1)::integer;
+  END LOOP;
+  c := s % 11;
+  IF c = 10 THEN
+    c := 0;
+  END IF;
+  RETURN c = substr(digits, length(digits), 1)::integer;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.trade_categories_are_valid(p_cats text[])
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT p_cats IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1
+      FROM unnest(p_cats) AS t(cat)
+      WHERE length(btrim(cat)) = 0
+    );
+$function$;
+
 DO $$ BEGIN
   ALTER TABLE public."legal_entities" ADD CONSTRAINT "legal_entities_nip_chk" CHECK (nip_checksum_ok(nip_normalized));
 EXCEPTION WHEN duplicate_object THEN NULL;
@@ -2913,10 +2991,6 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
   ALTER TABLE public."service_mandates" ADD CONSTRAINT "service_mandates_valid_range_chk" CHECK (((valid_until IS NULL) OR (valid_until >= valid_from)));
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-DO $$ BEGIN
-  ALTER TABLE public."spatial_ref_sys" ADD CONSTRAINT "spatial_ref_sys_srid_check" CHECK (((srid > 0) AND (srid <= 998999)));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
@@ -4617,85 +4691,6 @@ CREATE INDEX IF NOT EXISTS vendor_email_inbound_templates_vendor_idx ON public.v
 CREATE UNIQUE INDEX IF NOT EXISTS vendor_partners_pkey ON public.vendor_partners USING btree (id);
 
 -- Functions
-CREATE OR REPLACE FUNCTION private.accept_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
- RETURNS service_mandates
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ DECLARE v_row public.service_mandates; v_primary_org uuid; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.service_mandates WHERE id = p_mandate_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'MANDATE_NOT_FOUND'; END IF; IF v_row.status <> 'invited' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; SELECT sm.org_id INTO v_primary_org FROM public.service_mandates sm WHERE sm.community_legal_entity_id = v_row.community_legal_entity_id AND sm.module = 'admin' AND sm.status = 'active' AND sm.role = 'primary_operator' AND (sm.location_master_id IS NULL OR sm.location_master_id IS NOT DISTINCT FROM v_row.location_master_id) LIMIT 1; IF v_row.org_id = p_acting_org_id THEN NULL; ELSIF v_row.role = 'co_operator' AND v_row.module = 'admin' AND v_primary_org IS NOT NULL AND v_primary_org = p_acting_org_id THEN NULL; ELSIF public.is_platform_admin() THEN NULL; ELSE RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; UPDATE public.service_mandates SET status = 'active', accepted_by_org_id = p_acting_org_id, accepted_at = now() WHERE id = p_mandate_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
-CREATE OR REPLACE FUNCTION private.accept_succession(p_acting_org_id uuid, p_succession_id uuid)
- RETURNS succession_events
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ DECLARE v_row public.succession_events; v_from timestamptz; v_to timestamptz; v_next public.succession_status; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.succession_events WHERE id = p_succession_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'SUCCESSION_NOT_FOUND'; END IF; IF v_row.status <> 'proposed' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF p_acting_org_id = v_row.from_org_id THEN v_from := now(); v_to := v_row.accepted_by_to_org_at; ELSIF v_row.to_org_id IS NOT NULL AND p_acting_org_id = v_row.to_org_id THEN v_from := v_row.accepted_by_from_org_at; v_to := now(); ELSIF public.is_platform_admin() THEN v_from := COALESCE(v_row.accepted_by_from_org_at, now()); v_to := CASE WHEN v_row.to_org_id IS NULL THEN v_row.accepted_by_to_org_at ELSE COALESCE(v_row.accepted_by_to_org_at, now()) END; ELSE RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; IF v_row.to_org_id IS NULL THEN v_next := 'accepted'; ELSIF v_from IS NOT NULL AND v_to IS NOT NULL THEN v_next := 'accepted'; ELSE v_next := 'proposed'; END IF; UPDATE public.succession_events SET accepted_by_from_org_at = v_from, accepted_by_to_org_at = v_to, status = v_next WHERE id = p_succession_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
-CREATE OR REPLACE FUNCTION private.acl_apply_org(p_location_master_id uuid, p_org_id uuid, p_resource succession_resource, p_add boolean)
- RETURNS void
- LANGUAGE plpgsql
- SET search_path TO 'public'
-AS $function$
-BEGIN
-  IF p_location_master_id IS NULL OR p_org_id IS NULL THEN RETURN; END IF;
-  IF p_resource IN ('issues', 'all') THEN
-    IF p_add THEN UPDATE public.property_issues SET shared_with_org_ids = private.uuid_array_add(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id;
-    ELSE UPDATE public.property_issues SET shared_with_org_ids = array_remove(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id; END IF;
-  END IF;
-  IF p_resource IN ('inspections', 'all') THEN
-    IF p_add THEN UPDATE public.property_inspections SET shared_with_org_ids = private.uuid_array_add(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id;
-    ELSE UPDATE public.property_inspections SET shared_with_org_ids = array_remove(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id; END IF;
-  END IF;
-  IF p_resource IN ('unit_inspections', 'all') THEN
-    IF p_add THEN UPDATE public.inspection_campaigns SET shared_with_org_ids = private.uuid_array_add(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id;
-    ELSE UPDATE public.inspection_campaigns SET shared_with_org_ids = array_remove(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id; END IF;
-  END IF;
-  IF p_resource IN ('contracts', 'all') THEN
-    IF p_add THEN UPDATE public.property_contracts SET shared_with_org_ids = private.uuid_array_add(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id;
-    ELSE UPDATE public.property_contracts SET shared_with_org_ids = array_remove(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id; END IF;
-  END IF;
-  IF p_resource IN ('residents', 'all') THEN
-    IF p_add THEN UPDATE public.location_access SET shared_with_org_ids = private.uuid_array_add(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id;
-    ELSE UPDATE public.location_access SET shared_with_org_ids = array_remove(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id; END IF;
-  END IF;
-END; $function$;
-CREATE OR REPLACE FUNCTION private.assert_can_access_admin_location(p_admin_location_id uuid)
- RETURNS cleaning_locations
- LANGUAGE plpgsql
- STABLE
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_row public.cleaning_locations;
-  v_orgs uuid[];
-BEGIN
-  IF p_admin_location_id IS NULL THEN
-    RAISE EXCEPTION 'CLEANING_SCOPE_FORBIDDEN';
-  END IF;
-
-  SELECT * INTO v_row
-  FROM public.cleaning_locations
-  WHERE id = p_admin_location_id;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'CLEANING_SCOPE_FORBIDDEN';
-  END IF;
-
-  IF COALESCE(v_row.is_admin_active, false) IS NOT TRUE
-     OR COALESCE(v_row.status, 'active') IS DISTINCT FROM 'active' THEN
-    RAISE EXCEPTION 'CLEANING_SCOPE_FORBIDDEN';
-  END IF;
-
-  IF public.is_platform_admin() THEN
-    RETURN v_row;
-  END IF;
-
-  v_orgs := public.current_user_org_ids();
-  IF v_row.org_id IS NULL OR NOT (v_row.org_id = ANY (v_orgs)) THEN
-    RAISE EXCEPTION 'CLEANING_SCOPE_FORBIDDEN';
-  END IF;
-
-  RETURN v_row;
-END;
-$function$;
 CREATE OR REPLACE FUNCTION private.assert_sha256_hex(p_value text, p_field text)
  RETURNS void
  LANGUAGE plpgsql
@@ -4868,126 +4863,6 @@ BEGIN
   );
 END;
 $function$;
-CREATE OR REPLACE FUNCTION private.can_access_equipment_protocol_object(p_object_name text, p_write boolean DEFAULT false)
- RETURNS boolean
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'storage'
-AS $function$
-DECLARE
-  v_actor uuid := (SELECT auth.uid());
-  v_parts text[];
-  v_org uuid;
-  v_protocol_id uuid;
-  v_protocol public.equipment_protocols;
-BEGIN
-  IF v_actor IS NULL OR p_object_name IS NULL THEN
-    RETURN false;
-  END IF;
-
-  v_parts := storage.foldername(p_object_name);
-  IF array_length(v_parts, 1) IS NULL OR array_length(v_parts, 1) < 2 THEN
-    RETURN false;
-  END IF;
-
-  BEGIN
-    v_org := v_parts[1]::uuid;
-    v_protocol_id := v_parts[2]::uuid;
-  EXCEPTION WHEN invalid_text_representation THEN
-    RETURN false;
-  END;
-
-  SELECT * INTO v_protocol
-  FROM public.equipment_protocols
-  WHERE id = v_protocol_id
-    AND org_id = v_org;
-
-  IF NOT FOUND THEN
-    RETURN false;
-  END IF;
-
-  IF p_write THEN
-    IF v_protocol.status IS DISTINCT FROM 'pending' THEN
-      RETURN false;
-    END IF;
-    RETURN
-      public.is_org_management(v_protocol.org_id)
-      OR v_actor = v_protocol.initiated_by;
-  END IF;
-
-  RETURN
-    public.is_org_management(v_protocol.org_id)
-    OR v_actor = v_protocol.worker_id
-    OR v_actor = v_protocol.initiated_by;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.can_read_legal_acceptance_object(p_name text)
- RETURNS boolean
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'storage', 'pg_catalog'
-AS $function$
-DECLARE
-  v_folder text;
-  v_uid uuid := (SELECT auth.uid());
-BEGIN
-  IF p_name IS NULL OR v_uid IS NULL THEN
-    RETURN false;
-  END IF;
-
-  IF (SELECT public.is_platform_admin()) THEN
-    RETURN true;
-  END IF;
-
-  v_folder := (storage.foldername(p_name))[1];
-  RETURN v_folder IS NOT NULL AND v_folder = v_uid::text;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.cancel_equipment_protocol(p_protocol_id uuid)
- RETURNS equipment_protocols
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_actor uuid := private.equipment_require_actor();
-  v_protocol public.equipment_protocols;
-BEGIN
-  PERFORM private.equipment_set_rpc_flag();
-  SELECT * INTO v_protocol FROM public.equipment_protocols WHERE id = p_protocol_id FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'EQUIPMENT_NOT_FOUND'; END IF;
-  IF v_protocol.status IS DISTINCT FROM 'pending' THEN RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE'; END IF;
-  IF v_actor IS DISTINCT FROM v_protocol.initiated_by AND NOT public.is_org_management(v_protocol.org_id) THEN
-    RAISE EXCEPTION 'EQUIPMENT_FORBIDDEN';
-  END IF;
-  UPDATE public.equipment_protocols SET status = 'cancelled', responded_by = v_actor, responded_at = now()
-  WHERE id = p_protocol_id RETURNING * INTO v_protocol;
-  PERFORM private.equipment_apply_protocol_resolution(v_protocol, 'cancelled');
-  RETURN v_protocol;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.cancel_succession(p_acting_org_id uuid, p_succession_id uuid)
- RETURNS succession_events
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ DECLARE v_row public.succession_events; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.succession_events WHERE id = p_succession_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'SUCCESSION_NOT_FOUND'; END IF; IF v_row.status NOT IN ('proposed', 'accepted') THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF p_acting_org_id IS DISTINCT FROM v_row.from_org_id AND NOT public.is_platform_admin() THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; UPDATE public.succession_events SET status = 'cancelled' WHERE id = p_succession_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
-CREATE OR REPLACE FUNCTION private.cleaning_scope_require_actor()
- RETURNS uuid
- LANGUAGE plpgsql
- STABLE
- SET search_path TO 'public', 'private'
-AS $function$
-BEGIN
-  RETURN private.mandate_require_actor();
-EXCEPTION
-  WHEN others THEN
-    IF SQLERRM LIKE '%MANDATE_AUTH_REQUIRED%' THEN
-      RAISE EXCEPTION 'CLEANING_SCOPE_AUTH_REQUIRED';
-    END IF;
-    RAISE;
-END;
-$function$;
 CREATE OR REPLACE FUNCTION private.clone_inspections_to_successor(p_from_org uuid, p_to_org uuid, p_master uuid, p_target_location_id uuid)
  RETURNS integer
  LANGUAGE plpgsql
@@ -5046,50 +4921,6 @@ BEGIN
   PERFORM set_config('app.community_rpc', '1', true);
 END;
 $function$;
-CREATE OR REPLACE FUNCTION private.complete_succession(p_acting_org_id uuid, p_succession_id uuid)
- RETURNS succession_events
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE v_row public.succession_events; v_master uuid; v_access public.succession_grant_access; v_grant_org uuid; r public.succession_resource; v_target uuid;
-BEGIN
-  PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag();
-  IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF;
-  SELECT * INTO v_row FROM public.succession_events WHERE id = p_succession_id FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'SUCCESSION_NOT_FOUND'; END IF;
-  IF v_row.status <> 'accepted' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF;
-  IF p_acting_org_id IS DISTINCT FROM v_row.from_org_id AND p_acting_org_id IS DISTINCT FROM v_row.to_org_id AND NOT public.is_platform_admin() THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF;
-  v_grant_org := v_row.to_org_id;
-  v_access := CASE WHEN v_row.mode = 'transfer_custody' THEN 'write'::public.succession_grant_access ELSE 'read'::public.succession_grant_access END;
-  IF v_grant_org IS NOT NULL THEN
-    FOR v_master IN SELECT private.succession_location_masters(v_row.community_legal_entity_id, v_row.location_master_id) LOOP
-      FOREACH r IN ARRAY v_row.resource_scope LOOP
-        INSERT INTO public.succession_share_grants (succession_id, grantee_org_id, resource_type, location_master_id, access, expires_at) VALUES (v_row.id, v_grant_org, r, v_master, v_access, now() + interval '3 months');
-      END LOOP;
-      SELECT cl.id INTO v_target FROM public.cleaning_locations cl WHERE cl.org_id = v_grant_org AND cl.location_master_id = v_master LIMIT 1;
-      IF v_row.mode = 'clone_to_successor' AND v_target IS NOT NULL THEN
-        IF 'issues' = ANY (v_row.resource_scope) OR 'all' = ANY (v_row.resource_scope) THEN PERFORM private.clone_issues_to_successor(v_row.from_org_id, v_grant_org, v_master, v_target); END IF;
-        IF 'inspections' = ANY (v_row.resource_scope) OR 'all' = ANY (v_row.resource_scope) THEN PERFORM private.clone_inspections_to_successor(v_row.from_org_id, v_grant_org, v_master, v_target); END IF;
-      END IF;
-      IF v_row.mode = 'transfer_custody' THEN
-        IF 'issues' = ANY (v_row.resource_scope) OR 'all' = ANY (v_row.resource_scope) THEN UPDATE public.property_issues SET org_id = v_grant_org WHERE org_id = v_row.from_org_id AND location_master_id = v_master; END IF;
-        IF 'inspections' = ANY (v_row.resource_scope) OR 'all' = ANY (v_row.resource_scope) THEN UPDATE public.property_inspections SET org_id = v_grant_org WHERE org_id = v_row.from_org_id AND location_master_id = v_master; END IF;
-        IF 'unit_inspections' = ANY (v_row.resource_scope) OR 'all' = ANY (v_row.resource_scope) THEN UPDATE public.inspection_campaigns SET org_id = v_grant_org WHERE org_id = v_row.from_org_id AND location_master_id = v_master; END IF;
-        IF 'contracts' = ANY (v_row.resource_scope) OR 'all' = ANY (v_row.resource_scope) THEN UPDATE public.property_contracts SET org_id = v_grant_org WHERE org_id = v_row.from_org_id AND location_master_id = v_master; END IF;
-      END IF;
-    END LOOP;
-  END IF;
-  UPDATE public.service_mandates SET role = 'legacy_operator' WHERE org_id = v_row.from_org_id AND community_legal_entity_id = v_row.community_legal_entity_id AND module = 'admin' AND status = 'active' AND role = 'primary_operator' AND (v_row.location_master_id IS NULL OR location_master_id IS NOT DISTINCT FROM v_row.location_master_id);
-  IF v_row.to_org_id IS NOT NULL THEN
-    UPDATE public.service_mandates SET role = 'primary_operator', status = 'active', accepted_by_org_id = COALESCE(accepted_by_org_id, v_row.to_org_id), accepted_at = COALESCE(accepted_at, now()) WHERE org_id = v_row.to_org_id AND community_legal_entity_id = v_row.community_legal_entity_id AND module = 'admin' AND status IN ('invited', 'active') AND (v_row.location_master_id IS NULL OR location_master_id IS NOT DISTINCT FROM v_row.location_master_id);
-    IF NOT FOUND THEN INSERT INTO public.service_mandates (community_legal_entity_id, location_master_id, org_id, partner_legal_entity_id, module, role, status, appointed_by_org_id, accepted_by_org_id, accepted_at) VALUES (v_row.community_legal_entity_id, v_row.location_master_id, v_row.to_org_id, v_row.to_legal_entity_id, 'admin', 'primary_operator', 'active', v_row.from_org_id, v_row.to_org_id, now()); END IF;
-  ELSE
-    INSERT INTO public.service_mandates (community_legal_entity_id, location_master_id, org_id, partner_legal_entity_id, module, role, status, appointed_by_org_id, accepted_by_org_id, accepted_at) VALUES (v_row.community_legal_entity_id, v_row.location_master_id, NULL, v_row.to_legal_entity_id, 'admin', 'external_designee', 'active', v_row.from_org_id, v_row.from_org_id, now());
-  END IF;
-  UPDATE public.succession_events SET status = 'completed', completed_at = now() WHERE id = p_succession_id RETURNING * INTO v_row;
-  RETURN v_row;
-END; $function$;
 CREATE OR REPLACE FUNCTION private.contract_belongs_to_admin_org(p_contract_org_id uuid, p_origin_org_id uuid, p_shared_with_org_ids uuid[], p_location_org_id uuid, p_admin_org_id uuid)
  RETURNS boolean
  LANGUAGE sql
@@ -5100,6 +4931,30 @@ AS $function$
     COALESCE(p_contract_org_id, p_location_org_id) IS NOT DISTINCT FROM p_admin_org_id
     OR COALESCE(p_origin_org_id, p_location_org_id) IS NOT DISTINCT FROM p_admin_org_id
     OR COALESCE(p_admin_org_id = ANY (COALESCE(p_shared_with_org_ids, '{}'::uuid[])), false);
+$function$;
+CREATE OR REPLACE FUNCTION private.contract_has_document(p_document_url text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+  SELECT length(trim(both from COALESCE(p_document_url, ''))) > 0;
+$function$;
+CREATE OR REPLACE FUNCTION private.contract_in_community_scope(p_contract_community_id uuid, p_contract_location_id uuid, p_contract_location_community_id uuid, p_admin_location_id uuid, p_community_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+  SELECT
+    p_contract_location_id IS NOT DISTINCT FROM p_admin_location_id
+    OR (
+      p_community_id IS NOT NULL
+      AND (
+        p_contract_community_id IS NOT DISTINCT FROM p_community_id
+        OR p_contract_location_community_id IS NOT DISTINCT FROM p_community_id
+      )
+    );
 $function$;
 CREATE OR REPLACE FUNCTION private.contract_eligible_for_cleaning_scope(p_contract_id uuid, p_admin_org_id uuid, p_admin_location_id uuid, p_community_id uuid)
  RETURNS boolean
@@ -5129,30 +4984,6 @@ AS $function$
       )
   );
 $function$;
-CREATE OR REPLACE FUNCTION private.contract_has_document(p_document_url text)
- RETURNS boolean
- LANGUAGE sql
- IMMUTABLE
- SET search_path TO 'public'
-AS $function$
-  SELECT length(trim(both from COALESCE(p_document_url, ''))) > 0;
-$function$;
-CREATE OR REPLACE FUNCTION private.contract_in_community_scope(p_contract_community_id uuid, p_contract_location_id uuid, p_contract_location_community_id uuid, p_admin_location_id uuid, p_community_id uuid)
- RETURNS boolean
- LANGUAGE sql
- IMMUTABLE
- SET search_path TO 'public'
-AS $function$
-  SELECT
-    p_contract_location_id IS NOT DISTINCT FROM p_admin_location_id
-    OR (
-      p_community_id IS NOT NULL
-      AND (
-        p_contract_community_id IS NOT DISTINCT FROM p_community_id
-        OR p_contract_location_community_id IS NOT DISTINCT FROM p_community_id
-      )
-    );
-$function$;
 CREATE OR REPLACE FUNCTION private.contract_is_active(p_end_date date)
  RETURNS boolean
  LANGUAGE sql
@@ -5161,112 +4992,6 @@ CREATE OR REPLACE FUNCTION private.contract_is_active(p_end_date date)
 AS $function$
   SELECT p_end_date IS NULL OR p_end_date >= CURRENT_DATE;
 $function$;
-CREATE OR REPLACE FUNCTION private.deactivate_community_for_org(p_org_id uuid, p_community_id uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_actor uuid;
-  v_row public.communities%ROWTYPE;
-  v_mandates integer := 0;
-  v_buildings integer := 0;
-  v_coop integer := 0;
-BEGIN
-  v_actor := private.mandate_require_actor();
-  PERFORM private.community_set_rpc_flag();
-  PERFORM private.mandate_set_rpc_flag();
-
-  IF p_org_id IS NULL OR NOT public.is_org_management(p_org_id) THEN
-    RAISE EXCEPTION 'COMMUNITY_DEACTIVATE_FORBIDDEN';
-  END IF;
-
-  SELECT * INTO v_row
-  FROM public.communities
-  WHERE id = p_community_id
-    AND org_id = p_org_id
-  FOR UPDATE;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'COMMUNITY_NOT_FOUND';
-  END IF;
-
-  IF v_row.status = 'inactive' THEN
-    RETURN jsonb_build_object(
-      'communityId', v_row.id,
-      'status', v_row.status,
-      'deactivatedAt', v_row.deactivated_at,
-      'mandatesSuperseded', 0,
-      'buildingsAdminPaused', 0
-    );
-  END IF;
-
-  UPDATE public.communities
-  SET
-    status = 'inactive',
-    deactivated_at = now(),
-    deactivated_by = v_actor
-  WHERE id = v_row.id
-  RETURNING * INTO v_row;
-
-  IF v_row.legal_entity_id IS NOT NULL THEN
-    UPDATE public.org_legal_entity_enrollments
-    SET status = 'inactive'
-    WHERE org_id = p_org_id
-      AND legal_entity_id = v_row.legal_entity_id
-      AND status IS DISTINCT FROM 'inactive';
-  END IF;
-
-  UPDATE public.cleaning_locations
-  SET is_admin_active = false
-  WHERE org_id = p_org_id
-    AND community_id = v_row.id
-    AND is_admin_active IS TRUE;
-  GET DIAGNOSTICS v_buildings = ROW_COUNT;
-
-  IF v_row.legal_entity_id IS NOT NULL THEN
-    UPDATE public.service_mandates
-    SET
-      status = 'superseded',
-      revoked_by_org_id = p_org_id,
-      revoked_at = now()
-    WHERE org_id = p_org_id
-      AND community_legal_entity_id = v_row.legal_entity_id
-      AND module = 'admin'
-      AND status IN ('active', 'paused');
-    GET DIAGNOSTICS v_mandates = ROW_COUNT;
-
-    UPDATE public.building_cooperation_links
-    SET status = 'paused'
-    WHERE admin_org_id = p_org_id
-      AND status = 'active'
-      AND location_master_id IN (
-        SELECT cl.location_master_id
-        FROM public.cleaning_locations cl
-        WHERE cl.org_id = p_org_id
-          AND cl.community_id = v_row.id
-          AND cl.location_master_id IS NOT NULL
-      );
-    GET DIAGNOSTICS v_coop = ROW_COUNT;
-  END IF;
-
-  RETURN jsonb_build_object(
-    'communityId', v_row.id,
-    'status', v_row.status,
-    'deactivatedAt', v_row.deactivated_at,
-    'mandatesSuperseded', v_mandates,
-    'buildingsAdminPaused', v_buildings,
-    'cooperationPaused', v_coop
-  );
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.decline_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
- RETURNS service_mandates
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ DECLARE v_row public.service_mandates; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.service_mandates WHERE id = p_mandate_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'MANDATE_NOT_FOUND'; END IF; IF v_row.status <> 'invited' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF v_row.org_id IS DISTINCT FROM p_acting_org_id AND v_row.appointed_by_org_id IS DISTINCT FROM p_acting_org_id AND NOT public.is_platform_admin() THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; UPDATE public.service_mandates SET status = 'declined' WHERE id = p_mandate_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
 CREATE OR REPLACE FUNCTION private.duty_push_job_payload(p_alert duty_alerts)
  RETURNS jsonb
  LANGUAGE sql
@@ -5295,101 +5020,6 @@ AS $function$
       WHERE s.user_id = p_alert.target_user_id
     ), '[]'::jsonb)
   );
-$function$;
-CREATE OR REPLACE FUNCTION private.enqueue_due_fleet_notifications()
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  rec record; v_recipient record; v_vehicle text; v_date text; v_days text; v_subject text; v_body text;
-  v_inserted integer := 0; v_skipped integer := 0; v_already integer := 0; v_had_recipient boolean;
-BEGIN
-  FOR rec IN SELECT * FROM public.v_active_notifications LOOP
-    v_had_recipient := false;
-    v_vehicle := btrim(COALESCE(rec.model, '') || ' (' || COALESCE(rec.reg_no, '') || ')');
-    v_date := to_char(rec.deadline_date, 'DD.MM.YYYY');
-    v_days := COALESCE(rec.days_left::text, '0');
-    v_subject := NULLIF(btrim(private.fleet_apply_placeholders(rec.subject, v_vehicle, v_date, v_days, rec.model, rec.reg_no)), '');
-    v_body := NULLIF(btrim(private.fleet_apply_placeholders(rec.body_template, v_vehicle, v_date, v_days, rec.model, rec.reg_no)), '');
-    IF v_subject IS NULL THEN
-      v_subject := CASE rec.alert_type
-        WHEN 'inspection' THEN 'Przypomnienie: przegląd techniczny'
-        WHEN 'insurance' THEN 'Przypomnienie: ubezpieczenie OC/AC'
-        ELSE 'Przypomnienie: wymiana opon' END;
-    END IF;
-    IF v_body IS NULL THEN
-      v_body := 'Pojazd ' || v_vehicle || ' ma termin ' || v_date || ' (za ' || v_days || ' dni).';
-    END IF;
-    v_subject := left(v_subject, 200);
-    v_body := left(v_body, 10000);
-    FOR v_recipient IN
-      SELECT DISTINCT ON (lower(btrim(src.email))) src.user_id, src.role, lower(btrim(src.email)) AS email
-      FROM (
-        SELECT rec.assigned_driver_id AS user_id, 'driver'::text AS role, rec.driver_email AS email
-        WHERE rec.send_to IN ('driver', 'both')
-        UNION ALL
-        SELECT p.id, 'admin'::text, p.email
-        FROM public.profiles p
-        JOIN public.memberships m ON m.user_id = p.id AND m.org_id = rec.org_id AND COALESCE(m.is_active, true) = true
-        WHERE rec.send_to IN ('admin', 'both')
-          AND (p.fleet_role = 'admin'::public.fleet_role OR m.role ILIKE ANY (ARRAY['owner','admin','administrator','manager','coordinator','koordynator','wlasciciel']))
-        UNION ALL
-        SELECT p.id, 'admin'::text, p.email
-        FROM public.organizations o
-        JOIN public.profiles p ON p.id = o.owner_id
-        WHERE rec.send_to IN ('admin', 'both') AND o.id = rec.org_id
-      ) src
-      WHERE private.fleet_valid_email(lower(btrim(COALESCE(src.email, ''))))
-      ORDER BY lower(btrim(src.email)), src.role DESC, src.user_id
-    LOOP
-      v_had_recipient := true;
-      BEGIN
-        INSERT INTO public.fleet_notification_dispatches (
-          org_id, vehicle_id, alert_type, deadline_date, recipient_role, recipient_user_id, recipient_email, subject, body_text, status
-        ) VALUES (
-          rec.org_id, rec.vehicle_id, rec.alert_type, rec.deadline_date, v_recipient.role, v_recipient.user_id, v_recipient.email, v_subject, v_body, 'pending'
-        );
-        v_inserted := v_inserted + 1;
-      EXCEPTION WHEN unique_violation THEN
-        v_already := v_already + 1;
-      END;
-    END LOOP;
-    IF NOT v_had_recipient THEN v_skipped := v_skipped + 1; END IF;
-  END LOOP;
-  RETURN jsonb_build_object('inserted', v_inserted, 'skipped', v_skipped, 'already', v_already);
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.equipment_apply_protocol_resolution(p_protocol equipment_protocols, p_terminal_status text)
- RETURNS void
- LANGUAGE plpgsql
- SET search_path TO 'public', 'private'
-AS $function$
-BEGIN
-  PERFORM private.equipment_set_rpc_flag();
-  IF p_protocol.kind = 'asset' THEN
-    IF p_terminal_status = 'accepted' AND p_protocol.direction = 'handover' THEN
-      UPDATE public.equipment_assets SET status = 'assigned' WHERE id = p_protocol.asset_id;
-    ELSIF p_terminal_status = 'accepted' AND p_protocol.direction = 'return' THEN
-      UPDATE public.equipment_assets SET status = 'available', current_holder_id = NULL WHERE id = p_protocol.asset_id;
-    ELSIF p_protocol.direction = 'handover' THEN
-      UPDATE public.equipment_assets SET status = 'available', current_holder_id = NULL WHERE id = p_protocol.asset_id;
-    ELSE
-      UPDATE public.equipment_assets SET status = 'assigned', current_holder_id = p_protocol.worker_id WHERE id = p_protocol.asset_id;
-    END IF;
-  ELSE
-    IF p_terminal_status = 'accepted' AND p_protocol.direction = 'handover' THEN
-      UPDATE public.staff_equipment SET status = 'assigned', assigned_at = now(), returned_at = NULL WHERE id = p_protocol.staff_equipment_id;
-    ELSIF p_terminal_status = 'accepted' AND p_protocol.direction = 'return' THEN
-      UPDATE public.staff_equipment SET status = 'returned', returned_at = now() WHERE id = p_protocol.staff_equipment_id;
-    ELSIF p_protocol.direction = 'handover' THEN
-      UPDATE public.staff_equipment SET status = 'returned', returned_at = now() WHERE id = p_protocol.staff_equipment_id;
-    ELSE
-      UPDATE public.staff_equipment SET status = 'assigned', returned_at = NULL WHERE id = p_protocol.staff_equipment_id;
-    END IF;
-  END IF;
-END;
 $function$;
 CREATE OR REPLACE FUNCTION private.equipment_assert_active_member(p_org_id uuid, p_user_id uuid)
  RETURNS void
@@ -5446,6 +5076,36 @@ CREATE OR REPLACE FUNCTION private.equipment_set_rpc_flag()
 AS $function$
 BEGIN
   PERFORM set_config('app.equipment_rpc', '1', true);
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.equipment_apply_protocol_resolution(p_protocol equipment_protocols, p_terminal_status text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'private'
+AS $function$
+BEGIN
+  PERFORM private.equipment_set_rpc_flag();
+  IF p_protocol.kind = 'asset' THEN
+    IF p_terminal_status = 'accepted' AND p_protocol.direction = 'handover' THEN
+      UPDATE public.equipment_assets SET status = 'assigned' WHERE id = p_protocol.asset_id;
+    ELSIF p_terminal_status = 'accepted' AND p_protocol.direction = 'return' THEN
+      UPDATE public.equipment_assets SET status = 'available', current_holder_id = NULL WHERE id = p_protocol.asset_id;
+    ELSIF p_protocol.direction = 'handover' THEN
+      UPDATE public.equipment_assets SET status = 'available', current_holder_id = NULL WHERE id = p_protocol.asset_id;
+    ELSE
+      UPDATE public.equipment_assets SET status = 'assigned', current_holder_id = p_protocol.worker_id WHERE id = p_protocol.asset_id;
+    END IF;
+  ELSE
+    IF p_terminal_status = 'accepted' AND p_protocol.direction = 'handover' THEN
+      UPDATE public.staff_equipment SET status = 'assigned', assigned_at = now(), returned_at = NULL WHERE id = p_protocol.staff_equipment_id;
+    ELSIF p_terminal_status = 'accepted' AND p_protocol.direction = 'return' THEN
+      UPDATE public.staff_equipment SET status = 'returned', returned_at = now() WHERE id = p_protocol.staff_equipment_id;
+    ELSIF p_protocol.direction = 'handover' THEN
+      UPDATE public.staff_equipment SET status = 'returned', returned_at = now() WHERE id = p_protocol.staff_equipment_id;
+    ELSE
+      UPDATE public.staff_equipment SET status = 'assigned', returned_at = NULL WHERE id = p_protocol.staff_equipment_id;
+    END IF;
+  END IF;
 END;
 $function$;
 CREATE OR REPLACE FUNCTION private.estate_attach_community_board()
@@ -5514,184 +5174,6 @@ BEGIN
   RETURN v_actor;
 END;
 $function$;
-CREATE OR REPLACE FUNCTION private.estate_require_community_management(p_community_id uuid)
- RETURNS uuid
- LANGUAGE plpgsql
- STABLE
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_org uuid;
-BEGIN
-  PERFORM private.estate_require_actor();
-
-  SELECT c.org_id INTO v_org
-  FROM public.communities c
-  WHERE c.id = p_community_id;
-
-  IF v_org IS NULL THEN
-    RAISE EXCEPTION 'Nie znaleziono wspólnoty.';
-  END IF;
-
-  IF NOT public.is_org_management(v_org) THEN
-    RAISE EXCEPTION 'Brak uprawnień do zarządzania tą wspólnotą.';
-  END IF;
-
-  RETURN v_org;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.finalize_legal_consent(p_batch_id uuid, p_pdf_sha256 text, p_pdf_storage_path text, p_document_ids uuid[])
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  v_batch public.user_consent_batches%ROWTYPE;
-  v_doc public.legal_documents%ROWTYPE;
-  v_id uuid;
-  v_hash text;
-  v_dispatch_id uuid;
-  v_terms text;
-  v_privacy text;
-  v_marketing text;
-  v_marketing_consent boolean := false;
-BEGIN
-  PERFORM private.assert_sha256_hex(p_pdf_sha256, 'pdf_sha256');
-
-  IF p_pdf_storage_path IS NULL OR btrim(p_pdf_storage_path) = '' THEN
-    RAISE EXCEPTION 'LEGAL_PDF_PATH_REQUIRED' USING ERRCODE = 'check_violation';
-  END IF;
-
-  IF p_document_ids IS NULL OR coalesce(array_length(p_document_ids, 1), 0) = 0 THEN
-    RAISE EXCEPTION 'LEGAL_DOCUMENTS_REQUIRED' USING ERRCODE = 'check_violation';
-  END IF;
-
-  SELECT * INTO v_batch
-  FROM public.user_consent_batches
-  WHERE id = p_batch_id
-  FOR UPDATE;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'LEGAL_BATCH_NOT_FOUND' USING ERRCODE = 'no_data_found';
-  END IF;
-
-  SELECT d.id INTO v_dispatch_id
-  FROM public.legal_welcome_dispatches d
-  WHERE d.batch_id = p_batch_id;
-
-  IF v_dispatch_id IS NOT NULL THEN
-    RETURN jsonb_build_object(
-      'already_recorded', true,
-      'batch_id', p_batch_id,
-      'dispatch_id', v_dispatch_id
-    );
-  END IF;
-
-  UPDATE public.user_consent_batches
-  SET
-    pdf_sha256 = p_pdf_sha256,
-    pdf_storage_path = btrim(p_pdf_storage_path)
-  WHERE id = p_batch_id
-  RETURNING * INTO v_batch;
-
-  FOREACH v_id IN ARRAY p_document_ids
-  LOOP
-    SELECT * INTO v_doc
-    FROM public.legal_documents
-    WHERE id = v_id;
-
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'LEGAL_DOCUMENTS_STALE' USING ERRCODE = 'check_violation';
-    END IF;
-
-    v_hash := private.legal_acceptance_hmac(
-      v_batch.user_id,
-      v_batch.accepted_at,
-      v_doc.id,
-      v_doc.version,
-      v_batch.pdf_sha256
-    );
-
-    INSERT INTO public.user_consents (
-      batch_id,
-      user_id,
-      document_id,
-      document_type,
-      document_version,
-      accepted_at,
-      ip_address,
-      user_agent,
-      acceptance_hash
-    )
-    VALUES (
-      v_batch.id,
-      v_batch.user_id,
-      v_doc.id,
-      v_doc.document_type,
-      v_doc.version,
-      v_batch.accepted_at,
-      v_batch.ip_address,
-      v_batch.user_agent,
-      v_hash
-    );
-
-    IF v_doc.document_type = 'terms' THEN
-      v_terms := v_doc.version;
-    ELSIF v_doc.document_type = 'privacy' THEN
-      v_privacy := v_doc.version;
-    ELSIF v_doc.document_type = 'marketing' THEN
-      v_marketing := v_doc.version;
-      v_marketing_consent := true;
-    END IF;
-  END LOOP;
-
-  INSERT INTO public.legal_welcome_dispatches (batch_id, status, next_attempt_at)
-  VALUES (v_batch.id, 'pending', now())
-  RETURNING id INTO v_dispatch_id;
-
-  INSERT INTO public.profiles (
-    id,
-    email,
-    account_type,
-    is_first_login,
-    accepted_terms_at,
-    terms_version,
-    privacy_version,
-    marketing_consent,
-    marketing_version,
-    ip_address
-  )
-  VALUES (
-    v_batch.user_id,
-    v_batch.email,
-    'hub',
-    false,
-    v_batch.accepted_at,
-    COALESCE(v_terms, '1.0'),
-    v_privacy,
-    v_marketing_consent,
-    v_marketing,
-    v_batch.ip_address
-  )
-  ON CONFLICT (id) DO UPDATE
-  SET
-    email = COALESCE(EXCLUDED.email, public.profiles.email),
-    accepted_terms_at = EXCLUDED.accepted_terms_at,
-    terms_version = COALESCE(EXCLUDED.terms_version, public.profiles.terms_version),
-    privacy_version = COALESCE(EXCLUDED.privacy_version, public.profiles.privacy_version),
-    marketing_consent = public.profiles.marketing_consent OR EXCLUDED.marketing_consent,
-    marketing_version = COALESCE(EXCLUDED.marketing_version, public.profiles.marketing_version),
-    ip_address = COALESCE(EXCLUDED.ip_address, public.profiles.ip_address),
-    updated_at = now();
-
-  RETURN jsonb_build_object(
-    'already_recorded', false,
-    'batch_id', v_batch.id,
-    'dispatch_id', v_dispatch_id
-  );
-END;
-$function$;
 CREATE OR REPLACE FUNCTION private.fleet_apply_placeholders(p_template text, p_vehicle text, p_date text, p_days text, p_model text, p_reg_no text)
  RETURNS text
  LANGUAGE sql
@@ -5742,6 +5224,71 @@ CREATE OR REPLACE FUNCTION private.fleet_valid_email(p_email text)
  IMMUTABLE
  SET search_path TO 'pg_catalog'
 AS $function$ SELECT p_email IS NOT NULL AND char_length(p_email) BETWEEN 3 AND 320 AND position('@' IN p_email) > 1 AND position(' ' IN p_email) = 0; $function$;
+CREATE OR REPLACE FUNCTION private.enqueue_due_fleet_notifications()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  rec record; v_recipient record; v_vehicle text; v_date text; v_days text; v_subject text; v_body text;
+  v_inserted integer := 0; v_skipped integer := 0; v_already integer := 0; v_had_recipient boolean;
+BEGIN
+  FOR rec IN SELECT * FROM public.v_active_notifications LOOP
+    v_had_recipient := false;
+    v_vehicle := btrim(COALESCE(rec.model, '') || ' (' || COALESCE(rec.reg_no, '') || ')');
+    v_date := to_char(rec.deadline_date, 'DD.MM.YYYY');
+    v_days := COALESCE(rec.days_left::text, '0');
+    v_subject := NULLIF(btrim(private.fleet_apply_placeholders(rec.subject, v_vehicle, v_date, v_days, rec.model, rec.reg_no)), '');
+    v_body := NULLIF(btrim(private.fleet_apply_placeholders(rec.body_template, v_vehicle, v_date, v_days, rec.model, rec.reg_no)), '');
+    IF v_subject IS NULL THEN
+      v_subject := CASE rec.alert_type
+        WHEN 'inspection' THEN 'Przypomnienie: przegląd techniczny'
+        WHEN 'insurance' THEN 'Przypomnienie: ubezpieczenie OC/AC'
+        ELSE 'Przypomnienie: wymiana opon' END;
+    END IF;
+    IF v_body IS NULL THEN
+      v_body := 'Pojazd ' || v_vehicle || ' ma termin ' || v_date || ' (za ' || v_days || ' dni).';
+    END IF;
+    v_subject := left(v_subject, 200);
+    v_body := left(v_body, 10000);
+    FOR v_recipient IN
+      SELECT DISTINCT ON (lower(btrim(src.email))) src.user_id, src.role, lower(btrim(src.email)) AS email
+      FROM (
+        SELECT rec.assigned_driver_id AS user_id, 'driver'::text AS role, rec.driver_email AS email
+        WHERE rec.send_to IN ('driver', 'both')
+        UNION ALL
+        SELECT p.id, 'admin'::text, p.email
+        FROM public.profiles p
+        JOIN public.memberships m ON m.user_id = p.id AND m.org_id = rec.org_id AND COALESCE(m.is_active, true) = true
+        WHERE rec.send_to IN ('admin', 'both')
+          AND (p.fleet_role = 'admin'::public.fleet_role OR m.role ILIKE ANY (ARRAY['owner','admin','administrator','manager','coordinator','koordynator','wlasciciel']))
+        UNION ALL
+        SELECT p.id, 'admin'::text, p.email
+        FROM public.organizations o
+        JOIN public.profiles p ON p.id = o.owner_id
+        WHERE rec.send_to IN ('admin', 'both') AND o.id = rec.org_id
+      ) src
+      WHERE private.fleet_valid_email(lower(btrim(COALESCE(src.email, ''))))
+      ORDER BY lower(btrim(src.email)), src.role DESC, src.user_id
+    LOOP
+      v_had_recipient := true;
+      BEGIN
+        INSERT INTO public.fleet_notification_dispatches (
+          org_id, vehicle_id, alert_type, deadline_date, recipient_role, recipient_user_id, recipient_email, subject, body_text, status
+        ) VALUES (
+          rec.org_id, rec.vehicle_id, rec.alert_type, rec.deadline_date, v_recipient.role, v_recipient.user_id, v_recipient.email, v_subject, v_body, 'pending'
+        );
+        v_inserted := v_inserted + 1;
+      EXCEPTION WHEN unique_violation THEN
+        v_already := v_already + 1;
+      END;
+    END LOOP;
+    IF NOT v_had_recipient THEN v_skipped := v_skipped + 1; END IF;
+  END LOOP;
+  RETURN jsonb_build_object('inserted', v_inserted, 'skipped', v_skipped, 'already', v_already);
+END;
+$function$;
 CREATE OR REPLACE FUNCTION private.has_active_admin_mandate(p_org_id uuid, p_community_id uuid, p_location_master_id uuid)
  RETURNS boolean
  LANGUAGE sql
@@ -5928,162 +5475,6 @@ BEGIN
   RETURN true;
 END;
 $function$;
-CREATE OR REPLACE FUNCTION private.initiate_equipment_handover(p_org_id uuid, p_worker_id uuid, p_kind text, p_asset_id uuid DEFAULT NULL::uuid, p_key_name text DEFAULT NULL::text, p_key_type text DEFAULT 'other'::text, p_condition_notes text DEFAULT NULL::text, p_photo_urls text[] DEFAULT '{}'::text[])
- RETURNS equipment_protocols
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_actor uuid := private.equipment_require_actor();
-  v_protocol public.equipment_protocols;
-  v_staff_id uuid;
-  v_key_type text := lower(btrim(COALESCE(p_key_type, 'other')));
-  v_notes text := NULLIF(btrim(COALESCE(p_condition_notes, '')), '');
-BEGIN
-  IF NOT public.is_org_management(p_org_id) THEN
-    RAISE EXCEPTION 'EQUIPMENT_FORBIDDEN';
-  END IF;
-
-  PERFORM private.equipment_assert_active_member(p_org_id, p_worker_id);
-
-  IF p_kind NOT IN ('asset', 'key_card') THEN
-    RAISE EXCEPTION 'EQUIPMENT_INVALID_KIND';
-  END IF;
-
-  PERFORM private.equipment_set_rpc_flag();
-
-  IF p_kind = 'asset' THEN
-    IF p_asset_id IS NULL THEN
-      RAISE EXCEPTION 'EQUIPMENT_ASSET_REQUIRED';
-    END IF;
-
-    UPDATE public.equipment_assets
-    SET
-      status = 'pending_handover',
-      current_holder_id = p_worker_id,
-      notes = v_notes
-    WHERE id = p_asset_id
-      AND org_id = p_org_id
-      AND status = 'available'
-      AND current_holder_id IS NULL
-    RETURNING id INTO v_staff_id;
-
-    IF v_staff_id IS NULL THEN
-      RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE';
-    END IF;
-
-    INSERT INTO public.equipment_protocols (
-      org_id, kind, asset_id, worker_id, direction, status,
-      initiated_by, condition_notes, photo_urls
-    ) VALUES (
-      p_org_id, 'asset', p_asset_id, p_worker_id, 'handover', 'pending',
-      v_actor, v_notes,
-      private.equipment_normalize_photo_urls(p_photo_urls)
-    )
-    RETURNING * INTO v_protocol;
-  ELSE
-    IF btrim(COALESCE(p_key_name, '')) = '' THEN
-      RAISE EXCEPTION 'EQUIPMENT_NAME_REQUIRED';
-    END IF;
-    IF v_key_type NOT IN ('key', 'card', 'other') THEN
-      RAISE EXCEPTION 'EQUIPMENT_INVALID_TYPE';
-    END IF;
-
-    INSERT INTO public.staff_equipment (
-      org_id, staff_id, type, name, status, assigned_at, created_by
-    ) VALUES (
-      p_org_id, p_worker_id, v_key_type, btrim(p_key_name),
-      'pending_handover', now(), v_actor
-    )
-    RETURNING id INTO v_staff_id;
-
-    INSERT INTO public.equipment_protocols (
-      org_id, kind, staff_equipment_id, worker_id, direction, status,
-      initiated_by, condition_notes, photo_urls
-    ) VALUES (
-      p_org_id, 'key_card', v_staff_id, p_worker_id, 'handover', 'pending',
-      v_actor, v_notes,
-      private.equipment_normalize_photo_urls(p_photo_urls)
-    )
-    RETURNING * INTO v_protocol;
-  END IF;
-
-  RETURN v_protocol;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.initiate_equipment_return(p_kind text, p_asset_id uuid DEFAULT NULL::uuid, p_staff_equipment_id uuid DEFAULT NULL::uuid, p_condition_notes text DEFAULT NULL::text, p_photo_urls text[] DEFAULT '{}'::text[])
- RETURNS equipment_protocols
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_actor uuid := private.equipment_require_actor();
-  v_protocol public.equipment_protocols;
-  v_org uuid; v_worker uuid; v_mgmt boolean;
-BEGIN
-  IF p_kind NOT IN ('asset', 'key_card') THEN RAISE EXCEPTION 'EQUIPMENT_INVALID_KIND'; END IF;
-  PERFORM private.equipment_set_rpc_flag();
-  IF p_kind = 'asset' THEN
-    IF p_asset_id IS NULL THEN RAISE EXCEPTION 'EQUIPMENT_ASSET_REQUIRED'; END IF;
-    SELECT org_id, current_holder_id INTO v_org, v_worker FROM public.equipment_assets WHERE id = p_asset_id FOR UPDATE;
-    IF v_org IS NULL THEN RAISE EXCEPTION 'EQUIPMENT_NOT_FOUND'; END IF;
-    v_mgmt := public.is_org_management(v_org);
-    IF NOT v_mgmt AND v_actor IS DISTINCT FROM v_worker THEN RAISE EXCEPTION 'EQUIPMENT_FORBIDDEN'; END IF;
-    IF v_worker IS NULL THEN RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE'; END IF;
-    UPDATE public.equipment_assets SET status = 'pending_return' WHERE id = p_asset_id AND status = 'assigned' AND current_holder_id = v_worker;
-    IF NOT FOUND THEN RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE'; END IF;
-    INSERT INTO public.equipment_protocols (org_id, kind, asset_id, worker_id, direction, status, initiated_by, condition_notes, photo_urls)
-    VALUES (v_org, 'asset', p_asset_id, v_worker, 'return', 'pending', v_actor, NULLIF(btrim(COALESCE(p_condition_notes, '')), ''), private.equipment_normalize_photo_urls(p_photo_urls))
-    RETURNING * INTO v_protocol;
-  ELSE
-    IF p_staff_equipment_id IS NULL THEN RAISE EXCEPTION 'EQUIPMENT_ITEM_REQUIRED'; END IF;
-    SELECT org_id, staff_id INTO v_org, v_worker FROM public.staff_equipment WHERE id = p_staff_equipment_id FOR UPDATE;
-    IF v_org IS NULL THEN RAISE EXCEPTION 'EQUIPMENT_NOT_FOUND'; END IF;
-    v_mgmt := public.is_org_management(v_org);
-    IF NOT v_mgmt AND v_actor IS DISTINCT FROM v_worker THEN RAISE EXCEPTION 'EQUIPMENT_FORBIDDEN'; END IF;
-    UPDATE public.staff_equipment SET status = 'pending_return' WHERE id = p_staff_equipment_id AND status = 'assigned' AND staff_id = v_worker;
-    IF NOT FOUND THEN RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE'; END IF;
-    INSERT INTO public.equipment_protocols (org_id, kind, staff_equipment_id, worker_id, direction, status, initiated_by, condition_notes, photo_urls)
-    VALUES (v_org, 'key_card', p_staff_equipment_id, v_worker, 'return', 'pending', v_actor, NULLIF(btrim(COALESCE(p_condition_notes, '')), ''), private.equipment_normalize_photo_urls(p_photo_urls))
-    RETURNING * INTO v_protocol;
-  END IF;
-  RETURN v_protocol;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.invite_service_mandate(p_acting_org_id uuid, p_community_legal_entity_id uuid, p_location_master_id uuid, p_partner_org_id uuid, p_partner_legal_entity_id uuid, p_module domio_module, p_role mandate_role, p_valid_from timestamp with time zone DEFAULT now(), p_valid_until timestamp with time zone DEFAULT NULL::timestamp with time zone, p_notes text DEFAULT NULL::text)
- RETURNS service_mandates
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE v_row public.service_mandates; v_bootstrap boolean := false; v_status public.mandate_status := 'invited'; v_accepted_at timestamptz := NULL; v_accepted_by uuid := NULL;
-BEGIN
-  PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag();
-  IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF;
-  IF NOT EXISTS (SELECT 1 FROM public.legal_entities WHERE id = p_community_legal_entity_id) THEN RAISE EXCEPTION 'MANDATE_COMMUNITY_NOT_FOUND'; END IF;
-  IF NOT EXISTS (SELECT 1 FROM public.legal_entities WHERE id = p_partner_legal_entity_id) THEN RAISE EXCEPTION 'MANDATE_PARTNER_NOT_FOUND'; END IF;
-  IF p_role = 'external_designee' THEN
-    IF p_partner_org_id IS NOT NULL THEN RAISE EXCEPTION 'MANDATE_EXTERNAL_HAS_NO_ORG'; END IF;
-    v_status := 'active'; v_accepted_at := now(); v_accepted_by := p_acting_org_id;
-  ELSIF p_role <> 'external_designee' AND p_partner_org_id IS NULL THEN RAISE EXCEPTION 'MANDATE_ORG_REQUIRED'; END IF;
-  IF p_module = 'admin' AND p_role = 'primary_operator' AND p_partner_org_id = p_acting_org_id THEN
-    v_bootstrap := NOT EXISTS (SELECT 1 FROM public.service_mandates sm WHERE sm.community_legal_entity_id = p_community_legal_entity_id AND sm.module = 'admin' AND sm.status = 'active' AND sm.role = 'primary_operator' AND sm.location_master_id IS NOT DISTINCT FROM p_location_master_id);
-    IF v_bootstrap THEN v_status := 'active'; v_accepted_at := now(); v_accepted_by := p_acting_org_id; ELSE RAISE EXCEPTION 'MANDATE_PRIMARY_EXISTS'; END IF;
-  ELSIF p_role = 'external_designee' THEN NULL;
-  ELSIF p_module = 'admin' AND p_role = 'co_operator' AND p_partner_org_id = p_acting_org_id THEN
-    IF NOT EXISTS (SELECT 1 FROM public.service_mandates sm WHERE sm.community_legal_entity_id = p_community_legal_entity_id AND sm.module = 'admin' AND sm.status = 'active' AND sm.role = 'primary_operator' AND (sm.location_master_id IS NULL OR sm.location_master_id IS NOT DISTINCT FROM p_location_master_id)) THEN RAISE EXCEPTION 'MANDATE_NO_PRIMARY_ADMIN'; END IF;
-    v_status := 'invited';
-  ELSE
-    IF NOT private.has_active_admin_mandate(p_acting_org_id, p_community_legal_entity_id, p_location_master_id) THEN RAISE EXCEPTION 'MANDATE_ADMIN_REQUIRED'; END IF;
-    v_status := 'invited';
-  END IF;
-  INSERT INTO public.service_mandates (community_legal_entity_id, location_master_id, org_id, partner_legal_entity_id, module, role, status, valid_from, valid_until, appointed_by_org_id, accepted_by_org_id, accepted_at, notes)
-  VALUES (p_community_legal_entity_id, p_location_master_id, p_partner_org_id, p_partner_legal_entity_id, p_module, p_role, v_status, COALESCE(p_valid_from, now()), p_valid_until, p_acting_org_id, v_accepted_by, v_accepted_at, p_notes)
-  RETURNING * INTO v_row;
-  RETURN v_row;
-END; $function$;
 CREATE OR REPLACE FUNCTION private.lease_fleet_notification_dispatch(p_dispatch_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -6103,36 +5494,26 @@ BEGIN
   RETURN private.fleet_notification_payload(p_dispatch_id);
 END;
 $function$;
-CREATE OR REPLACE FUNCTION private.lease_legal_welcome_dispatch(p_dispatch_id uuid)
- RETURNS jsonb
+CREATE OR REPLACE FUNCTION private.legal_acceptance_salt()
+ RETURNS text
  LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
+ STABLE SECURITY DEFINER
+ SET search_path TO 'vault', 'pg_catalog'
 AS $function$
 DECLARE
-  v_row public.legal_welcome_dispatches%ROWTYPE;
+  v_salt text;
 BEGIN
-  SELECT * INTO v_row
-  FROM public.legal_welcome_dispatches
-  WHERE id = p_dispatch_id
-  FOR UPDATE;
+  SELECT ds.decrypted_secret
+  INTO v_salt
+  FROM vault.decrypted_secrets ds
+  WHERE ds.name = 'legal_acceptance_salt';
 
-  IF NOT FOUND THEN
-    RETURN NULL;
+  IF v_salt IS NULL OR length(v_salt) < 32 THEN
+    RAISE EXCEPTION 'LEGAL_ACCEPTANCE_SALT_MISSING'
+      USING ERRCODE = 'configuration_limit_exceeded';
   END IF;
 
-  IF v_row.status = 'sent' THEN
-    RETURN private.legal_welcome_payload(v_row.id);
-  END IF;
-
-  UPDATE public.legal_welcome_dispatches
-  SET
-    status = 'processing',
-    attempt_count = attempt_count + 1,
-    next_attempt_at = now() + interval '10 minutes'
-  WHERE id = p_dispatch_id;
-
-  RETURN private.legal_welcome_payload(p_dispatch_id);
+  RETURN v_salt;
 END;
 $function$;
 CREATE OR REPLACE FUNCTION private.legal_acceptance_hmac(p_user_id uuid, p_accepted_at timestamp with time zone, p_document_id uuid, p_document_version text, p_pdf_sha256 text)
@@ -6168,26 +5549,156 @@ BEGIN
   );
 END;
 $function$;
-CREATE OR REPLACE FUNCTION private.legal_acceptance_salt()
- RETURNS text
+CREATE OR REPLACE FUNCTION private.finalize_legal_consent(p_batch_id uuid, p_pdf_sha256 text, p_pdf_storage_path text, p_document_ids uuid[])
+ RETURNS jsonb
  LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'vault', 'pg_catalog'
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  v_salt text;
+  v_batch public.user_consent_batches%ROWTYPE;
+  v_doc public.legal_documents%ROWTYPE;
+  v_id uuid;
+  v_hash text;
+  v_dispatch_id uuid;
+  v_terms text;
+  v_privacy text;
+  v_marketing text;
+  v_marketing_consent boolean := false;
 BEGIN
-  SELECT ds.decrypted_secret
-  INTO v_salt
-  FROM vault.decrypted_secrets ds
-  WHERE ds.name = 'legal_acceptance_salt';
+  PERFORM private.assert_sha256_hex(p_pdf_sha256, 'pdf_sha256');
 
-  IF v_salt IS NULL OR length(v_salt) < 32 THEN
-    RAISE EXCEPTION 'LEGAL_ACCEPTANCE_SALT_MISSING'
-      USING ERRCODE = 'configuration_limit_exceeded';
+  IF p_pdf_storage_path IS NULL OR btrim(p_pdf_storage_path) = '' THEN
+    RAISE EXCEPTION 'LEGAL_PDF_PATH_REQUIRED' USING ERRCODE = 'check_violation';
   END IF;
 
-  RETURN v_salt;
+  IF p_document_ids IS NULL OR coalesce(array_length(p_document_ids, 1), 0) = 0 THEN
+    RAISE EXCEPTION 'LEGAL_DOCUMENTS_REQUIRED' USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT * INTO v_batch
+  FROM public.user_consent_batches
+  WHERE id = p_batch_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'LEGAL_BATCH_NOT_FOUND' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  SELECT d.id INTO v_dispatch_id
+  FROM public.legal_welcome_dispatches d
+  WHERE d.batch_id = p_batch_id;
+
+  IF v_dispatch_id IS NOT NULL THEN
+    RETURN jsonb_build_object(
+      'already_recorded', true,
+      'batch_id', p_batch_id,
+      'dispatch_id', v_dispatch_id
+    );
+  END IF;
+
+  UPDATE public.user_consent_batches
+  SET
+    pdf_sha256 = p_pdf_sha256,
+    pdf_storage_path = btrim(p_pdf_storage_path)
+  WHERE id = p_batch_id
+  RETURNING * INTO v_batch;
+
+  FOREACH v_id IN ARRAY p_document_ids
+  LOOP
+    SELECT * INTO v_doc
+    FROM public.legal_documents
+    WHERE id = v_id;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'LEGAL_DOCUMENTS_STALE' USING ERRCODE = 'check_violation';
+    END IF;
+
+    v_hash := private.legal_acceptance_hmac(
+      v_batch.user_id,
+      v_batch.accepted_at,
+      v_doc.id,
+      v_doc.version,
+      v_batch.pdf_sha256
+    );
+
+    INSERT INTO public.user_consents (
+      batch_id,
+      user_id,
+      document_id,
+      document_type,
+      document_version,
+      accepted_at,
+      ip_address,
+      user_agent,
+      acceptance_hash
+    )
+    VALUES (
+      v_batch.id,
+      v_batch.user_id,
+      v_doc.id,
+      v_doc.document_type,
+      v_doc.version,
+      v_batch.accepted_at,
+      v_batch.ip_address,
+      v_batch.user_agent,
+      v_hash
+    );
+
+    IF v_doc.document_type = 'terms' THEN
+      v_terms := v_doc.version;
+    ELSIF v_doc.document_type = 'privacy' THEN
+      v_privacy := v_doc.version;
+    ELSIF v_doc.document_type = 'marketing' THEN
+      v_marketing := v_doc.version;
+      v_marketing_consent := true;
+    END IF;
+  END LOOP;
+
+  INSERT INTO public.legal_welcome_dispatches (batch_id, status, next_attempt_at)
+  VALUES (v_batch.id, 'pending', now())
+  RETURNING id INTO v_dispatch_id;
+
+  INSERT INTO public.profiles (
+    id,
+    email,
+    account_type,
+    is_first_login,
+    accepted_terms_at,
+    terms_version,
+    privacy_version,
+    marketing_consent,
+    marketing_version,
+    ip_address
+  )
+  VALUES (
+    v_batch.user_id,
+    v_batch.email,
+    'hub',
+    false,
+    v_batch.accepted_at,
+    COALESCE(v_terms, '1.0'),
+    v_privacy,
+    v_marketing_consent,
+    v_marketing,
+    v_batch.ip_address
+  )
+  ON CONFLICT (id) DO UPDATE
+  SET
+    email = COALESCE(EXCLUDED.email, public.profiles.email),
+    accepted_terms_at = EXCLUDED.accepted_terms_at,
+    terms_version = COALESCE(EXCLUDED.terms_version, public.profiles.terms_version),
+    privacy_version = COALESCE(EXCLUDED.privacy_version, public.profiles.privacy_version),
+    marketing_consent = public.profiles.marketing_consent OR EXCLUDED.marketing_consent,
+    marketing_version = COALESCE(EXCLUDED.marketing_version, public.profiles.marketing_version),
+    ip_address = COALESCE(EXCLUDED.ip_address, public.profiles.ip_address),
+    updated_at = now();
+
+  RETURN jsonb_build_object(
+    'already_recorded', false,
+    'batch_id', v_batch.id,
+    'dispatch_id', v_dispatch_id
+  );
 END;
 $function$;
 CREATE OR REPLACE FUNCTION private.legal_content_sha256(p_content text)
@@ -6280,48 +5791,36 @@ BEGIN
   );
 END;
 $function$;
-CREATE OR REPLACE FUNCTION private.list_home_preview_locations()
- RETURNS TABLE(access_id uuid, location_id uuid, org_id uuid, name text, address text, unit_number text, community_name text, community_id uuid, estate_id uuid, estate_name text, issue_qr_token text, access_type text)
+CREATE OR REPLACE FUNCTION private.lease_legal_welcome_dispatch(p_dispatch_id uuid)
+ RETURNS jsonb
  LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
 AS $function$
+DECLARE
+  v_row public.legal_welcome_dispatches%ROWTYPE;
 BEGIN
-  IF NOT public.is_platform_admin() THEN
-    RAISE EXCEPTION 'HOME_PREVIEW_FORBIDDEN'
-      USING ERRCODE = '42501',
-            HINT = 'Only the system administrator can preview Home across communities.';
+  SELECT * INTO v_row
+  FROM public.legal_welcome_dispatches
+  WHERE id = p_dispatch_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN NULL;
   END IF;
 
-  RETURN QUERY
-  SELECT
-    cl.id AS access_id,
-    cl.id AS location_id,
-    cl.org_id,
-    cl.name,
-    cl.address,
-    NULL::text AS unit_number,
-    COALESCE(NULLIF(btrim(c.legal_name), ''), NULLIF(btrim(c.name), '')) AS community_name,
-    cl.community_id,
-    est.estate_id,
-    est.estate_name,
-    cl.issue_qr_token,
-    'preview'::text AS access_type
-  FROM public.cleaning_locations cl
-  LEFT JOIN public.communities c ON c.id = cl.community_id
-  LEFT JOIN LATERAL (
-    SELECT e.id AS estate_id, e.name AS estate_name
-    FROM public.estate_members em
-    INNER JOIN public.estates e ON e.id = em.estate_id
-    WHERE em.community_id = cl.community_id
-      AND em.status = 'accepted'
-      AND e.status = 'active'
-    ORDER BY e.name
-    LIMIT 1
-  ) est ON true
-  WHERE cl.community_id IS NOT NULL
-    AND COALESCE(cl.status, 'active') IS DISTINCT FROM 'archived'
-  ORDER BY community_name NULLS LAST, cl.address, cl.name;
+  IF v_row.status = 'sent' THEN
+    RETURN private.legal_welcome_payload(v_row.id);
+  END IF;
+
+  UPDATE public.legal_welcome_dispatches
+  SET
+    status = 'processing',
+    attempt_count = attempt_count + 1,
+    next_attempt_at = now() + interval '10 minutes'
+  WHERE id = p_dispatch_id;
+
+  RETURN private.legal_welcome_payload(p_dispatch_id);
 END;
 $function$;
 CREATE OR REPLACE FUNCTION private.mandate_require_actor()
@@ -6330,6 +5829,22 @@ CREATE OR REPLACE FUNCTION private.mandate_require_actor()
  STABLE
  SET search_path TO 'public'
 AS $function$ DECLARE v_actor uuid := (SELECT auth.uid()); BEGIN IF v_actor IS NULL THEN RAISE EXCEPTION 'MANDATE_AUTH_REQUIRED'; END IF; RETURN v_actor; END; $function$;
+CREATE OR REPLACE FUNCTION private.cleaning_scope_require_actor()
+ RETURNS uuid
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'private'
+AS $function$
+BEGIN
+  RETURN private.mandate_require_actor();
+EXCEPTION
+  WHEN others THEN
+    IF SQLERRM LIKE '%MANDATE_AUTH_REQUIRED%' THEN
+      RAISE EXCEPTION 'CLEANING_SCOPE_AUTH_REQUIRED';
+    END IF;
+    RAISE;
+END;
+$function$;
 CREATE OR REPLACE FUNCTION private.mandate_set_rpc_flag()
  RETURNS void
  LANGUAGE plpgsql
@@ -6353,12 +5868,6 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
-CREATE OR REPLACE FUNCTION private.pause_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
- RETURNS service_mandates
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ DECLARE v_row public.service_mandates; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.service_mandates WHERE id = p_mandate_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'MANDATE_NOT_FOUND'; END IF; IF v_row.status <> 'active' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF v_row.org_id IS DISTINCT FROM p_acting_org_id AND v_row.appointed_by_org_id IS DISTINCT FROM p_acting_org_id AND NOT public.is_platform_admin() THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; UPDATE public.service_mandates SET status = 'paused' WHERE id = p_mandate_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
 CREATE OR REPLACE FUNCTION private.pending_required_legal_documents(p_user_id uuid)
  RETURNS TABLE(id uuid, document_type text, version text, active_from timestamp with time zone)
  LANGUAGE plpgsql
@@ -6436,24 +5945,6 @@ BEGIN
   RETURN v_row;
 END;
 $function$;
-CREATE OR REPLACE FUNCTION private.propose_succession(p_acting_org_id uuid, p_community_legal_entity_id uuid, p_location_master_id uuid, p_to_org_id uuid, p_to_legal_entity_id uuid, p_mode succession_mode DEFAULT 'share_read'::succession_mode, p_resource_scope succession_resource[] DEFAULT ARRAY['all'::succession_resource], p_notes text DEFAULT NULL::text)
- RETURNS succession_events
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ DECLARE v_row public.succession_events; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; IF NOT private.has_active_admin_mandate(p_acting_org_id, p_community_legal_entity_id, p_location_master_id) THEN RAISE EXCEPTION 'MANDATE_ADMIN_REQUIRED'; END IF; IF NOT EXISTS (SELECT 1 FROM public.legal_entities WHERE id = p_to_legal_entity_id) THEN RAISE EXCEPTION 'SUCCESSION_PARTNER_NOT_FOUND'; END IF; INSERT INTO public.succession_events (community_legal_entity_id, location_master_id, from_org_id, to_org_id, to_legal_entity_id, mode, status, resource_scope, notes) VALUES (p_community_legal_entity_id, p_location_master_id, p_acting_org_id, p_to_org_id, p_to_legal_entity_id, COALESCE(p_mode, 'share_read'), 'proposed', COALESCE(p_resource_scope, ARRAY['all'::public.succession_resource]), p_notes) RETURNING * INTO v_row; RETURN v_row; END; $function$;
-CREATE OR REPLACE FUNCTION private.prune_expired_succession_grants()
- RETURNS integer
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ DECLARE r public.succession_share_grants%ROWTYPE; n integer := 0; BEGIN PERFORM private.mandate_set_rpc_flag(); FOR r IN SELECT * FROM public.succession_share_grants WHERE revoked_at IS NULL AND expires_at <= now() LOOP PERFORM private.acl_apply_org(r.location_master_id, r.grantee_org_id, r.resource_type, false); n := n + 1; END LOOP; RETURN n; END; $function$;
-CREATE OR REPLACE FUNCTION private.reject_succession(p_acting_org_id uuid, p_succession_id uuid)
- RETURNS succession_events
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ DECLARE v_row public.succession_events; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.succession_events WHERE id = p_succession_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'SUCCESSION_NOT_FOUND'; END IF; IF v_row.status <> 'proposed' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF p_acting_org_id IS DISTINCT FROM v_row.from_org_id AND p_acting_org_id IS DISTINCT FROM v_row.to_org_id AND NOT public.is_platform_admin() THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; UPDATE public.succession_events SET status = 'rejected' WHERE id = p_succession_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
 CREATE OR REPLACE FUNCTION private.resident_order_append_event(p_order_id uuid, p_actor_id uuid, p_event_type text, p_payload jsonb DEFAULT '{}'::jsonb)
  RETURNS void
  LANGUAGE plpgsql
@@ -6543,73 +6034,6 @@ BEGIN
     RAISE EXCEPTION 'Brak sesji.';
   END IF;
   RETURN v_actor;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.resident_order_require_community_management(p_community_id uuid)
- RETURNS uuid
- LANGUAGE plpgsql
- STABLE
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_org uuid;
-BEGIN
-  PERFORM private.resident_order_require_actor();
-
-  SELECT c.org_id INTO v_org
-  FROM public.communities c
-  WHERE c.id = p_community_id;
-
-  IF v_org IS NULL THEN
-    RAISE EXCEPTION 'Nie znaleziono wspólnoty.';
-  END IF;
-
-  IF NOT public.can_manage_resident_orders(v_org) THEN
-    RAISE EXCEPTION 'Brak uprawnień do zarządzania zamówieniami tej wspólnoty.';
-  END IF;
-
-  RETURN v_org;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.resolve_admin_location_for_scope(p_location_master_id uuid)
- RETURNS TABLE(admin_location_id uuid, admin_org_id uuid, community_id uuid)
- LANGUAGE plpgsql
- STABLE
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_orgs uuid[];
-BEGIN
-  IF p_location_master_id IS NULL THEN
-    RETURN;
-  END IF;
-
-  v_orgs := public.current_user_org_ids();
-
-  RETURN QUERY
-  SELECT cl.id, cl.org_id, cl.community_id
-  FROM public.cleaning_locations cl
-  WHERE cl.location_master_id = p_location_master_id
-    AND COALESCE(cl.is_admin_active, false) = true
-    AND COALESCE(cl.status, 'active') = 'active'
-    AND cl.org_id = ANY (v_orgs)
-  ORDER BY cl.created_at
-  LIMIT 1;
-
-  IF FOUND THEN
-    RETURN;
-  END IF;
-
-  IF public.is_platform_admin() THEN
-    RETURN QUERY
-    SELECT cl.id, cl.org_id, cl.community_id
-    FROM public.cleaning_locations cl
-    WHERE cl.location_master_id = p_location_master_id
-      AND COALESCE(cl.is_admin_active, false) = true
-      AND COALESCE(cl.status, 'active') = 'active'
-    ORDER BY cl.created_at
-    LIMIT 1;
-  END IF;
 END;
 $function$;
 CREATE OR REPLACE FUNCTION private.resolve_partner_cleaning_location(p_location_master_id uuid, p_admin_org_id uuid, p_community_id uuid)
@@ -6836,164 +6260,6 @@ BEGIN
   WHERE i.id = p_issue_id;
 
   RETURN v_org;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.respond_equipment_protocol(p_protocol_id uuid, p_accept boolean, p_condition_notes text DEFAULT NULL::text, p_photo_urls text[] DEFAULT NULL::text[], p_rejection_reason text DEFAULT NULL::text)
- RETURNS equipment_protocols
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_actor uuid := private.equipment_require_actor();
-  v_protocol public.equipment_protocols;
-  v_is_mgmt boolean;
-  v_is_worker boolean;
-  v_is_initiator boolean;
-  v_is_counterparty boolean;
-  v_terminal text;
-  v_reason text;
-BEGIN
-  PERFORM private.equipment_set_rpc_flag();
-
-  SELECT *
-  INTO v_protocol
-  FROM public.equipment_protocols
-  WHERE id = p_protocol_id
-  FOR UPDATE;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'EQUIPMENT_NOT_FOUND';
-  END IF;
-
-  IF v_protocol.status IS DISTINCT FROM 'pending' THEN
-    RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE';
-  END IF;
-
-  v_is_mgmt := public.is_org_management(v_protocol.org_id);
-  v_is_worker := v_actor = v_protocol.worker_id;
-  v_is_initiator := v_actor = v_protocol.initiated_by;
-  v_is_counterparty := (v_is_worker OR v_is_mgmt) AND NOT v_is_initiator;
-
-  IF v_protocol.direction = 'handover' THEN
-    IF NOT v_is_worker OR v_is_initiator THEN
-      RAISE EXCEPTION 'EQUIPMENT_NOT_COUNTERPARTY';
-    END IF;
-  ELSE
-    IF NOT v_is_counterparty THEN
-      RAISE EXCEPTION 'EQUIPMENT_NOT_COUNTERPARTY';
-    END IF;
-  END IF;
-
-  v_terminal := CASE WHEN p_accept THEN 'accepted' ELSE 'rejected' END;
-
-  IF p_accept THEN
-    UPDATE public.equipment_protocols
-    SET
-      status = 'accepted',
-      responded_by = v_actor,
-      responded_at = now()
-    WHERE id = p_protocol_id
-    RETURNING * INTO v_protocol;
-  ELSE
-    v_reason := NULLIF(btrim(COALESCE(p_rejection_reason, p_condition_notes, '')), '');
-    IF v_reason IS NULL THEN
-      RAISE EXCEPTION 'EQUIPMENT_REJECTION_REASON_REQUIRED';
-    END IF;
-    IF char_length(v_reason) > 2000 THEN
-      RAISE EXCEPTION 'EQUIPMENT_NOTES_TOO_LONG';
-    END IF;
-
-    UPDATE public.equipment_protocols
-    SET
-      status = 'rejected',
-      responded_by = v_actor,
-      responded_at = now(),
-      rejection_reason = v_reason
-    WHERE id = p_protocol_id
-    RETURNING * INTO v_protocol;
-  END IF;
-
-  PERFORM private.equipment_apply_protocol_resolution(v_protocol, v_terminal);
-  RETURN v_protocol;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.resume_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
- RETURNS service_mandates
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ DECLARE v_row public.service_mandates; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.service_mandates WHERE id = p_mandate_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'MANDATE_NOT_FOUND'; END IF; IF v_row.status <> 'paused' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF v_row.org_id IS DISTINCT FROM p_acting_org_id AND v_row.appointed_by_org_id IS DISTINCT FROM p_acting_org_id AND NOT public.is_platform_admin() THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; UPDATE public.service_mandates SET status = 'active' WHERE id = p_mandate_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
-CREATE OR REPLACE FUNCTION private.retire_equipment_asset(p_asset_id uuid)
- RETURNS equipment_assets
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_actor uuid := private.equipment_require_actor();
-  v_asset public.equipment_assets;
-BEGIN
-  SELECT * INTO v_asset FROM public.equipment_assets WHERE id = p_asset_id FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'EQUIPMENT_NOT_FOUND'; END IF;
-  IF NOT public.is_org_management(v_asset.org_id) THEN RAISE EXCEPTION 'EQUIPMENT_FORBIDDEN'; END IF;
-  IF v_asset.status IS DISTINCT FROM 'available' THEN RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE'; END IF;
-  PERFORM private.equipment_set_rpc_flag();
-  UPDATE public.equipment_assets SET status = 'retired' WHERE id = p_asset_id RETURNING * INTO v_asset;
-  RETURN v_asset;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.revoke_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
- RETURNS service_mandates
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ DECLARE v_row public.service_mandates; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.service_mandates WHERE id = p_mandate_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'MANDATE_NOT_FOUND'; END IF; IF v_row.status NOT IN ('active', 'paused') THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF v_row.appointed_by_org_id IS DISTINCT FROM p_acting_org_id AND NOT public.is_platform_admin() AND NOT private.has_active_admin_mandate(p_acting_org_id, v_row.community_legal_entity_id, v_row.location_master_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; UPDATE public.service_mandates SET status = 'superseded', revoked_by_org_id = p_acting_org_id, revoked_at = now() WHERE id = p_mandate_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
-CREATE OR REPLACE FUNCTION private.set_equipment_protocol_evidence(p_protocol_id uuid, p_condition_notes text DEFAULT NULL::text, p_photo_urls text[] DEFAULT NULL::text[])
- RETURNS equipment_protocols
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_actor uuid := private.equipment_require_actor();
-  v_protocol public.equipment_protocols;
-BEGIN
-  PERFORM private.equipment_set_rpc_flag();
-
-  SELECT *
-  INTO v_protocol
-  FROM public.equipment_protocols
-  WHERE id = p_protocol_id
-  FOR UPDATE;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'EQUIPMENT_NOT_FOUND';
-  END IF;
-
-  IF v_protocol.status IS DISTINCT FROM 'pending' THEN
-    RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE';
-  END IF;
-
-  IF v_actor IS DISTINCT FROM v_protocol.initiated_by
-     AND NOT public.is_org_management(v_protocol.org_id) THEN
-    RAISE EXCEPTION 'EQUIPMENT_FORBIDDEN';
-  END IF;
-
-  UPDATE public.equipment_protocols
-  SET
-    condition_notes = COALESCE(
-      NULLIF(btrim(COALESCE(p_condition_notes, '')), ''),
-      condition_notes
-    ),
-    photo_urls = CASE
-      WHEN p_photo_urls IS NULL THEN photo_urls
-      ELSE private.equipment_normalize_photo_urls(p_photo_urls)
-    END
-  WHERE id = p_protocol_id
-  RETURNING * INTO v_protocol;
-
-  RETURN v_protocol;
 END;
 $function$;
 CREATE OR REPLACE FUNCTION private.succession_location_masters(p_community_id uuid, p_location_master_id uuid)
@@ -7272,34 +6538,6 @@ CREATE OR REPLACE FUNCTION private.tg_succession_events_guard()
  LANGUAGE plpgsql
  SET search_path TO 'public'
 AS $function$ BEGIN IF current_setting('app.mandate_rpc', true) IS DISTINCT FROM '1' THEN RAISE EXCEPTION 'SUCCESSION_VIA_RPC'; END IF; IF TG_OP = 'UPDATE' AND NOT private.succession_transition_ok(OLD.status, NEW.status) THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF TG_OP = 'INSERT' AND NEW.status <> 'proposed' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; RETURN COALESCE(NEW, OLD); END; $function$;
-CREATE OR REPLACE FUNCTION private.tg_succession_grants_acl()
- RETURNS trigger
- LANGUAGE plpgsql
- SET search_path TO 'public'
-AS $function$
-DECLARE v_live_old boolean := false; v_live_new boolean := false;
-BEGIN
-  IF TG_OP = 'INSERT' THEN
-    IF NEW.revoked_at IS NULL AND NEW.expires_at > now() THEN PERFORM private.acl_apply_org(NEW.location_master_id, NEW.grantee_org_id, NEW.resource_type, true); END IF;
-    RETURN NEW;
-  END IF;
-  IF TG_OP = 'UPDATE' THEN
-    v_live_old := OLD.revoked_at IS NULL AND OLD.expires_at > now();
-    v_live_new := NEW.revoked_at IS NULL AND NEW.expires_at > now();
-    IF v_live_old AND NOT v_live_new THEN PERFORM private.acl_apply_org(OLD.location_master_id, OLD.grantee_org_id, OLD.resource_type, false);
-    ELSIF (NOT v_live_old) AND v_live_new THEN PERFORM private.acl_apply_org(NEW.location_master_id, NEW.grantee_org_id, NEW.resource_type, true);
-    ELSIF v_live_old AND v_live_new AND (OLD.grantee_org_id IS DISTINCT FROM NEW.grantee_org_id OR OLD.location_master_id IS DISTINCT FROM NEW.location_master_id OR OLD.resource_type IS DISTINCT FROM NEW.resource_type) THEN
-      PERFORM private.acl_apply_org(OLD.location_master_id, OLD.grantee_org_id, OLD.resource_type, false);
-      PERFORM private.acl_apply_org(NEW.location_master_id, NEW.grantee_org_id, NEW.resource_type, true);
-    END IF;
-    RETURN NEW;
-  END IF;
-  IF TG_OP = 'DELETE' THEN
-    IF OLD.revoked_at IS NULL AND OLD.expires_at > now() THEN PERFORM private.acl_apply_org(OLD.location_master_id, OLD.grantee_org_id, OLD.resource_type, false); END IF;
-    RETURN OLD;
-  END IF;
-  RETURN NULL;
-END; $function$;
 CREATE OR REPLACE FUNCTION private.tg_user_consent_batches_before_update()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -7492,75 +6730,74 @@ BEGIN
   );
 END;
 $function$;
-CREATE OR REPLACE FUNCTION private.upsert_building_cooperation_link(p_acting_org_id uuid, p_location_master_id uuid, p_community_legal_entity_id uuid, p_cleaning_org_id uuid, p_maintenance_org_id uuid, p_cleaning_issues_to_serwis boolean DEFAULT true, p_skip_admin_triage boolean DEFAULT false)
- RETURNS building_cooperation_links
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE v_row public.building_cooperation_links;
-BEGIN
-  PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag();
-  IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF;
-  IF NOT private.has_active_admin_mandate(p_acting_org_id, p_community_legal_entity_id, p_location_master_id) THEN RAISE EXCEPTION 'MANDATE_ADMIN_REQUIRED'; END IF;
-  IF p_cleaning_org_id IS NOT NULL THEN
-    IF NOT EXISTS (SELECT 1 FROM public.service_mandates sm WHERE sm.org_id = p_cleaning_org_id AND sm.community_legal_entity_id = p_community_legal_entity_id AND sm.module = 'cleaning' AND sm.status = 'active' AND (sm.location_master_id IS NULL OR sm.location_master_id = p_location_master_id)) THEN RAISE EXCEPTION 'COOP_CLEANING_MANDATE_INACTIVE'; END IF;
-    IF NOT EXISTS (SELECT 1 FROM public.cleaning_locations cl WHERE cl.org_id = p_cleaning_org_id AND cl.location_master_id = p_location_master_id AND cl.is_cleaning_active) THEN RAISE EXCEPTION 'COOP_CLEANING_NOT_ENROLLED'; END IF;
-  END IF;
-  IF p_maintenance_org_id IS NOT NULL THEN
-    IF NOT EXISTS (SELECT 1 FROM public.service_mandates sm WHERE sm.org_id = p_maintenance_org_id AND sm.community_legal_entity_id = p_community_legal_entity_id AND sm.module = 'maintenance' AND sm.status = 'active' AND (sm.location_master_id IS NULL OR sm.location_master_id = p_location_master_id)) THEN RAISE EXCEPTION 'COOP_MAINTENANCE_MANDATE_INACTIVE'; END IF;
-    IF NOT EXISTS (SELECT 1 FROM public.cleaning_locations cl WHERE cl.org_id = p_maintenance_org_id AND cl.location_master_id = p_location_master_id AND cl.is_maintenance_active) THEN RAISE EXCEPTION 'COOP_MAINTENANCE_NOT_ENROLLED'; END IF;
-  END IF;
-  SELECT * INTO v_row FROM public.building_cooperation_links WHERE location_master_id = p_location_master_id AND admin_org_id = p_acting_org_id AND status = 'active' FOR UPDATE;
-  IF FOUND THEN
-    UPDATE public.building_cooperation_links SET cleaning_org_id = p_cleaning_org_id, maintenance_org_id = p_maintenance_org_id, cleaning_issues_to_serwis = COALESCE(p_cleaning_issues_to_serwis, true), skip_admin_triage = COALESCE(p_skip_admin_triage, false) WHERE id = v_row.id RETURNING * INTO v_row;
-  ELSE
-    INSERT INTO public.building_cooperation_links (location_master_id, admin_org_id, cleaning_org_id, maintenance_org_id, cleaning_issues_to_serwis, skip_admin_triage, status)
-    VALUES (p_location_master_id, p_acting_org_id, p_cleaning_org_id, p_maintenance_org_id, COALESCE(p_cleaning_issues_to_serwis, true), COALESCE(p_skip_admin_triage, false), 'active') RETURNING * INTO v_row;
-  END IF;
-  RETURN v_row;
-END; $function$;
-CREATE OR REPLACE FUNCTION private.user_can_set_cleaning_scope_contract(p_org_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE
- SET search_path TO 'public'
-AS $function$
-  SELECT public.is_platform_admin() OR public.is_org_management(p_org_id);
-$function$;
-CREATE OR REPLACE FUNCTION private.user_can_view_partner_cleaning_scope(p_location_master_id uuid)
- RETURNS boolean
- LANGUAGE plpgsql
- STABLE
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_admin record;
-  v_partner record;
-BEGIN
-  SELECT * INTO v_admin
-  FROM private.resolve_admin_location_for_scope(p_location_master_id);
-
-  IF v_admin.admin_location_id IS NULL THEN
-    RETURN false;
-  END IF;
-
-  SELECT * INTO v_partner
-  FROM private.resolve_partner_cleaning_location(
-    p_location_master_id,
-    v_admin.admin_org_id,
-    v_admin.community_id
-  );
-
-  RETURN v_partner.cleaning_location_id IS NOT NULL;
-END;
-$function$;
 CREATE OR REPLACE FUNCTION private.uuid_array_add(p_arr uuid[], p_id uuid)
  RETURNS uuid[]
  LANGUAGE sql
  IMMUTABLE
  SET search_path TO 'public'
 AS $function$ SELECT CASE WHEN p_id IS NULL THEN COALESCE(p_arr, '{}'::uuid[]) WHEN p_id = ANY (COALESCE(p_arr, '{}'::uuid[])) THEN COALESCE(p_arr, '{}'::uuid[]) ELSE COALESCE(p_arr, '{}'::uuid[]) || p_id END; $function$;
+CREATE OR REPLACE FUNCTION private.acl_apply_org(p_location_master_id uuid, p_org_id uuid, p_resource succession_resource, p_add boolean)
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF p_location_master_id IS NULL OR p_org_id IS NULL THEN RETURN; END IF;
+  IF p_resource IN ('issues', 'all') THEN
+    IF p_add THEN UPDATE public.property_issues SET shared_with_org_ids = private.uuid_array_add(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id;
+    ELSE UPDATE public.property_issues SET shared_with_org_ids = array_remove(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id; END IF;
+  END IF;
+  IF p_resource IN ('inspections', 'all') THEN
+    IF p_add THEN UPDATE public.property_inspections SET shared_with_org_ids = private.uuid_array_add(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id;
+    ELSE UPDATE public.property_inspections SET shared_with_org_ids = array_remove(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id; END IF;
+  END IF;
+  IF p_resource IN ('unit_inspections', 'all') THEN
+    IF p_add THEN UPDATE public.inspection_campaigns SET shared_with_org_ids = private.uuid_array_add(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id;
+    ELSE UPDATE public.inspection_campaigns SET shared_with_org_ids = array_remove(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id; END IF;
+  END IF;
+  IF p_resource IN ('contracts', 'all') THEN
+    IF p_add THEN UPDATE public.property_contracts SET shared_with_org_ids = private.uuid_array_add(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id;
+    ELSE UPDATE public.property_contracts SET shared_with_org_ids = array_remove(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id; END IF;
+  END IF;
+  IF p_resource IN ('residents', 'all') THEN
+    IF p_add THEN UPDATE public.location_access SET shared_with_org_ids = private.uuid_array_add(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id;
+    ELSE UPDATE public.location_access SET shared_with_org_ids = array_remove(shared_with_org_ids, p_org_id) WHERE location_master_id = p_location_master_id; END IF;
+  END IF;
+END; $function$;
+CREATE OR REPLACE FUNCTION private.prune_expired_succession_grants()
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ DECLARE r public.succession_share_grants%ROWTYPE; n integer := 0; BEGIN PERFORM private.mandate_set_rpc_flag(); FOR r IN SELECT * FROM public.succession_share_grants WHERE revoked_at IS NULL AND expires_at <= now() LOOP PERFORM private.acl_apply_org(r.location_master_id, r.grantee_org_id, r.resource_type, false); n := n + 1; END LOOP; RETURN n; END; $function$;
+CREATE OR REPLACE FUNCTION private.tg_succession_grants_acl()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+DECLARE v_live_old boolean := false; v_live_new boolean := false;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.revoked_at IS NULL AND NEW.expires_at > now() THEN PERFORM private.acl_apply_org(NEW.location_master_id, NEW.grantee_org_id, NEW.resource_type, true); END IF;
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE' THEN
+    v_live_old := OLD.revoked_at IS NULL AND OLD.expires_at > now();
+    v_live_new := NEW.revoked_at IS NULL AND NEW.expires_at > now();
+    IF v_live_old AND NOT v_live_new THEN PERFORM private.acl_apply_org(OLD.location_master_id, OLD.grantee_org_id, OLD.resource_type, false);
+    ELSIF (NOT v_live_old) AND v_live_new THEN PERFORM private.acl_apply_org(NEW.location_master_id, NEW.grantee_org_id, NEW.resource_type, true);
+    ELSIF v_live_old AND v_live_new AND (OLD.grantee_org_id IS DISTINCT FROM NEW.grantee_org_id OR OLD.location_master_id IS DISTINCT FROM NEW.location_master_id OR OLD.resource_type IS DISTINCT FROM NEW.resource_type) THEN
+      PERFORM private.acl_apply_org(OLD.location_master_id, OLD.grantee_org_id, OLD.resource_type, false);
+      PERFORM private.acl_apply_org(NEW.location_master_id, NEW.grantee_org_id, NEW.resource_type, true);
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.revoked_at IS NULL AND OLD.expires_at > now() THEN PERFORM private.acl_apply_org(OLD.location_master_id, OLD.grantee_org_id, OLD.resource_type, false); END IF;
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+END; $function$;
 CREATE OR REPLACE FUNCTION private.vendor_email_append_lifecycle(p_org_id uuid, p_issue_id uuid, p_event_type text, p_payload jsonb)
  RETURNS void
  LANGUAGE plpgsql
@@ -7653,6 +6890,46 @@ BEGIN
   );
 END;
 $function$;
+CREATE OR REPLACE FUNCTION private.vendor_email_default_body()
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+  SELECT $t$Dzień dobry,
+
+Przekazujemy zgłoszenie serwisowe do realizacji.
+
+Budynek
+{{building.name}}
+{{building.address}}
+
+Zgłoszenie
+Kategoria: {{issue.category}}
+Priorytet: {{issue.priority}}
+Opis:
+{{issue.description}}
+
+Zgłaszający
+{{reporter.name}}
+Telefon: {{reporter.phone}}
+
+Nadawca
+{{org.name}}
+
+Numer DOMIO: {{issue.id}}
+Ref: {{issue.token}}
+
+Prosimy o potwierdzenie przyjęcia zgłoszenia.$t$::text;
+$function$;
+CREATE OR REPLACE FUNCTION private.vendor_email_default_subject()
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+  SELECT '[DOMIO {{issue.token}}] Zgłoszenie: {{building.address}}'::text;
+$function$;
 CREATE OR REPLACE FUNCTION private.vendor_email_build_payload(p_issue_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -7727,46 +7004,6 @@ BEGIN
   );
 END;
 $function$;
-CREATE OR REPLACE FUNCTION private.vendor_email_default_body()
- RETURNS text
- LANGUAGE sql
- IMMUTABLE
- SET search_path TO 'public'
-AS $function$
-  SELECT $t$Dzień dobry,
-
-Przekazujemy zgłoszenie serwisowe do realizacji.
-
-Budynek
-{{building.name}}
-{{building.address}}
-
-Zgłoszenie
-Kategoria: {{issue.category}}
-Priorytet: {{issue.priority}}
-Opis:
-{{issue.description}}
-
-Zgłaszający
-{{reporter.name}}
-Telefon: {{reporter.phone}}
-
-Nadawca
-{{org.name}}
-
-Numer DOMIO: {{issue.id}}
-Ref: {{issue.token}}
-
-Prosimy o potwierdzenie przyjęcia zgłoszenia.$t$::text;
-$function$;
-CREATE OR REPLACE FUNCTION private.vendor_email_default_subject()
- RETURNS text
- LANGUAGE sql
- IMMUTABLE
- SET search_path TO 'public'
-AS $function$
-  SELECT '[DOMIO {{issue.token}}] Zgłoszenie: {{building.address}}'::text;
-$function$;
 CREATE OR REPLACE FUNCTION private.vendor_email_escape_regex(p_text text)
  RETURNS text
  LANGUAGE plpgsql
@@ -7811,48 +7048,6 @@ BEGIN
   IF v_token IS NOT NULL THEN RETURN v_token; END IF;
   v_token := substring(v_blob from 'ref:[[:space:]]*([a-z0-9]{12})');
   RETURN v_token;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.vendor_email_from_allowed(p_from text, p_allowlist text[])
- RETURNS boolean
- LANGUAGE plpgsql
- IMMUTABLE
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_from text := private.vendor_email_normalize_address(p_from);
-  v_item text;
-  v_domain text;
-BEGIN
-  IF v_from IS NULL THEN
-    RETURN false;
-  END IF;
-  IF p_allowlist IS NULL OR cardinality(p_allowlist) = 0 THEN
-    RETURN true;
-  END IF;
-
-  FOREACH v_item IN ARRAY p_allowlist LOOP
-    v_item := lower(btrim(COALESCE(v_item, '')));
-    IF v_item = '' THEN
-      CONTINUE;
-    END IF;
-    IF v_item = v_from THEN
-      RETURN true;
-    END IF;
-    IF left(v_item, 1) = '@' THEN
-      v_domain := substr(v_item, 2);
-    ELSIF position('@' IN v_item) = 0 THEN
-      v_domain := v_item;
-    ELSE
-      v_domain := NULL;
-    END IF;
-    IF v_domain IS NOT NULL AND v_domain <> ''
-       AND v_from LIKE '%@' || v_domain THEN
-      RETURN true;
-    END IF;
-  END LOOP;
-
-  RETURN false;
 END;
 $function$;
 CREATE OR REPLACE FUNCTION private.vendor_email_guess_event(p_subject text, p_body text)
@@ -7967,142 +7162,46 @@ BEGIN
   RETURN v;
 END;
 $function$;
-CREATE OR REPLACE FUNCTION private.vendor_email_queue_for_issue(p_issue_id uuid, p_vendor_id uuid)
- RETURNS jsonb
+CREATE OR REPLACE FUNCTION private.vendor_email_from_allowed(p_from text, p_allowlist text[])
+ RETURNS boolean
  LANGUAGE plpgsql
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_issue public.property_issues%ROWTYPE;
-  v_vendor public.vendor_partners%ROWTYPE;
-  v_channel public.vendor_email_channels%ROWTYPE;
-  v_dispatch public.issue_email_dispatches%ROWTYPE;
-  v_token text;
-  v_to text;
-  v_tries integer := 0;
-BEGIN
-  SELECT * INTO v_issue
-  FROM public.property_issues
-  WHERE id = p_issue_id
-  FOR UPDATE;
-
-  IF v_issue.id IS NULL THEN
-    RAISE EXCEPTION 'Nie znaleziono zgłoszenia.';
-  END IF;
-
-  PERFORM private.vendor_email_require_management(v_issue.org_id);
-
-  SELECT * INTO v_vendor FROM public.vendor_partners WHERE id = p_vendor_id;
-  IF v_vendor.id IS NULL THEN
-    RAISE EXCEPTION 'Nie znaleziono partnera.';
-  END IF;
-  IF v_vendor.org_id IS DISTINCT FROM v_issue.org_id THEN
-    RAISE EXCEPTION 'Partner nie należy do organizacji zgłoszenia.';
-  END IF;
-  IF COALESCE(v_vendor.dispatch_channel, 'in_app') IS DISTINCT FROM 'email' THEN
-    RAISE EXCEPTION 'Partner nie obsługuje kanału e-mail.';
-  END IF;
-
-  SELECT * INTO v_channel
-  FROM public.vendor_email_channels
-  WHERE vendor_id = p_vendor_id;
-
-  IF v_channel.vendor_id IS NULL OR v_channel.is_enabled IS NOT TRUE THEN
-    RAISE EXCEPTION 'Kanał e-mail partnera jest wyłączony albo nieustawiony.';
-  END IF;
-
-  v_to := COALESCE(
-    NULLIF(btrim(COALESCE(v_channel.outbound_to_email, '')), ''),
-    NULLIF(btrim(COALESCE(v_vendor.contact_email, '')), '')
-  );
-  IF v_to IS NULL OR position('@' IN v_to) < 2 THEN
-    RAISE EXCEPTION 'Partner nie ma adresu e-mail.';
-  END IF;
-
-  SELECT * INTO v_dispatch
-  FROM public.issue_email_dispatches
-  WHERE issue_id = p_issue_id
-  FOR UPDATE;
-
-  IF v_dispatch.id IS NULL THEN
-    LOOP
-      v_tries := v_tries + 1;
-      v_token := private.vendor_email_new_token();
-      BEGIN
-        INSERT INTO public.issue_email_dispatches (
-          org_id, issue_id, vendor_id, correlation_token, status, queued_at
-        )
-        VALUES (
-          v_issue.org_id, p_issue_id, p_vendor_id, v_token, 'queued', now()
-        )
-        RETURNING * INTO v_dispatch;
-        EXIT;
-      EXCEPTION
-        WHEN unique_violation THEN
-          IF v_tries >= 8 THEN
-            RAISE EXCEPTION 'Nie udało się wygenerować tokenu korelacji.';
-          END IF;
-      END;
-    END LOOP;
-  ELSE
-    UPDATE public.issue_email_dispatches
-    SET
-      vendor_id = p_vendor_id,
-      status = 'queued',
-      dispatch_error = NULL,
-      queued_at = now(),
-      sent_at = NULL
-    WHERE id = v_dispatch.id
-    RETURNING * INTO v_dispatch;
-    v_token := v_dispatch.correlation_token;
-  END IF;
-
-  UPDATE public.property_issues
-  SET
-    email_dispatch_status = 'queued',
-    email_correlation_token = v_token,
-    delegated_vendor_id = p_vendor_id,
-    status = 'delegated'
-  WHERE id = p_issue_id;
-
-  PERFORM private.vendor_email_append_lifecycle(
-    v_issue.org_id,
-    p_issue_id,
-    'email_queued',
-    jsonb_build_object(
-      'dispatch_id', v_dispatch.id,
-      'correlation_token', v_token,
-      'vendor_id', p_vendor_id
-    )
-  );
-
-  RETURN private.vendor_email_build_payload(p_issue_id);
-END;
-$function$;
-CREATE OR REPLACE FUNCTION private.vendor_email_require_management(p_org_id uuid)
- RETURNS uuid
- LANGUAGE plpgsql
- STABLE
+ IMMUTABLE
  SET search_path TO 'public'
 AS $function$
+DECLARE
+  v_from text := private.vendor_email_normalize_address(p_from);
+  v_item text;
+  v_domain text;
 BEGIN
-  IF p_org_id IS NULL THEN
-    RAISE EXCEPTION 'Brak organizacji.';
+  IF v_from IS NULL THEN
+    RETURN false;
   END IF;
-  IF private.vendor_email_is_service_role() THEN
-    RETURN p_org_id;
+  IF p_allowlist IS NULL OR cardinality(p_allowlist) = 0 THEN
+    RETURN true;
   END IF;
-  IF (SELECT auth.uid()) IS NULL THEN
-    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
-  END IF;
-  IF NOT (
-    (SELECT public.is_platform_admin())
-    OR (SELECT public.is_org_management(p_org_id))
-    OR (SELECT public.is_management_role(p_org_id))
-  ) THEN
-    RAISE EXCEPTION 'ISSUE_DELEGATE_FORBIDDEN';
-  END IF;
-  RETURN p_org_id;
+
+  FOREACH v_item IN ARRAY p_allowlist LOOP
+    v_item := lower(btrim(COALESCE(v_item, '')));
+    IF v_item = '' THEN
+      CONTINUE;
+    END IF;
+    IF v_item = v_from THEN
+      RETURN true;
+    END IF;
+    IF left(v_item, 1) = '@' THEN
+      v_domain := substr(v_item, 2);
+    ELSIF position('@' IN v_item) = 0 THEN
+      v_domain := v_item;
+    ELSE
+      v_domain := NULL;
+    END IF;
+    IF v_domain IS NOT NULL AND v_domain <> ''
+       AND v_from LIKE '%@' || v_domain THEN
+      RETURN true;
+    END IF;
+  END LOOP;
+
+  RETURN false;
 END;
 $function$;
 CREATE OR REPLACE FUNCTION private.vendor_email_thread_blob(p_raw jsonb)
@@ -8227,275 +7326,6 @@ BEGIN
   RETURN v_row;
 END;
 $function$;
-CREATE OR REPLACE FUNCTION public.accept_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
- RETURNS service_mandates
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ BEGIN RETURN private.accept_service_mandate(p_acting_org_id, p_mandate_id); END; $function$;
-CREATE OR REPLACE FUNCTION public.accept_succession(p_acting_org_id uuid, p_succession_id uuid)
- RETURNS succession_events
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ BEGIN RETURN private.accept_succession(p_acting_org_id, p_succession_id); END; $function$;
-CREATE OR REPLACE FUNCTION public.activate_org_subscription_plan(p_org_id uuid, p_app_id uuid, p_plan_id uuid, p_billing_interval text)
- RETURNS org_subscriptions
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_interval text;
-  v_app public.applications%ROWTYPE;
-  v_plan public.pricing_plans%ROWTYPE;
-  v_existing public.org_subscriptions%ROWTYPE;
-  v_current_plan public.pricing_plans%ROWTYPE;
-  v_has_row boolean;
-  v_existing_active boolean;
-  v_expires timestamptz;
-  v_row public.org_subscriptions%ROWTYPE;
-BEGIN
-  IF auth.uid() IS NULL THEN
-    RAISE EXCEPTION 'Wymagane logowanie'
-      USING ERRCODE = '42501';
-  END IF;
-
-  v_interval := lower(trim(COALESCE(p_billing_interval, '')));
-  IF v_interval NOT IN ('monthly', 'yearly') THEN
-    RAISE EXCEPTION 'Nieprawidłowy okres rozliczenia'
-      USING ERRCODE = '22023';
-  END IF;
-
-  IF NOT (public.is_platform_admin() OR public.is_management_role(p_org_id)) THEN
-    RAISE EXCEPTION 'Brak uprawnień do zarządzania planem organizacji'
-      USING ERRCODE = '42501';
-  END IF;
-
-  SELECT * INTO v_app
-  FROM public.applications
-  WHERE id = p_app_id
-  LIMIT 1;
-
-  IF NOT FOUND OR COALESCE(v_app.is_active, true) = false THEN
-    RAISE EXCEPTION 'Aplikacja jest niedostępna'
-      USING ERRCODE = 'P0002';
-  END IF;
-
-  IF COALESCE(v_app.is_free, false) THEN
-    RAISE EXCEPTION 'Moduł bezpłatny nie wymaga planu'
-      USING ERRCODE = 'P0001';
-  END IF;
-
-  SELECT * INTO v_plan
-  FROM public.pricing_plans
-  WHERE id = p_plan_id
-    AND app_id = p_app_id
-    AND is_active = true
-  LIMIT 1;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Wybrany plan jest niedostępny'
-      USING ERRCODE = 'P0002';
-  END IF;
-
-  SELECT * INTO v_existing
-  FROM public.org_subscriptions
-  WHERE org_id = p_org_id
-    AND app_id = p_app_id
-  FOR UPDATE;
-
-  v_has_row := FOUND;
-  v_existing_active := v_has_row
-    AND lower(trim(COALESCE(v_existing.status, ''))) = 'active'
-    AND (v_existing.expires_at IS NULL OR v_existing.expires_at > now());
-
-  IF v_existing_active AND v_existing.plan_id IS NOT NULL THEN
-    IF v_existing.plan_id = p_plan_id THEN
-      RAISE EXCEPTION 'Ten plan jest już aktywny'
-        USING ERRCODE = 'P0001';
-    END IF;
-
-    SELECT * INTO v_current_plan
-    FROM public.pricing_plans
-    WHERE id = v_existing.plan_id
-    LIMIT 1;
-
-    IF FOUND AND COALESCE(v_plan.price_monthly, 0) <= COALESCE(v_current_plan.price_monthly, 0) THEN
-      RAISE EXCEPTION 'Możesz aktywować tylko droższy plan niż aktualny'
-        USING ERRCODE = 'P0001';
-    END IF;
-  END IF;
-
-  IF v_interval = 'yearly' THEN
-    v_expires := now() + interval '1 year';
-  ELSE
-    v_expires := now() + interval '30 days';
-  END IF;
-
-  IF v_has_row THEN
-    UPDATE public.org_subscriptions
-    SET
-      status = 'active',
-      plan_id = p_plan_id,
-      billing_interval = v_interval,
-      expires_at = v_expires,
-      cancelled_at = NULL
-    WHERE id = v_existing.id
-    RETURNING * INTO v_row;
-  ELSE
-    INSERT INTO public.org_subscriptions (
-      org_id,
-      app_id,
-      status,
-      plan_id,
-      billing_interval,
-      expires_at,
-      cancelled_at
-    )
-    VALUES (
-      p_org_id,
-      p_app_id,
-      'active',
-      p_plan_id,
-      v_interval,
-      v_expires,
-      NULL
-    )
-    RETURNING * INTO v_row;
-  END IF;
-
-  RETURN v_row;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.actor_can_see_open_marketplace(p_is_broadcast boolean, p_scope issue_marketplace_scope, p_location_id uuid, p_claimed_by uuid, p_assigned uuid, p_status issue_status_enum)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT p_is_broadcast IS TRUE
-    AND p_scope IS NOT NULL
-    AND p_claimed_by IS NULL
-    AND p_assigned IS NULL
-    AND p_status = 'open'
-    AND public.current_org_has_serwis_access()
-    AND (
-      p_scope = 'all'
-      OR (
-        p_scope = 'serving'
-        AND public.org_serves_issue_location(
-          (SELECT public.get_my_org_id_safe()),
-          p_location_id
-        )
-      )
-    );
-$function$;
-CREATE OR REPLACE FUNCTION public.adjust_property_issue_billing(p_issue_id uuid, p_labor_hours numeric, p_labor_cost numeric, p_materials jsonb, p_surcharge_kind text, p_surcharge_amount numeric, p_invoice_amount numeric)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_issue public.property_issues%ROWTYPE;
-  v_hours numeric;
-  v_kind text;
-  v_surcharge numeric;
-  v_materials jsonb;
-  v_material_total numeric;
-  v_labor numeric;
-  v_invoice numeric;
-BEGIN
-  IF auth.uid() IS NULL THEN
-    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
-  END IF;
-
-  SELECT * INTO v_issue
-  FROM public.property_issues
-  WHERE id = p_issue_id
-  FOR UPDATE;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'ISSUE_NOT_FOUND';
-  END IF;
-
-  IF NOT public.is_serwis_dispatcher_or_owner(v_issue.org_id) THEN
-    RAISE EXCEPTION 'ISSUE_BILLING_FORBIDDEN';
-  END IF;
-
-  IF v_issue.status IS DISTINCT FROM 'resolved' THEN
-    RAISE EXCEPTION 'ISSUE_NOT_FOUND';
-  END IF;
-
-  IF v_issue.is_invoiced IS TRUE THEN
-    RAISE EXCEPTION 'ISSUE_BILLING_LOCKED';
-  END IF;
-
-  IF p_surcharge_kind IS NOT NULL AND p_surcharge_kind NOT IN ('on_call', 'urgent') THEN
-    RAISE EXCEPTION 'ISSUE_BILLING_INVALID_SURCHARGE';
-  END IF;
-
-  v_hours := public.ceil_started_hours(p_labor_hours);
-  v_kind := p_surcharge_kind;
-  v_surcharge := ROUND(COALESCE(p_surcharge_amount, 0), 2);
-  IF v_surcharge < 0 OR COALESCE(p_labor_cost, 0) < 0 OR COALESCE(p_invoice_amount, 0) < 0 THEN
-    RAISE EXCEPTION 'ISSUE_BILLING_INVALID_AMOUNT';
-  END IF;
-
-  v_materials := CASE WHEN jsonb_typeof(p_materials) = 'array' THEN p_materials ELSE '[]'::jsonb END;
-  v_material_total := public.materials_used_total(v_materials);
-  v_labor := ROUND(COALESCE(p_labor_cost, 0), 2);
-  v_invoice := COALESCE(
-    CASE WHEN p_invoice_amount IS NULL THEN NULL ELSE ROUND(p_invoice_amount, 2) END,
-    public.suggested_invoice_amount(v_material_total, v_labor, v_surcharge)
-  );
-
-  UPDATE public.property_issues
-  SET
-    labor_hours = v_hours,
-    labor_cost = v_labor,
-    materials_used = v_materials,
-    total_material_cost = v_material_total,
-    surcharge_kind = v_kind,
-    surcharge_amount = v_surcharge
-  WHERE id = p_issue_id;
-
-  INSERT INTO public.property_issue_billing (
-    issue_id,
-    org_id,
-    invoice_amount,
-    original,
-    captured_at,
-    captured_by,
-    adjusted_at,
-    adjusted_by
-  )
-  VALUES (
-    p_issue_id,
-    v_issue.org_id,
-    v_invoice,
-    jsonb_build_object(
-      'labor_hours', v_issue.labor_hours,
-      'labor_cost', v_issue.labor_cost,
-      'hourly_rate_applied', v_issue.hourly_rate_applied,
-      'materials_used', COALESCE(v_issue.materials_used, '[]'::jsonb),
-      'total_material_cost', COALESCE(v_issue.total_material_cost, 0),
-      'surcharge_amount', v_issue.surcharge_amount,
-      'surcharge_kind', v_issue.surcharge_kind,
-      'invoice_amount', v_invoice
-    ),
-    now(),
-    auth.uid(),
-    now(),
-    auth.uid()
-  )
-  ON CONFLICT (issue_id) DO UPDATE
-    SET invoice_amount = EXCLUDED.invoice_amount,
-        adjusted_at = now(),
-        adjusted_by = auth.uid();
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.application_matches_module_slug(p_name text, p_domain_url text, p_api_url text, p_slug text)
  RETURNS boolean
  LANGUAGE sql
@@ -8526,154 +7356,6 @@ AS $function$
       )
     ) AS blob
   ) v;
-$function$;
-CREATE OR REPLACE FUNCTION public.apply_legal_entity_gus_data(p_legal_entity_id uuid, p_gus jsonb)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_row public.legal_entities%ROWTYPE;
-  v_regon text;
-  v_krs text;
-  v_legal_name text;
-  v_city text;
-  v_postal text;
-  v_street text;
-  v_building text;
-  v_apt text;
-  v_voiv text;
-  v_county text;
-  v_commune text;
-  v_seat text;
-BEGIN
-  IF (SELECT auth.uid()) IS NULL THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
-  END IF;
-
-  IF p_legal_entity_id IS NULL OR NOT public.user_can_verify_legal_entity(p_legal_entity_id) THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_UNVERIFIED_FORBIDDEN';
-  END IF;
-
-  IF p_gus IS NULL OR jsonb_typeof(p_gus) <> 'object' THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_GUS_PAYLOAD_REQUIRED';
-  END IF;
-
-  SELECT * INTO v_row
-  FROM public.legal_entities
-  WHERE id = p_legal_entity_id
-  FOR UPDATE;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_NOT_FOUND';
-  END IF;
-
-  IF v_row.verification_status <> 'pending_manual'::public.legal_entity_verification_status THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_ALREADY_VERIFIED';
-  END IF;
-
-  IF NULLIF(btrim(COALESCE(p_gus ->> 'endedAt', '')), '') IS NOT NULL THEN
-    RAISE EXCEPTION 'GUS_INACTIVE';
-  END IF;
-
-  v_regon := NULLIF(regexp_replace(COALESCE(p_gus ->> 'regon', ''), '[^0-9]', '', 'g'), '');
-  v_krs := NULLIF(regexp_replace(COALESCE(p_gus ->> 'krs', ''), '[^0-9]', '', 'g'), '');
-  v_legal_name := NULLIF(btrim(COALESCE(p_gus ->> 'legalName', '')), '');
-  v_city := NULLIF(btrim(COALESCE(p_gus ->> 'city', '')), '');
-  v_postal := public.normalize_pl_postal(p_gus ->> 'postalCode');
-  v_street := NULLIF(btrim(COALESCE(p_gus ->> 'street', '')), '');
-  v_building := NULLIF(btrim(COALESCE(p_gus ->> 'buildingNumber', '')), '');
-  v_apt := NULLIF(btrim(COALESCE(p_gus ->> 'apartmentNumber', '')), '');
-  v_voiv := NULLIF(btrim(COALESCE(p_gus ->> 'voivodeship', '')), '');
-  v_county := NULLIF(btrim(COALESCE(p_gus ->> 'county', '')), '');
-  v_commune := NULLIF(btrim(COALESCE(p_gus ->> 'commune', '')), '');
-
-  IF v_voiv IS NULL THEN
-    v_voiv := v_row.voivodeship;
-  END IF;
-  IF v_building IS NULL THEN
-    v_building := COALESCE(v_row.building_number, 'b.n.');
-  END IF;
-  IF v_city IS NULL THEN
-    v_city := v_row.city;
-  END IF;
-  IF v_postal IS NULL THEN
-    v_postal := v_row.postal_code;
-  END IF;
-  IF v_legal_name IS NULL THEN
-    v_legal_name := v_row.legal_name;
-  END IF;
-
-  v_seat := NULLIF(btrim(COALESCE(p_gus ->> 'seatFullAddress', '')), '');
-  IF v_seat IS NULL THEN
-    v_seat := concat_ws(
-      ', ',
-      NULLIF(concat_ws(' ', v_street, v_building, v_apt), ''),
-      NULLIF(concat_ws(' ', v_postal, v_city), '')
-    );
-  END IF;
-
-  IF v_legal_name IS NULL OR v_city IS NULL OR v_postal IS NULL THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
-  END IF;
-
-  IF v_row.kind = 'housing_cooperative'::public.legal_entity_kind
-     AND (v_krs IS NULL OR v_krs !~ '^[0-9]{10}$')
-  THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
-  END IF;
-
-  PERFORM public.legal_entity_mark_rpc_writer();
-
-  UPDATE public.legal_entities
-  SET
-    regon = v_regon,
-    krs = v_krs,
-    legal_name = v_legal_name,
-    voivodeship = v_voiv,
-    county = v_county,
-    commune = v_commune,
-    city = v_city,
-    postal_code = v_postal,
-    street = COALESCE(v_street, street),
-    building_number = v_building,
-    apartment_number = COALESCE(v_apt, apartment_number),
-    seat_full_address = v_seat,
-    gus_legal_form_code = NULLIF(btrim(COALESCE(p_gus ->> 'legalFormCode', '')), ''),
-    gus_legal_form_name = NULLIF(btrim(COALESCE(p_gus ->> 'legalFormName', '')), ''),
-    gus_fetched_at = now(),
-    gus_payload = p_gus,
-    verification_status = 'gus_verified',
-    verification_reason = NULL,
-    verification_resolved_at = now(),
-    verification_resolved_by = auth.uid()
-  WHERE id = p_legal_entity_id
-  RETURNING * INTO v_row;
-
-  UPDATE public.communities
-  SET
-    nip = v_row.nip_normalized,
-    legal_name = v_row.legal_name,
-    regon = v_row.regon_normalized,
-    updated_at = now()
-  WHERE legal_entity_id = v_row.id;
-
-  UPDATE public.companies
-  SET
-    tax_id = v_row.nip_normalized,
-    address = v_row.seat_full_address,
-    updated_at = now()
-  WHERE legal_entity_id = v_row.id;
-
-  RETURN jsonb_build_object(
-    'status', 'gus_verified',
-    'entity', public.legal_entity_public_json(v_row)
-  );
-EXCEPTION
-  WHEN unique_violation THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_REGON_TAKEN';
-END;
 $function$;
 CREATE OR REPLACE FUNCTION public.apply_vendor_email_event(p_to_address text, p_message_id text, p_from_address text, p_subject text, p_body_text text, p_parsed jsonb DEFAULT '{}'::jsonb, p_raw_payload jsonb DEFAULT '{}'::jsonb)
  RETURNS jsonb
@@ -8795,205 +7477,6 @@ BEGIN
     'status', 'applied', 'match_method', v_method, 'event_type', v_event, 'notify_partner', false);
 END;
 $function$;
-CREATE OR REPLACE FUNCTION public.approve_cleaning_extra_job(p_job_id uuid, p_pay_mode text DEFAULT NULL::text, p_employee_hourly_rate numeric DEFAULT NULL::numeric, p_client_hourly_rate numeric DEFAULT NULL::numeric, p_employee_fixed_amount numeric DEFAULT NULL::numeric, p_client_fixed_amount numeric DEFAULT NULL::numeric)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  job public.cleaning_extra_jobs%ROWTYPE;
-  v_pay_mode text;
-BEGIN
-  SELECT * INTO job FROM public.cleaning_extra_jobs WHERE id = p_job_id FOR UPDATE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Extra job not found';
-  END IF;
-  IF NOT public.is_cleaning_org_manager(job.org_id) THEN
-    RAISE EXCEPTION 'Only coordinators and owners can approve extra jobs';
-  END IF;
-
-  v_pay_mode := COALESCE(p_pay_mode, job.pay_mode, 'hourly');
-  IF v_pay_mode NOT IN ('hourly', 'fixed') THEN
-    RAISE EXCEPTION 'Invalid pay mode';
-  END IF;
-  IF v_pay_mode = 'fixed' AND COALESCE(p_employee_fixed_amount, job.employee_fixed_amount) IS NULL THEN
-    RAISE EXCEPTION 'Fixed extra jobs require an employee amount';
-  END IF;
-
-  UPDATE public.cleaning_extra_jobs
-  SET
-    pay_mode = v_pay_mode,
-    employee_hourly_rate = COALESCE(p_employee_hourly_rate, employee_hourly_rate),
-    client_hourly_rate = COALESCE(p_client_hourly_rate, client_hourly_rate),
-    employee_fixed_amount = COALESCE(p_employee_fixed_amount, employee_fixed_amount),
-    client_fixed_amount = COALESCE(p_client_fixed_amount, client_fixed_amount),
-    approval_status = 'approved',
-    approved_by = auth.uid(),
-    approved_at = now(),
-    rejection_reason = NULL
-  WHERE id = p_job_id;
-
-  PERFORM public.snapshot_extra_job_totals(p_job_id);
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.assign_next_protocol_number(p_org_id uuid, p_at timestamp with time zone)
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_year integer;
-  v_code text;
-  v_next integer;
-  v_settings public.org_serwis_billing_settings;
-BEGIN
-  IF p_org_id IS NULL THEN
-    RAISE EXCEPTION 'ISSUE_PROTOCOL_ORG_REQUIRED';
-  END IF;
-
-  v_settings := public.ensure_org_serwis_billing_settings(p_org_id);
-  v_code := v_settings.protocol_org_code;
-  v_year := EXTRACT(YEAR FROM timezone('Europe/Warsaw', COALESCE(p_at, now())))::integer;
-
-  INSERT INTO public.org_serwis_protocol_counters (org_id, year, last_number)
-  VALUES (p_org_id, v_year, 1)
-  ON CONFLICT (org_id, year) DO UPDATE
-    SET last_number = public.org_serwis_protocol_counters.last_number + 1
-  RETURNING last_number INTO v_next;
-
-  RETURN lpad(v_next::text, 4, '0') || '/' || v_year::text || '/' || v_code;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.assign_unmatched_vendor_email(p_event_id uuid, p_issue_id uuid, p_event_type text, p_vendor_external_ref text DEFAULT NULL::text)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_event public.vendor_email_inbound_events%ROWTYPE;
-  v_issue public.property_issues%ROWTYPE;
-  v_dispatch public.issue_email_dispatches%ROWTYPE;
-  v_type text := lower(btrim(COALESCE(p_event_type, '')));
-  v_ref text := NULLIF(btrim(COALESCE(p_vendor_external_ref, '')), '');
-  v_extracted jsonb;
-BEGIN
-  IF p_event_id IS NULL OR p_issue_id IS NULL THEN RAISE EXCEPTION 'Brak identyfikatora wiadomości lub zgłoszenia.'; END IF;
-  IF v_type NOT IN ('accepted', 'assigned_technician', 'completed', 'rejected') THEN RAISE EXCEPTION 'Nieobsługiwany typ zdarzenia.'; END IF;
-  SELECT * INTO v_event FROM public.vendor_email_inbound_events WHERE id = p_event_id FOR UPDATE;
-  IF v_event.id IS NULL THEN RAISE EXCEPTION 'Nie znaleziono wiadomości.'; END IF;
-  IF v_event.status NOT IN ('unmatched', 'received') THEN RAISE EXCEPTION 'Wiadomość została już obsłużona.'; END IF;
-  SELECT * INTO v_issue FROM public.property_issues WHERE id = p_issue_id;
-  IF v_issue.id IS NULL THEN RAISE EXCEPTION 'Nie znaleziono zgłoszenia.'; END IF;
-  PERFORM private.vendor_email_require_management(v_issue.org_id);
-  IF v_event.org_id IS NOT NULL AND v_event.org_id IS DISTINCT FROM v_issue.org_id THEN
-    RAISE EXCEPTION 'Wiadomość należy do innej organizacji.';
-  END IF;
-  SELECT * INTO v_dispatch FROM public.issue_email_dispatches WHERE issue_id = p_issue_id ORDER BY queued_at DESC LIMIT 1;
-  IF v_dispatch.id IS NULL THEN RAISE EXCEPTION 'To zgłoszenie nie ma wątku e-mail.'; END IF;
-  v_extracted := COALESCE(v_event.extracted, '{}'::jsonb);
-  IF v_ref IS NOT NULL THEN v_extracted := v_extracted || jsonb_build_object('vendor_ticket', v_ref); END IF;
-  PERFORM private.vendor_email_apply_matched(v_dispatch, v_type, v_extracted);
-  UPDATE public.vendor_email_inbound_events SET
-    org_id = v_dispatch.org_id, vendor_id = v_dispatch.vendor_id, issue_id = v_dispatch.issue_id,
-    dispatch_id = v_dispatch.id, matched_event_type = v_type, extracted = v_extracted,
-    match_method = 'manual', status = 'applied', error_detail = NULL
-  WHERE id = v_event.id;
-  RETURN jsonb_build_object('ok', true, 'issue_id', v_dispatch.issue_id, 'event_type', v_type);
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.attach_legal_entity_to_building(p_org_id uuid, p_cleaning_location_id uuid, p_legal_entity_id uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_loc public.cleaning_locations%ROWTYPE;
-  v_master public.locations%ROWTYPE;
-  v_owner public.legal_entities%ROWTYPE;
-  v_community_id uuid;
-  v_community_status text;
-BEGIN
-  IF (SELECT auth.uid()) IS NULL THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
-  END IF;
-
-  IF p_org_id IS NULL OR NOT public.is_org_management(p_org_id) THEN
-    RAISE EXCEPTION 'BUILDING_ENROLL_FORBIDDEN';
-  END IF;
-
-  IF p_legal_entity_id IS NULL THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_REQUIRED_FOR_ATTACH';
-  END IF;
-
-  SELECT * INTO v_loc
-  FROM public.cleaning_locations
-  WHERE id = p_cleaning_location_id
-    AND org_id = p_org_id;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'BUILDING_NOT_FOUND';
-  END IF;
-
-  SELECT c.id, c.status INTO v_community_id, v_community_status
-  FROM public.communities c
-  WHERE c.legal_entity_id = p_legal_entity_id
-    AND c.org_id = p_org_id
-  LIMIT 1;
-
-  IF v_community_status = 'inactive' THEN
-    RAISE EXCEPTION 'COMMUNITY_INACTIVE';
-  END IF;
-
-  PERFORM public.enroll_legal_entity_for_org(p_org_id, p_legal_entity_id, false, false, false);
-
-  IF v_loc.location_master_id IS NULL THEN
-    RAISE EXCEPTION 'BUILDING_MASTER_MISSING';
-  END IF;
-
-  SELECT * INTO v_master
-  FROM public.locations
-  WHERE id = v_loc.location_master_id;
-
-  IF v_master.legal_entity_id IS NOT NULL
-     AND v_master.legal_entity_id IS DISTINCT FROM p_legal_entity_id THEN
-    SELECT * INTO v_owner FROM public.legal_entities WHERE id = v_master.legal_entity_id;
-    RAISE EXCEPTION 'ADDRESS_OWNED_BY_OTHER_ENTITY'
-      USING DETAIL = jsonb_build_object(
-        'ownerNip', v_owner.nip_normalized,
-        'ownerName', v_owner.short_name
-      )::text;
-  END IF;
-
-  IF v_master.legal_entity_id IS NULL THEN
-    UPDATE public.locations
-    SET legal_entity_id = p_legal_entity_id
-    WHERE id = v_master.id
-    RETURNING * INTO v_master;
-  END IF;
-
-  SELECT c.id INTO v_community_id
-  FROM public.communities c
-  WHERE c.legal_entity_id = p_legal_entity_id
-    AND c.org_id = p_org_id
-  LIMIT 1;
-
-  UPDATE public.cleaning_locations
-  SET community_id = COALESCE(community_id, v_community_id)
-  WHERE id = v_loc.id
-  RETURNING * INTO v_loc;
-
-  RETURN jsonb_build_object(
-    'status', 'attached',
-    'cleaningLocationId', v_loc.id,
-    'locationMasterId', v_master.id,
-    'legalEntityId', v_master.legal_entity_id
-  );
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.authorize_property_issue_transfer(p_issue_id uuid)
  RETURNS void
  LANGUAGE plpgsql
@@ -9019,15 +7502,6 @@ AS $function$
     p_user_id, p_source, p_email, p_ip_address, p_user_agent, p_document_ids
   );
 $function$;
-CREATE OR REPLACE FUNCTION public.broadcast_property_issue(p_issue_id uuid)
- RETURNS void
- LANGUAGE plpgsql
- SET search_path TO 'public'
-AS $function$
-BEGIN
-  PERFORM public.broadcast_property_issue(p_issue_id, 'serving'::public.issue_marketplace_scope);
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.broadcast_property_issue(p_issue_id uuid, p_scope issue_marketplace_scope)
  RETURNS void
  LANGUAGE plpgsql
@@ -9052,60 +7526,13 @@ BEGIN
   END IF;
 END;
 $function$;
-CREATE OR REPLACE FUNCTION public.can_access_equipment_protocol_object(p_object_name text, p_write boolean DEFAULT false)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'private', 'public'
-AS $function$
-  SELECT private.can_access_equipment_protocol_object(p_object_name, p_write);
-$function$;
-CREATE OR REPLACE FUNCTION public.can_access_resident_order_photo(p_name text, p_write boolean)
- RETURNS boolean
+CREATE OR REPLACE FUNCTION public.broadcast_property_issue(p_issue_id uuid)
+ RETURNS void
  LANGUAGE plpgsql
- STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-DECLARE
-  v_org uuid;
-  v_order uuid;
-  v_status text;
 BEGIN
-  BEGIN
-    v_org := NULLIF(split_part(p_name, '/', 1), '')::uuid;
-    v_order := NULLIF(split_part(p_name, '/', 2), '')::uuid;
-  EXCEPTION WHEN invalid_text_representation THEN
-    RETURN false;
-  END;
-
-  IF v_org IS NULL OR v_order IS NULL THEN
-    RETURN false;
-  END IF;
-
-  SELECT o.status INTO v_status
-  FROM public.resident_orders o
-  WHERE o.id = v_order
-    AND o.org_id = v_org;
-
-  IF v_status IS NULL THEN
-    RETURN false;
-  END IF;
-
-  IF p_write THEN
-    RETURN
-      public.can_handover_resident_orders(v_org)
-      AND v_status = 'stock_delivery';
-  END IF;
-
-  RETURN
-    public.can_manage_resident_orders(v_org)
-    OR public.can_handover_resident_orders(v_org)
-    OR EXISTS (
-      SELECT 1
-      FROM public.resident_orders o
-      WHERE o.id = v_order
-        AND o.resident_user_id = (SELECT auth.uid())
-    );
+  PERFORM public.broadcast_property_issue(p_issue_id, 'serving'::public.issue_marketplace_scope);
 END;
 $function$;
 CREATE OR REPLACE FUNCTION public.can_access_vehicle_doc(object_name text, need_write boolean)
@@ -9156,24 +7583,6 @@ BEGIN
      );
 END;
 $function$;
-CREATE OR REPLACE FUNCTION public.can_handover_resident_orders(p_org_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT
-    public.can_manage_resident_orders(p_org_id)
-    OR public.is_serwis_technician_role(p_org_id);
-$function$;
-CREATE OR REPLACE FUNCTION public.can_manage_inspection_org(p_org_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT public.is_serwis_dispatcher_or_owner(p_org_id);
-$function$;
 CREATE OR REPLACE FUNCTION public.can_manage_location(target_location_id uuid)
  RETURNS boolean
  LANGUAGE plpgsql
@@ -9197,57 +7606,6 @@ BEGIN
     AND role ILIKE ANY (ARRAY['owner', 'manager', 'admin', 'coordinator'])
   );
 END;
-$function$;
-CREATE OR REPLACE FUNCTION public.can_manage_resident_orders(p_org_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT public.is_org_management(p_org_id) OR public.is_management_role(p_org_id);
-$function$;
-CREATE OR REPLACE FUNCTION public.can_manage_serwis_duty(target_org_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT public.is_org_management(target_org_id)
-    OR public.is_management_role(target_org_id);
-$function$;
-CREATE OR REPLACE FUNCTION public.can_read_community_board_row(p_location_id uuid, p_estate_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT
-    public.has_active_location_access(p_location_id)
-    OR (p_estate_id IS NOT NULL AND public.has_estate_social_access(p_estate_id));
-$function$;
-CREATE OR REPLACE FUNCTION public.can_read_legal_acceptance_object(p_name text)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'private', 'public', 'pg_catalog'
-AS $function$
-  SELECT private.can_read_legal_acceptance_object(p_name);
-$function$;
-CREATE OR REPLACE FUNCTION public.can_staff_access_inspection_campaign(p_campaign_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.inspection_campaigns c
-    WHERE c.id = p_campaign_id
-      AND (
-        public.is_serwis_dispatcher_or_owner(c.org_id)
-        OR public.is_inspection_campaign_assignee(c.id)
-      )
-  );
 $function$;
 CREATE OR REPLACE FUNCTION public.can_view_org_financials(target_org_id uuid)
  RETURNS boolean
@@ -9278,57 +7636,6 @@ AS $function$
       )
   );
 $function$;
-CREATE OR REPLACE FUNCTION public.cancel_equipment_protocol(p_protocol_id uuid)
- RETURNS equipment_protocols
- LANGUAGE sql
- SECURITY DEFINER
- SET search_path TO 'private', 'public'
-AS $function$
-  SELECT * FROM private.cancel_equipment_protocol(p_protocol_id);
-$function$;
-CREATE OR REPLACE FUNCTION public.cancel_org_subscription(p_org_id uuid, p_app_id uuid)
- RETURNS org_subscriptions
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_existing public.org_subscriptions%ROWTYPE;
-  v_row public.org_subscriptions%ROWTYPE;
-BEGIN
-  IF auth.uid() IS NULL THEN
-    RAISE EXCEPTION 'Wymagane logowanie'
-      USING ERRCODE = '42501';
-  END IF;
-
-  IF NOT (public.is_platform_admin() OR public.is_management_role(p_org_id)) THEN
-    RAISE EXCEPTION 'Brak uprawnień do zarządzania planem organizacji'
-      USING ERRCODE = '42501';
-  END IF;
-
-  SELECT * INTO v_existing
-  FROM public.org_subscriptions
-  WHERE org_id = p_org_id
-    AND app_id = p_app_id
-  FOR UPDATE;
-
-  IF NOT FOUND
-     OR lower(trim(COALESCE(v_existing.status, ''))) <> 'active'
-     OR (v_existing.expires_at IS NOT NULL AND v_existing.expires_at <= now()) THEN
-    RAISE EXCEPTION 'Brak aktywnej subskrypcji do rezygnacji'
-      USING ERRCODE = 'P0002';
-  END IF;
-
-  UPDATE public.org_subscriptions
-  SET
-    status = 'cancelled',
-    cancelled_at = now()
-  WHERE id = v_existing.id
-  RETURNING * INTO v_row;
-
-  RETURN v_row;
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.cancel_property_issue(p_issue_id uuid, p_reason text)
  RETURNS void
  LANGUAGE plpgsql
@@ -9349,67 +7656,6 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'ISSUE_NOT_FOUND';
   END IF;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.cancel_succession(p_acting_org_id uuid, p_succession_id uuid)
- RETURNS succession_events
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ BEGIN RETURN private.cancel_succession(p_acting_org_id, p_succession_id); END; $function$;
-CREATE OR REPLACE FUNCTION public.capture_property_issue_billing()
- RETURNS trigger
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_invoice numeric;
-BEGIN
-  IF NEW.status IS DISTINCT FROM 'resolved' THEN
-    RETURN NEW;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM public.property_issue_billing b WHERE b.issue_id = NEW.id
-  ) THEN
-    RETURN NEW;
-  END IF;
-
-  v_invoice := public.suggested_invoice_amount(
-    NEW.total_material_cost,
-    NEW.labor_cost,
-    NEW.surcharge_amount
-  );
-
-  INSERT INTO public.property_issue_billing (
-    issue_id,
-    org_id,
-    invoice_amount,
-    original,
-    captured_at,
-    captured_by
-  )
-  VALUES (
-    NEW.id,
-    NEW.org_id,
-    v_invoice,
-    jsonb_build_object(
-      'labor_hours', NEW.labor_hours,
-      'labor_cost', NEW.labor_cost,
-      'hourly_rate_applied', NEW.hourly_rate_applied,
-      'materials_used', COALESCE(NEW.materials_used, '[]'::jsonb),
-      'total_material_cost', COALESCE(NEW.total_material_cost, 0),
-      'surcharge_amount', NEW.surcharge_amount,
-      'surcharge_kind', NEW.surcharge_kind,
-      'invoice_amount', v_invoice
-    ),
-    now(),
-    auth.uid()
-  )
-  ON CONFLICT (issue_id) DO NOTHING;
-
-  RETURN NEW;
 END;
 $function$;
 CREATE OR REPLACE FUNCTION public.ceil_started_hours(p_hours numeric)
@@ -9656,101 +7902,6 @@ BEGIN
   RETURN v_items;
 END;
 $function$;
-CREATE OR REPLACE FUNCTION public.claim_marketplace_property_issue(p_issue_id uuid, p_assigned_staff_id uuid DEFAULT NULL::uuid)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_actor uuid := auth.uid();
-  v_org uuid;
-  v_issue public.property_issues%ROWTYPE;
-  v_updated integer;
-BEGIN
-  IF v_actor IS NULL THEN
-    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
-  END IF;
-
-  v_org := public.get_my_org_id_safe();
-  IF v_org IS NULL THEN
-    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
-  END IF;
-
-  SELECT * INTO v_issue
-  FROM public.property_issues
-  WHERE id = p_issue_id
-  FOR UPDATE;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'ISSUE_NOT_FOUND';
-  END IF;
-
-  IF v_issue.claimed_by_org_id IS NOT NULL
-     AND v_issue.claimed_by_org_id IS DISTINCT FROM v_org THEN
-    RAISE EXCEPTION 'ISSUE_MARKETPLACE_ALREADY_CLAIMED';
-  END IF;
-
-  IF v_issue.assigned_staff_id IS NOT NULL
-     AND v_issue.claimed_by_org_id IS DISTINCT FROM v_org
-     AND v_issue.org_id IS DISTINCT FROM v_org THEN
-    RAISE EXCEPTION 'ISSUE_MARKETPLACE_ALREADY_CLAIMED';
-  END IF;
-
-  IF v_issue.claimed_by_org_id IS NULL THEN
-    IF v_issue.org_id IS DISTINCT FROM v_org THEN
-      IF NOT public.actor_can_see_open_marketplace(
-        v_issue.is_public_broadcast,
-        v_issue.marketplace_scope,
-        v_issue.location_id,
-        v_issue.claimed_by_org_id,
-        v_issue.assigned_staff_id,
-        v_issue.status
-      ) THEN
-        RAISE EXCEPTION 'ISSUE_MARKETPLACE_FORBIDDEN';
-      END IF;
-    ELSIF NOT public.current_org_has_serwis_access() THEN
-      RAISE EXCEPTION 'ISSUE_MARKETPLACE_FORBIDDEN';
-    END IF;
-  ELSIF NOT (
-    public.is_serwis_dispatcher_or_owner(v_org)
-    OR public.is_management_role(v_org)
-    OR (p_assigned_staff_id IS NOT DISTINCT FROM v_actor)
-  ) THEN
-    RAISE EXCEPTION 'ISSUE_MARKETPLACE_FORBIDDEN';
-  END IF;
-
-  IF p_assigned_staff_id IS NOT NULL
-     AND NOT EXISTS (
-       SELECT 1
-       FROM public.memberships m
-       WHERE m.org_id = v_org
-         AND m.user_id = p_assigned_staff_id
-         AND COALESCE(m.is_active, true) = true
-     ) THEN
-    RAISE EXCEPTION 'ISSUE_MARKETPLACE_FORBIDDEN';
-  END IF;
-
-  UPDATE public.property_issues
-  SET
-    claimed_by_org_id = v_org,
-    assigned_staff_id = COALESCE(p_assigned_staff_id, assigned_staff_id),
-    is_public_broadcast = false,
-    marketplace_scope = NULL,
-    status = CASE WHEN status = 'open' THEN status ELSE 'open' END
-  WHERE id = p_issue_id
-    AND (claimed_by_org_id IS NULL OR claimed_by_org_id = v_org)
-    AND (
-      assigned_staff_id IS NULL
-      OR assigned_staff_id IS NOT DISTINCT FROM COALESCE(p_assigned_staff_id, assigned_staff_id)
-    );
-
-  GET DIAGNOSTICS v_updated = ROW_COUNT;
-  IF v_updated = 0 THEN
-    RAISE EXCEPTION 'ISSUE_MARKETPLACE_ALREADY_CLAIMED';
-  END IF;
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.cleaner_assigned_to_issue_location(p_location_id uuid)
  RETURNS boolean
  LANGUAGE sql
@@ -9793,111 +7944,6 @@ BEGIN
   RETURN closed_count;
 END;
 $function$;
-CREATE OR REPLACE FUNCTION public.complete_cleaning_extra_job(p_job_id uuid, p_work_report text, p_ended_at timestamp with time zone DEFAULT now())
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  job public.cleaning_extra_jobs%ROWTYPE;
-  v_report text := btrim(COALESCE(p_work_report, ''));
-  v_started timestamptz;
-  v_minutes integer;
-  v_photo_count integer;
-BEGIN
-  SELECT * INTO job FROM public.cleaning_extra_jobs WHERE id = p_job_id FOR UPDATE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Extra job not found';
-  END IF;
-  IF job.assigned_staff_id IS DISTINCT FROM auth.uid()
-     AND NOT public.is_cleaning_org_manager(job.org_id) THEN
-    RAISE EXCEPTION 'Not allowed to complete this extra job';
-  END IF;
-  IF job.approval_status = 'rejected' THEN
-    RAISE EXCEPTION 'Rejected extra jobs cannot be completed';
-  END IF;
-  IF v_report = '' THEN
-    RAISE EXCEPTION 'Work report is required';
-  END IF;
-
-  SELECT COUNT(*) INTO v_photo_count
-  FROM public.cleaning_extra_job_photos
-  WHERE extra_job_id = p_job_id;
-
-  IF job.requires_photo AND v_photo_count < 1 THEN
-    RAISE EXCEPTION 'At least one photo is required';
-  END IF;
-
-  SELECT started_at INTO v_started FROM public.cleaning_tasks WHERE id = job.task_id;
-  IF v_started IS NULL THEN
-    RAISE EXCEPTION 'Extra job has not been started';
-  END IF;
-
-  v_minutes := GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (COALESCE(p_ended_at, now()) - v_started)) / 60)::integer);
-
-  UPDATE public.cleaning_extra_jobs
-  SET work_report = v_report, duration_minutes = v_minutes
-  WHERE id = p_job_id;
-
-  UPDATE public.cleaning_tasks
-  SET status = 'done', completed_at = COALESCE(p_ended_at, now()), actual_performer_id = COALESCE(job.assigned_staff_id, auth.uid())
-  WHERE id = job.task_id;
-
-  UPDATE public.cleaning_work_sessions
-  SET status = 'closed', close_reason = 'manual', ended_at = COALESCE(p_ended_at, now())
-  WHERE task_id = job.task_id AND status = 'open' AND session_kind = 'extra_paid';
-
-  PERFORM public.snapshot_extra_job_totals(p_job_id);
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.complete_resident_order_handover(p_order_id uuid, p_photo_urls text[] DEFAULT '{}'::text[])
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_actor uuid;
-  v_order public.resident_orders%ROWTYPE;
-BEGIN
-  v_actor := private.resident_order_require_actor();
-
-  SELECT * INTO v_order FROM public.resident_orders WHERE id = p_order_id FOR UPDATE;
-  IF v_order.id IS NULL THEN
-    RAISE EXCEPTION 'Nie znaleziono zamówienia.';
-  END IF;
-
-  IF NOT public.can_handover_resident_orders(v_order.org_id) THEN
-    RAISE EXCEPTION 'Brak uprawnień do potwierdzenia przekazania.';
-  END IF;
-
-  IF v_order.status IS DISTINCT FROM 'stock_delivery' THEN
-    RAISE EXCEPTION 'To zamówienie nie czeka na przekazanie.';
-  END IF;
-
-  UPDATE public.resident_orders
-  SET
-    status = 'delivered',
-    handed_over_at = now(),
-    handed_over_by = v_actor,
-    handover_photo_urls = COALESCE(p_photo_urls, '{}'::text[])
-  WHERE id = p_order_id;
-
-  PERFORM private.resident_order_append_event(
-    p_order_id,
-    v_actor,
-    'handover_completed',
-    jsonb_build_object('photo_urls', to_jsonb(COALESCE(p_photo_urls, '{}'::text[])))
-  );
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.complete_succession(p_acting_org_id uuid, p_succession_id uuid)
- RETURNS succession_events
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ BEGIN RETURN private.complete_succession(p_acting_org_id, p_succession_id); END; $function$;
 CREATE OR REPLACE FUNCTION public.complete_task(p_task_id uuid, p_photo_urls text[], p_notes text)
  RETURNS void
  LANGUAGE plpgsql
@@ -9916,458 +7962,6 @@ BEGIN
     WHERE id = p_task_id AND assigned_staff_id = auth.uid();
 END;
 $function$;
-CREATE OR REPLACE FUNCTION public.count_org_verification_alerts(p_org_id uuid)
- RETURNS integer
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_count integer;
-BEGIN
-  IF (SELECT auth.uid()) IS NULL THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
-  END IF;
-
-  IF p_org_id IS NULL
-     OR (
-       NOT public.is_org_management(p_org_id)
-       AND NOT public.is_platform_admin()
-     )
-  THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_UNVERIFIED_FORBIDDEN';
-  END IF;
-
-  SELECT count(*)::integer
-  INTO v_count
-  FROM public.legal_entities le
-  INNER JOIN public.org_legal_entity_enrollments e
-    ON e.legal_entity_id = le.id
-   AND e.org_id = p_org_id
-   AND e.status = 'active'
-  WHERE le.verification_status = 'pending_manual'::public.legal_entity_verification_status;
-
-  RETURN COALESCE(v_count, 0);
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.count_platform_verification_alerts()
- RETURNS integer
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_count integer;
-BEGIN
-  IF (SELECT auth.uid()) IS NULL THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
-  END IF;
-
-  IF NOT public.is_platform_admin() THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_VERIFY_PLATFORM_ONLY';
-  END IF;
-
-  SELECT count(*)::integer
-  INTO v_count
-  FROM public.legal_entities
-  WHERE verification_status = 'pending_manual'::public.legal_entity_verification_status;
-
-  RETURN COALESCE(v_count, 0);
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.create_cleaning_extra_job(p_org_id uuid, p_location_id uuid, p_assigned_staff_id uuid, p_title text, p_instructions text DEFAULT NULL::text, p_requires_photo boolean DEFAULT false, p_gps_required boolean DEFAULT true, p_qr_required boolean DEFAULT false, p_biometric_required boolean DEFAULT false, p_pay_mode text DEFAULT 'hourly'::text, p_employee_hourly_rate numeric DEFAULT NULL::numeric, p_client_hourly_rate numeric DEFAULT NULL::numeric, p_employee_fixed_amount numeric DEFAULT NULL::numeric, p_client_fixed_amount numeric DEFAULT NULL::numeric)
- RETURNS uuid
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_task_id uuid;
-  v_job_id uuid;
-  v_title text := btrim(p_title);
-BEGIN
-  IF NOT public.is_cleaning_org_manager(p_org_id) THEN
-    RAISE EXCEPTION 'Only coordinators and owners can create extra jobs';
-  END IF;
-  IF v_title IS NULL OR char_length(v_title) < 1 THEN
-    RAISE EXCEPTION 'Title is required';
-  END IF;
-  IF p_pay_mode NOT IN ('hourly', 'fixed') THEN
-    RAISE EXCEPTION 'Invalid pay mode';
-  END IF;
-  IF p_pay_mode = 'fixed' AND p_employee_fixed_amount IS NULL THEN
-    RAISE EXCEPTION 'Fixed extra jobs require an employee amount';
-  END IF;
-
-  INSERT INTO public.cleaning_tasks (
-    org_id, location_id, assigned_staff_id, status, task_type, scheduled_at, coordinator_notes, section_id
-  )
-  VALUES (
-    p_org_id, p_location_id, p_assigned_staff_id, 'pending', 'extra_paid', now(), v_title, NULL
-  )
-  RETURNING id INTO v_task_id;
-
-  INSERT INTO public.cleaning_extra_jobs (
-    org_id, task_id, location_id, assigned_staff_id, created_by, origin, title, instructions,
-    requires_photo, gps_required, qr_required, biometric_required, pay_mode,
-    employee_hourly_rate, client_hourly_rate, employee_fixed_amount, client_fixed_amount,
-    approval_status, approved_by, approved_at
-  )
-  VALUES (
-    p_org_id, v_task_id, p_location_id, p_assigned_staff_id, auth.uid(), 'coordinator', v_title,
-    NULLIF(btrim(COALESCE(p_instructions, '')), ''),
-    COALESCE(p_requires_photo, false), COALESCE(p_gps_required, true), COALESCE(p_qr_required, false),
-    COALESCE(p_biometric_required, false), p_pay_mode, p_employee_hourly_rate, p_client_hourly_rate,
-    p_employee_fixed_amount, p_client_fixed_amount, 'approved', auth.uid(), now()
-  )
-  RETURNING id INTO v_job_id;
-
-  RETURN v_job_id;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.create_emergency_issue(p_location_id uuid, p_category text, p_description text, p_photos_before text[] DEFAULT NULL::text[])
- RETURNS jsonb
- LANGUAGE plpgsql
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_org uuid;
-  v_community uuid;
-  v_vendor uuid;
-  v_issue uuid;
-  v_desc text := btrim(COALESCE(p_description, ''));
-  v_cat text := btrim(COALESCE(p_category, ''));
-BEGIN
-  IF (SELECT auth.uid()) IS NULL THEN RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED'; END IF;
-  IF p_location_id IS NULL OR length(v_cat) = 0 OR length(v_desc) < 10 THEN
-    RAISE EXCEPTION 'EMERGENCY_ISSUE_INVALID';
-  END IF;
-
-  v_org := public.get_my_org_id_safe();
-  IF v_org IS NULL OR NOT public.can_manage_serwis_duty(v_org) THEN
-    RAISE EXCEPTION 'EMERGENCY_MANAGE_FORBIDDEN';
-  END IF;
-
-  SELECT cl.community_id INTO v_community
-  FROM public.cleaning_locations cl
-  WHERE cl.id = p_location_id AND cl.org_id = v_org;
-
-  IF v_community IS NULL THEN RAISE EXCEPTION 'EMERGENCY_LOCATION_FORBIDDEN'; END IF;
-
-  v_vendor := public.resolve_emergency_vendor(v_community, p_location_id, v_cat);
-
-  INSERT INTO public.property_issues (
-    org_id, location_id, category, description, priority, status, source,
-    reporter_type, reporter_id, photos_before,
-    immediate_fulfillment, emergency_mode, emergency_vendor_id, delegated_vendor_id
-  ) VALUES (
-    v_org, p_location_id, v_cat, v_desc, 'critical', 'delegated', 'admin_ui',
-    'admin', (SELECT auth.uid()), p_photos_before, true, true, v_vendor, v_vendor
-  )
-  RETURNING id INTO v_issue;
-
-  RETURN jsonb_build_object('issue_id', v_issue, 'vendor_id', v_vendor);
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.create_estate(p_name text, p_community_id uuid)
- RETURNS uuid
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_org uuid := private.estate_require_community_management(p_community_id);
-  v_actor uuid := (SELECT auth.uid());
-  v_estate uuid;
-  v_name text := btrim(COALESCE(p_name, ''));
-BEGIN
-  IF length(v_name) < 2 THEN
-    RAISE EXCEPTION 'Podaj nazwę osiedla (min. 2 znaki).';
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM public.estate_members em
-    WHERE em.community_id = p_community_id
-      AND em.status IN ('invited', 'accepted')
-  ) THEN
-    RAISE EXCEPTION 'Ta wspólnota ma już zaproszenie lub należy do osiedla.';
-  END IF;
-
-  INSERT INTO public.estates (name, created_by_org_id, created_by_user_id, status)
-  VALUES (v_name, v_org, v_actor, 'active')
-  RETURNING id INTO v_estate;
-
-  INSERT INTO public.estate_members (
-    estate_id, community_id, org_id, status, invited_by_org_id, consented_at, consented_by
-  )
-  VALUES (
-    v_estate, p_community_id, v_org, 'accepted', v_org, now(), v_actor
-  );
-
-  RETURN v_estate;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.create_legal_entity_from_gus(p_org_id uuid, p_kind legal_entity_kind, p_gus jsonb, p_email text, p_phone text, p_short_name text, p_is_cleaning boolean DEFAULT false, p_is_maintenance boolean DEFAULT false, p_is_admin boolean DEFAULT false)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_nip text;
-  v_regon text;
-  v_krs text;
-  v_legal_name text;
-  v_short text;
-  v_city text;
-  v_postal text;
-  v_street text;
-  v_building text;
-  v_apt text;
-  v_voiv text;
-  v_county text;
-  v_commune text;
-  v_seat text;
-  v_email text;
-  v_phone text;
-  v_row public.legal_entities%ROWTYPE;
-  v_existing uuid;
-BEGIN
-  IF (SELECT auth.uid()) IS NULL THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
-  END IF;
-  IF p_org_id IS NULL OR NOT public.is_org_management(p_org_id) THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_CREATE_FORBIDDEN';
-  END IF;
-  IF p_gus IS NULL OR jsonb_typeof(p_gus) <> 'object' THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_GUS_PAYLOAD_REQUIRED';
-  END IF;
-
-  v_nip := regexp_replace(COALESCE(p_gus ->> 'nip', ''), '[^0-9]', '', 'g');
-  v_regon := regexp_replace(COALESCE(p_gus ->> 'regon', ''), '[^0-9]', '', 'g');
-  v_krs := NULLIF(regexp_replace(COALESCE(p_gus ->> 'krs', ''), '[^0-9]', '', 'g'), '');
-  v_legal_name := NULLIF(btrim(COALESCE(p_gus ->> 'legalName', '')), '');
-  v_short := NULLIF(btrim(COALESCE(p_short_name, '')), '');
-  v_city := NULLIF(btrim(COALESCE(p_gus ->> 'city', '')), '');
-  v_postal := public.normalize_pl_postal(p_gus ->> 'postalCode');
-  v_street := NULLIF(btrim(COALESCE(p_gus ->> 'street', '')), '');
-  v_building := NULLIF(btrim(COALESCE(p_gus ->> 'buildingNumber', '')), '');
-  v_apt := NULLIF(btrim(COALESCE(p_gus ->> 'apartmentNumber', '')), '');
-  v_voiv := COALESCE(NULLIF(btrim(COALESCE(p_gus ->> 'voivodeship', '')), ''), 'nieustalone');
-  v_county := NULLIF(btrim(COALESCE(p_gus ->> 'county', '')), '');
-  v_commune := NULLIF(btrim(COALESCE(p_gus ->> 'commune', '')), '');
-  v_email := NULLIF(btrim(COALESCE(p_email, '')), '');
-  v_phone := NULLIF(btrim(COALESCE(p_phone, '')), '');
-  IF v_short IS NULL THEN v_short := left(COALESCE(v_legal_name, ''), 80); END IF;
-  IF v_building IS NULL THEN v_building := 'b.n.'; END IF;
-  v_seat := NULLIF(btrim(COALESCE(p_gus ->> 'seatFullAddress', '')), '');
-  IF v_seat IS NULL THEN
-    v_seat := concat_ws(', ',
-      NULLIF(concat_ws(' ', v_street, v_building, v_apt), ''),
-      NULLIF(concat_ws(' ', v_postal, v_city), ''));
-  END IF;
-
-  IF NOT public.nip_checksum_ok(v_nip)
-     OR v_legal_name IS NULL OR v_city IS NULL OR v_postal IS NULL THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
-  END IF;
-
-  IF v_email IS NOT NULL
-     AND v_email !~* '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
-  END IF;
-
-  IF v_phone IS NOT NULL
-     AND char_length(regexp_replace(v_phone, '[^0-9+]', '', 'g')) < 9 THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
-  END IF;
-
-  SELECT id INTO v_existing FROM public.legal_entities WHERE nip_normalized = v_nip;
-  IF v_existing IS NOT NULL THEN
-    RETURN public.enroll_legal_entity_for_org(
-      p_org_id, v_existing, p_is_cleaning, p_is_maintenance, p_is_admin
-    ) || jsonb_build_object('status', 'exists_in_domio');
-  END IF;
-
-  INSERT INTO public.legal_entities (
-    kind, status, nip, regon, krs, short_name, legal_name,
-    voivodeship, county, commune, city, postal_code, street,
-    building_number, apartment_number, seat_full_address, email, phone,
-    gus_legal_form_code, gus_legal_form_name, gus_fetched_at, gus_payload,
-    created_without_gus, created_by_org_id, updated_by
-  ) VALUES (
-    p_kind, 'active', v_nip, v_regon, v_krs, v_short, v_legal_name,
-    v_voiv, v_county, v_commune, v_city, v_postal, v_street,
-    v_building, v_apt, v_seat, v_email, v_phone,
-    NULLIF(btrim(COALESCE(p_gus ->> 'legalFormCode', '')), ''),
-    NULLIF(btrim(COALESCE(p_gus ->> 'legalFormName', '')), ''),
-    now(), p_gus, false, p_org_id, auth.uid()
-  ) RETURNING * INTO v_row;
-
-  PERFORM public.enroll_legal_entity_for_org(p_org_id, v_row.id, p_is_cleaning, p_is_maintenance, p_is_admin);
-  PERFORM public.sync_legal_entity_legacy_overlay(v_row, p_org_id);
-
-  RETURN jsonb_build_object(
-    'status', 'created',
-    'alreadyEnrolledInThisOrg', true,
-    'entity', public.legal_entity_public_json(v_row)
-  );
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.create_legal_entity_unverified(p_org_id uuid, p_kind legal_entity_kind, p_nip text, p_short_name text, p_legal_name text, p_email text, p_phone text, p_city text, p_postal_code text, p_reason text, p_street text DEFAULT NULL::text, p_building_number text DEFAULT NULL::text, p_voivodeship text DEFAULT NULL::text, p_is_cleaning boolean DEFAULT false, p_is_maintenance boolean DEFAULT false, p_is_admin boolean DEFAULT false)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_nip text;
-  v_short text;
-  v_legal text;
-  v_city text;
-  v_postal text;
-  v_street text;
-  v_building text;
-  v_voiv text;
-  v_seat text;
-  v_email text;
-  v_phone text;
-  v_existing uuid;
-  v_row public.legal_entities%ROWTYPE;
-BEGIN
-  IF (SELECT auth.uid()) IS NULL THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
-  END IF;
-
-  IF p_org_id IS NULL
-     OR (
-       NOT public.is_org_management(p_org_id)
-       AND NOT public.is_platform_admin()
-     )
-  THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_UNVERIFIED_FORBIDDEN';
-  END IF;
-
-  IF p_reason IS NULL OR p_reason NOT IN ('gus_unavailable', 'gus_not_configured') THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_INVALID_VERIFICATION_REASON';
-  END IF;
-
-  v_nip := regexp_replace(COALESCE(p_nip, ''), '[^0-9]', '', 'g');
-  v_short := NULLIF(btrim(COALESCE(p_short_name, '')), '');
-  v_legal := NULLIF(btrim(COALESCE(p_legal_name, '')), '');
-  v_city := NULLIF(btrim(COALESCE(p_city, '')), '');
-  v_postal := public.normalize_pl_postal(p_postal_code);
-  v_street := NULLIF(btrim(COALESCE(p_street, '')), '');
-  v_building := NULLIF(btrim(COALESCE(p_building_number, '')), '');
-  v_voiv := NULLIF(btrim(COALESCE(p_voivodeship, '')), '');
-  v_email := NULLIF(btrim(COALESCE(p_email, '')), '');
-  v_phone := NULLIF(btrim(COALESCE(p_phone, '')), '');
-
-  IF v_short IS NULL THEN
-    v_short := left(COALESCE(v_legal, ''), 80);
-  END IF;
-  IF v_legal IS NULL THEN
-    v_legal := v_short;
-  END IF;
-  IF v_voiv IS NULL THEN
-    v_voiv := 'nieustalone';
-  END IF;
-  IF v_building IS NULL THEN
-    v_building := 'b.n.';
-  END IF;
-
-  v_seat := concat_ws(
-    ', ',
-    NULLIF(concat_ws(' ', v_street, v_building), ''),
-    NULLIF(concat_ws(' ', v_postal, v_city), '')
-  );
-
-  IF NOT public.nip_checksum_ok(v_nip)
-     OR v_short IS NULL
-     OR v_legal IS NULL
-     OR v_city IS NULL
-     OR v_postal IS NULL
-  THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
-  END IF;
-
-  IF v_email IS NOT NULL
-     AND v_email !~* '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
-  END IF;
-
-  IF v_phone IS NOT NULL
-     AND char_length(regexp_replace(v_phone, '[^0-9+]', '', 'g')) < 9 THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
-  END IF;
-
-  SELECT id INTO v_existing
-  FROM public.legal_entities
-  WHERE nip_normalized = v_nip;
-
-  IF v_existing IS NOT NULL THEN
-    RETURN public.enroll_legal_entity_for_org(
-      p_org_id,
-      v_existing,
-      p_is_cleaning,
-      p_is_maintenance,
-      p_is_admin
-    ) || jsonb_build_object('status', 'exists_in_domio');
-  END IF;
-
-  PERFORM public.legal_entity_mark_rpc_writer();
-
-  INSERT INTO public.legal_entities (
-    kind, status, nip, regon, krs, short_name, legal_name,
-    voivodeship, county, commune, city, postal_code, street,
-    building_number, apartment_number, seat_full_address, email, phone,
-    created_without_gus, gus_fetched_at, verification_status,
-    verification_reason, verification_requested_at, created_by_org_id, updated_by
-  )
-  VALUES (
-    p_kind, 'active', v_nip, NULL, NULL, v_short, v_legal,
-    v_voiv, NULL, NULL, v_city, v_postal, v_street,
-    v_building, NULL, v_seat, v_email, v_phone,
-    false, NULL, 'pending_manual', p_reason, now(), p_org_id, auth.uid()
-  )
-  RETURNING * INTO v_row;
-
-  PERFORM public.enroll_legal_entity_for_org(
-    p_org_id, v_row.id, p_is_cleaning, p_is_maintenance, p_is_admin
-  );
-
-  RETURN jsonb_build_object(
-    'status', 'created_unverified',
-    'alreadyEnrolledInThisOrg', true,
-    'entity', public.legal_entity_public_json(v_row)
-  );
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.current_org_has_serwis_access()
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.memberships m
-    WHERE m.user_id = auth.uid()
-      AND COALESCE(m.is_active, true) = true
-      AND (
-        public.is_serwis_technician_role(m.org_id)
-        OR public.is_serwis_dispatcher_or_owner(m.org_id)
-        OR public.is_management_role(m.org_id)
-      )
-  );
-$function$;
-CREATE OR REPLACE FUNCTION public.current_user_has_share_or_origin(p_origin_org_id uuid, p_shared_with_org_ids uuid[])
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$ SELECT COALESCE(p_origin_org_id = ANY (orgs), false) OR COALESCE(orgs && COALESCE(p_shared_with_org_ids, '{}'::uuid[]), false) FROM (SELECT public.current_user_org_ids() AS orgs) s; $function$;
 CREATE OR REPLACE FUNCTION public.current_user_org_ids()
  RETURNS uuid[]
  LANGUAGE sql
@@ -10379,16 +7973,12 @@ AS $function$
   WHERE m.user_id = (SELECT auth.uid())
     AND COALESCE(m.is_active, true) = true;
 $function$;
-CREATE OR REPLACE FUNCTION public.deactivate_community_for_org(p_org_id uuid, p_community_id uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-BEGIN
-  RETURN private.deactivate_community_for_org(p_org_id, p_community_id);
-END;
-$function$;
+CREATE OR REPLACE FUNCTION public.current_user_has_share_or_origin(p_origin_org_id uuid, p_shared_with_org_ids uuid[])
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$ SELECT COALESCE(p_origin_org_id = ANY (orgs), false) OR COALESCE(orgs && COALESCE(p_shared_with_org_ids, '{}'::uuid[]), false) FROM (SELECT public.current_user_org_ids() AS orgs) s; $function$;
 CREATE OR REPLACE FUNCTION public.decline_property_issue_transfer(p_issue_id uuid)
  RETURNS void
  LANGUAGE plpgsql
@@ -10402,102 +7992,6 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'ISSUE_NOT_FOUND';
   END IF;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.decline_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
- RETURNS service_mandates
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$ BEGIN RETURN private.decline_service_mandate(p_acting_org_id, p_mandate_id); END; $function$;
-CREATE OR REPLACE FUNCTION public.delegate_property_issue(p_issue_id uuid, p_vendor_id uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_issue public.property_issues%ROWTYPE;
-  v_vendor public.vendor_partners%ROWTYPE;
-  v_channel text;
-BEGIN
-  IF (SELECT auth.uid()) IS NULL AND NOT private.vendor_email_is_service_role() THEN
-    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
-  END IF;
-  IF p_vendor_id IS NULL THEN
-    RAISE EXCEPTION 'ISSUE_TRANSFER_FIELDS_REQUIRED';
-  END IF;
-
-  SELECT * INTO v_issue FROM public.property_issues WHERE id = p_issue_id;
-  IF v_issue.id IS NULL THEN
-    RAISE EXCEPTION 'ISSUE_NOT_FOUND';
-  END IF;
-
-  PERFORM private.vendor_email_require_management(v_issue.org_id);
-
-  SELECT * INTO v_vendor FROM public.vendor_partners WHERE id = p_vendor_id;
-  IF v_vendor.id IS NULL THEN
-    RAISE EXCEPTION 'Nie znaleziono partnera.';
-  END IF;
-
-  v_channel := COALESCE(v_vendor.dispatch_channel, 'in_app');
-
-  IF v_channel = 'email' THEN
-    RETURN private.vendor_email_queue_for_issue(p_issue_id, p_vendor_id)
-      || jsonb_build_object('queued', true);
-  END IF;
-
-  UPDATE public.property_issues
-  SET
-    status = 'delegated',
-    delegated_vendor_id = p_vendor_id
-  WHERE id = p_issue_id;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'ISSUE_NOT_FOUND';
-  END IF;
-
-  RETURN jsonb_build_object(
-    'queued', false,
-    'issueId', p_issue_id,
-    'dispatchId', NULL
-  );
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.dispatch_duty_alert(p_issue_id uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_org uuid;
-  v_result jsonb;
-BEGIN
-  IF (SELECT auth.uid()) IS NULL THEN
-    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
-  END IF;
-
-  SELECT COALESCE(claimed_by_org_id, org_id) INTO v_org
-  FROM public.property_issues WHERE id = p_issue_id;
-
-  IF v_org IS NULL THEN
-    RAISE EXCEPTION 'ISSUE_NOT_FOUND';
-  END IF;
-
-  IF NOT (
-    public.can_manage_serwis_duty(v_org)
-    OR public.is_org_management(v_org)
-    OR public.is_management_role(v_org)
-  ) THEN
-    RAISE EXCEPTION 'DUTY_DISPATCH_FORBIDDEN';
-  END IF;
-
-  v_result := private.try_dispatch_duty_alert(p_issue_id);
-  IF COALESCE((v_result ->> 'ok')::boolean, false) IS NOT TRUE THEN
-    RAISE EXCEPTION '%', COALESCE(v_result ->> 'reason', 'DUTY_DISPATCH_FAILED');
-  END IF;
-  RETURN v_result;
 END;
 $function$;
 CREATE OR REPLACE FUNCTION public.enforce_company_matches_location_org()
@@ -10530,214 +8024,6 @@ BEGIN
     RAISE EXCEPTION 'company org_id must match cleaning_locations.org_id for this location';
   END IF;
 
-  RETURN NEW;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.enforce_dispatcher_forced_and_gps_audit()
- RETURNS trigger
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_org uuid;
-  v_mgmt boolean;
-  v_self boolean;
-  v_taking boolean;
-  v_starting boolean;
-  v_forced_cols_changed boolean;
-  v_auto_clear boolean;
-BEGIN
-  v_org := COALESCE(NEW.org_id, OLD.org_id);
-  v_mgmt := v_org IS NOT NULL AND public.is_management_role(v_org);
-  v_self := auth.uid() IS NOT NULL
-    AND auth.uid() IS NOT DISTINCT FROM COALESCE(NEW.assigned_staff_id, OLD.assigned_staff_id);
-
-  NEW.internal_comments := public.merge_immutable_issue_comments(
-    OLD.internal_comments,
-    NEW.internal_comments
-  );
-
-  IF OLD.gps_start_override IS TRUE THEN
-    NEW.gps_start_override := true;
-    NEW.gps_start_override_at := OLD.gps_start_override_at;
-    NEW.gps_start_override_by := OLD.gps_start_override_by;
-    NEW.gps_start_override_distance_m := OLD.gps_start_override_distance_m;
-    NEW.gps_start_lat := OLD.gps_start_lat;
-    NEW.gps_start_lng := OLD.gps_start_lng;
-  ELSIF NEW.gps_start_override IS TRUE THEN
-    NEW.gps_start_override_at := COALESCE(NEW.gps_start_override_at, now());
-    NEW.gps_start_override_by := COALESCE(NEW.gps_start_override_by, auth.uid());
-  ELSE
-    NEW.gps_start_override_at := NULL;
-    NEW.gps_start_override_by := NULL;
-    NEW.gps_start_override_distance_m := NULL;
-    NEW.gps_start_lat := NULL;
-    NEW.gps_start_lng := NULL;
-  END IF;
-
-  IF NEW.status IN ('resolved', 'cancelled') THEN
-    NEW.dispatcher_forced_next := false;
-  END IF;
-
-  IF NEW.assigned_staff_id IS DISTINCT FROM OLD.assigned_staff_id
-     AND NOT (v_mgmt AND NEW.dispatcher_forced_next IS TRUE) THEN
-    NEW.dispatcher_forced_next := false;
-  END IF;
-
-  IF NEW.dispatcher_forced_next IS NOT TRUE THEN
-    NEW.dispatcher_forced_at := NULL;
-    NEW.dispatcher_forced_by := NULL;
-  ELSIF NEW.dispatcher_forced_next IS TRUE AND OLD.dispatcher_forced_next IS NOT TRUE THEN
-    IF NEW.assigned_staff_id IS NULL THEN
-      RAISE EXCEPTION 'ISSUE_FORCED_NEXT_NEEDS_ASSIGNEE';
-    END IF;
-    NEW.dispatcher_forced_at := COALESCE(NEW.dispatcher_forced_at, now());
-    NEW.dispatcher_forced_by := COALESCE(NEW.dispatcher_forced_by, auth.uid());
-  END IF;
-
-  v_forced_cols_changed :=
-    NEW.dispatcher_forced_next IS DISTINCT FROM OLD.dispatcher_forced_next
-    OR NEW.dispatcher_forced_at IS DISTINCT FROM OLD.dispatcher_forced_at
-    OR NEW.dispatcher_forced_by IS DISTINCT FROM OLD.dispatcher_forced_by;
-
-  v_auto_clear :=
-    OLD.dispatcher_forced_next IS TRUE
-    AND NEW.dispatcher_forced_next IS NOT TRUE
-    AND (
-      NEW.status IN ('resolved', 'cancelled')
-      OR NEW.assigned_staff_id IS DISTINCT FROM OLD.assigned_staff_id
-    );
-
-  IF v_forced_cols_changed AND NOT v_mgmt AND NOT v_auto_clear THEN
-    RAISE EXCEPTION 'ISSUE_FORCED_NEXT_FORBIDDEN';
-  END IF;
-
-  v_taking :=
-    v_self
-    AND OLD.assigned_staff_id IS DISTINCT FROM NEW.assigned_staff_id
-    AND NEW.assigned_staff_id = auth.uid();
-  v_starting :=
-    v_self
-    AND NEW.status = 'in_progress'
-    AND OLD.status IS DISTINCT FROM 'in_progress';
-
-  IF (v_taking OR v_starting)
-     AND public.technician_has_other_forced_issue(v_org, auth.uid(), NEW.id) THEN
-    RAISE EXCEPTION 'ISSUE_FORCED_NEXT_REQUIRED';
-  END IF;
-
-  RETURN NEW;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.enforce_duty_alert_update()
- RETURNS trigger
- LANGUAGE plpgsql
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_mgmt boolean;
-BEGIN
-  v_mgmt := public.can_manage_serwis_duty(OLD.org_id);
-  IF v_mgmt OR (SELECT auth.uid()) IS NULL THEN
-    RETURN NEW;
-  END IF;
-
-  IF OLD.target_user_id IS DISTINCT FROM (SELECT auth.uid()) THEN
-    RAISE EXCEPTION 'DUTY_ALERT_FORBIDDEN'
-      USING HINT = 'Only the duty target can acknowledge this alert.';
-  END IF;
-
-  IF OLD.status IS DISTINCT FROM 'pending' OR NEW.status IS DISTINCT FROM 'accepted' THEN
-    RAISE EXCEPTION 'DUTY_ALERT_ACCEPT_ONLY'
-      USING HINT = 'The duty target may only move pending to accepted.';
-  END IF;
-
-  IF NEW.org_id IS DISTINCT FROM OLD.org_id
-     OR NEW.issue_id IS DISTINCT FROM OLD.issue_id
-     OR NEW.target_user_id IS DISTINCT FROM OLD.target_user_id
-     OR NEW.max_attempts IS DISTINCT FROM OLD.max_attempts THEN
-    RAISE EXCEPTION 'DUTY_ALERT_IMMUTABLE';
-  END IF;
-
-  NEW.accepted_at := COALESCE(NEW.accepted_at, now());
-  NEW.accepted_by := COALESCE(NEW.accepted_by, (SELECT auth.uid()));
-  RETURN NEW;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.enforce_membership_user_limit()
- RETURNS trigger
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  current_count integer;
-  plan_limit integer;
-BEGIN
-  IF (SELECT public.is_platform_admin()) THEN
-    RETURN NEW;
-  END IF;
-
-  PERFORM 1
-  FROM public.org_subscriptions
-  WHERE org_id = NEW.org_id
-  FOR UPDATE;
-
-  SELECT MIN(pp.max_users + COALESCE(os.extra_users, 0))
-    INTO plan_limit
-  FROM public.org_subscriptions os
-  JOIN public.pricing_plans pp ON pp.id = os.plan_id
-  WHERE os.org_id = NEW.org_id
-    AND os.status = 'active'
-    AND (os.expires_at IS NULL OR os.expires_at > now())
-    AND pp.max_users IS NOT NULL;
-
-  IF plan_limit IS NULL THEN
-    RETURN NEW;
-  END IF;
-
-  SELECT COUNT(*)::integer
-    INTO current_count
-  FROM public.memberships
-  WHERE org_id = NEW.org_id;
-
-  IF TG_OP = 'INSERT' AND current_count >= plan_limit THEN
-    RAISE EXCEPTION 'Limit użytkowników planu (%) został osiągnięty dla tej organizacji', plan_limit
-      USING ERRCODE = 'P0001';
-  END IF;
-
-  RETURN NEW;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.enforce_org_duty_eligible()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_role text;
-  v_active boolean;
-BEGIN
-  SELECT m.role, COALESCE(m.is_active, true)
-  INTO v_role, v_active
-  FROM public.memberships m
-  WHERE m.org_id = NEW.org_id
-    AND m.user_id = NEW.user_id
-  ORDER BY public.is_service_staff_role(m.role) DESC
-  LIMIT 1;
-
-  IF v_role IS NULL THEN
-    RAISE EXCEPTION 'Duty eligible user must be a member of the organization'
-      USING ERRCODE = '23514';
-  END IF;
-  IF v_active IS NOT TRUE THEN
-    RAISE EXCEPTION 'Duty eligible user must have an active membership'
-      USING ERRCODE = '23514';
-  END IF;
-  IF NOT public.is_service_staff_role(v_role) THEN
-    RAISE EXCEPTION 'Duty eligible user must have a Serwis staff role'
-      USING ERRCODE = '23514';
-  END IF;
   RETURN NEW;
 END;
 $function$;
@@ -10780,96 +8066,6 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
-CREATE OR REPLACE FUNCTION public.enforce_property_issue_billing()
- RETURNS trigger
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_settings public.org_serwis_billing_settings;
-  v_mgmt boolean;
-  v_tech boolean;
-  v_resolving boolean;
-  v_financial_changed boolean;
-BEGIN
-  v_mgmt := NEW.org_id IS NOT NULL AND public.is_serwis_dispatcher_or_owner(NEW.org_id);
-  v_tech := NEW.org_id IS NOT NULL AND public.is_serwis_technician_role(NEW.org_id);
-  v_resolving := NEW.status = 'resolved' AND OLD.status IS DISTINCT FROM 'resolved';
-
-  v_financial_changed :=
-    NEW.labor_hours IS DISTINCT FROM OLD.labor_hours
-    OR NEW.labor_cost IS DISTINCT FROM OLD.labor_cost
-    OR NEW.materials_used IS DISTINCT FROM OLD.materials_used
-    OR NEW.total_material_cost IS DISTINCT FROM OLD.total_material_cost
-    OR NEW.surcharge_kind IS DISTINCT FROM OLD.surcharge_kind
-    OR NEW.surcharge_amount IS DISTINCT FROM OLD.surcharge_amount
-    OR NEW.hourly_rate_applied IS DISTINCT FROM OLD.hourly_rate_applied;
-
-  IF OLD.is_invoiced IS TRUE AND v_financial_changed THEN
-    RAISE EXCEPTION 'ISSUE_BILLING_LOCKED'
-      USING HINT = 'Financial fields cannot change after the issue is invoiced.';
-  END IF;
-
-  IF OLD.protocol_number IS NOT NULL THEN
-    NEW.protocol_number := OLD.protocol_number;
-  ELSIF NEW.status = 'resolved' AND NEW.protocol_number IS NULL AND NEW.org_id IS NOT NULL THEN
-    NEW.protocol_number := public.assign_next_protocol_number(
-      NEW.org_id,
-      COALESCE(NEW.resolved_at, now())
-    );
-  ELSIF NEW.status IS DISTINCT FROM 'resolved' THEN
-    NEW.protocol_number := NULL;
-  END IF;
-
-  IF NEW.surcharge_kind IS NULL THEN
-    IF NOT v_mgmt THEN
-      NEW.surcharge_amount := COALESCE(NEW.surcharge_amount, 0);
-    END IF;
-  END IF;
-
-  IF v_resolving THEN
-    v_settings := public.ensure_org_serwis_billing_settings(NEW.org_id);
-    NEW.hourly_rate_applied := COALESCE(NEW.hourly_rate_applied, v_settings.default_hourly_rate);
-
-    IF NEW.labor_hours IS NULL THEN
-      NEW.labor_hours := public.suggested_labor_hours_from_range(
-        NEW.started_at,
-        COALESCE(NEW.resolved_at, now())
-      );
-    ELSE
-      NEW.labor_hours := public.ceil_started_hours(NEW.labor_hours);
-    END IF;
-
-    IF NEW.surcharge_kind = 'on_call' THEN
-      NEW.surcharge_amount := COALESCE(NEW.surcharge_amount, v_settings.on_call_surcharge);
-    ELSIF NEW.surcharge_kind = 'urgent' THEN
-      NEW.surcharge_amount := COALESCE(NEW.surcharge_amount, v_settings.urgent_surcharge);
-    ELSE
-      NEW.surcharge_amount := COALESCE(NEW.surcharge_amount, 0);
-    END IF;
-
-    IF NEW.labor_cost IS NULL OR NEW.labor_cost = 0 THEN
-      NEW.labor_cost := ROUND(
-        COALESCE(NEW.labor_hours, 0) * COALESCE(NEW.hourly_rate_applied, 0),
-        2
-      );
-    END IF;
-
-    NEW.total_material_cost := public.materials_used_total(NEW.materials_used);
-    NEW.resolved_at := COALESCE(NEW.resolved_at, now());
-  ELSIF NEW.labor_hours IS NOT NULL AND NEW.labor_hours IS DISTINCT FROM OLD.labor_hours THEN
-    NEW.labor_hours := public.ceil_started_hours(NEW.labor_hours);
-  END IF;
-
-  IF NOT v_mgmt AND v_tech AND NEW.protocol_number IS DISTINCT FROM OLD.protocol_number
-     AND OLD.protocol_number IS NOT NULL THEN
-    RAISE EXCEPTION 'ISSUE_PROTOCOL_LOCKED';
-  END IF;
-
-  RETURN NEW;
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.enforce_property_issue_billing_row()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -10899,288 +8095,6 @@ BEGIN
     IF NEW.invoice_amount IS DISTINCT FROM OLD.invoice_amount THEN
       NEW.adjusted_at := now();
       NEW.adjusted_by := auth.uid();
-    END IF;
-  END IF;
-
-  RETURN NEW;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.enforce_property_issue_duty_flags()
- RETURNS trigger
- LANGUAGE plpgsql
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_org uuid;
-  v_mgmt boolean;
-  v_flags_changed boolean;
-BEGIN
-  IF (SELECT auth.uid()) IS NULL THEN
-    RETURN NEW;
-  END IF;
-
-  v_org := COALESCE(NEW.org_id, OLD.org_id);
-  v_mgmt := v_org IS NOT NULL AND (
-    public.is_management_role(v_org) OR public.is_org_management(v_org)
-  );
-
-  IF TG_OP = 'INSERT' THEN
-    IF (
-      NEW.immediate_fulfillment IS TRUE
-      OR NEW.emergency_mode IS TRUE
-      OR NEW.emergency_vendor_id IS NOT NULL
-    ) AND NOT v_mgmt THEN
-      RAISE EXCEPTION 'ISSUE_DUTY_FLAGS_FORBIDDEN'
-        USING HINT = 'Only Administracja management can set emergency / immediate fulfillment.';
-    END IF;
-    RETURN NEW;
-  END IF;
-
-  v_flags_changed :=
-    NEW.immediate_fulfillment IS DISTINCT FROM OLD.immediate_fulfillment
-    OR NEW.emergency_mode IS DISTINCT FROM OLD.emergency_mode
-    OR NEW.emergency_vendor_id IS DISTINCT FROM OLD.emergency_vendor_id;
-
-  IF v_flags_changed AND NOT v_mgmt THEN
-    RAISE EXCEPTION 'ISSUE_DUTY_FLAGS_FORBIDDEN'
-      USING HINT = 'Serwis staff cannot change emergency_mode or immediate_fulfillment.';
-  END IF;
-
-  RETURN NEW;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.enforce_property_issue_lifecycle()
- RETURNS trigger
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_org uuid;
-  v_claimed boolean;
-  v_started boolean;
-  v_broadcast_on boolean;
-  v_vendor_changed boolean;
-  v_mgmt boolean;
-  v_tech boolean;
-  v_transfer_vendor boolean;
-  v_authorizing boolean;
-  v_declining_transfer boolean;
-  v_routing_changed boolean;
-BEGIN
-  v_org := COALESCE(NEW.org_id, OLD.org_id);
-  v_claimed := OLD.assigned_staff_id IS NOT NULL;
-  v_started := OLD.started_at IS NOT NULL OR OLD.status = 'in_progress';
-  v_broadcast_on := NEW.is_public_broadcast IS TRUE AND OLD.is_public_broadcast IS NOT TRUE;
-  v_vendor_changed := NEW.delegated_vendor_id IS DISTINCT FROM OLD.delegated_vendor_id;
-  v_mgmt := v_org IS NOT NULL AND public.is_management_role(v_org);
-  v_tech := v_org IS NOT NULL AND public.is_serwis_technician_role(v_org);
-  v_transfer_vendor := public.is_vendor_partner_actor(
-    COALESCE(OLD.transfer_to_vendor_id, NEW.transfer_to_vendor_id)
-  );
-  v_authorizing :=
-    NEW.transfer_authorized_at IS NOT NULL
-    AND OLD.transfer_authorized_at IS NULL;
-  v_declining_transfer :=
-    OLD.is_transfer_requested IS TRUE
-    AND NEW.is_transfer_requested IS NOT TRUE
-    AND NEW.transfer_authorized_at IS NULL
-    AND NEW.delegated_vendor_id IS NOT DISTINCT FROM OLD.delegated_vendor_id;
-
-  IF v_authorizing THEN
-    IF NOT v_transfer_vendor THEN
-      RAISE EXCEPTION 'ISSUE_TRANSFER_AUTH_FORBIDDEN'
-        USING HINT = 'Only the target contractor can authorize a B2B transfer.';
-    END IF;
-    IF NEW.transfer_to_vendor_id IS NULL THEN
-      RAISE EXCEPTION 'ISSUE_TRANSFER_FIELDS_REQUIRED';
-    END IF;
-    NEW.transfer_authorized_by := COALESCE(NEW.transfer_authorized_by, auth.uid());
-    NEW.delegated_vendor_id := NEW.transfer_to_vendor_id;
-    NEW.assigned_staff_id := NULL;
-    NEW.claimed_at := NULL;
-    NEW.is_transfer_requested := false;
-    NEW.status := 'delegated';
-    NEW.is_public_broadcast := false;
-    v_vendor_changed := NEW.delegated_vendor_id IS DISTINCT FROM OLD.delegated_vendor_id;
-  END IF;
-
-  IF v_declining_transfer AND NOT (v_transfer_vendor OR v_mgmt) THEN
-    RAISE EXCEPTION 'ISSUE_TRANSFER_DECLINE_FORBIDDEN';
-  END IF;
-
-  IF OLD.assigned_staff_id IS NULL AND NEW.assigned_staff_id IS NOT NULL THEN
-    NEW.claimed_at := COALESCE(NEW.claimed_at, now());
-  END IF;
-
-  IF NEW.assigned_staff_id IS NULL AND OLD.assigned_staff_id IS NOT NULL THEN
-    IF NEW.status = 'cancelled' THEN
-      NULL;
-    ELSIF v_vendor_changed
-      AND NEW.delegated_vendor_id IS NOT NULL
-      AND NEW.transfer_authorized_at IS NOT NULL
-      AND NEW.transfer_to_vendor_id IS NOT DISTINCT FROM NEW.delegated_vendor_id THEN
-      NULL;
-    ELSE
-      RAISE EXCEPTION 'ISSUE_UNCLAIM_LOCKED'
-        USING HINT = 'Clearing assigned_staff_id is only allowed on cancel or authorized B2B transfer.';
-    END IF;
-  END IF;
-
-  IF NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected' THEN
-    IF NOT v_mgmt THEN
-      RAISE EXCEPTION 'ISSUE_REJECT_FORBIDDEN';
-    END IF;
-    IF v_claimed OR OLD.delegated_vendor_id IS NOT NULL THEN
-      RAISE EXCEPTION 'ISSUE_REJECT_LOCKED'
-        USING HINT = 'Reject is only for unassigned tickets. Cancel before start, or request cancel after start.';
-    END IF;
-  END IF;
-
-  IF NEW.status = 'cancelled' AND OLD.status IS DISTINCT FROM 'cancelled' THEN
-    IF NOT v_mgmt THEN
-      RAISE EXCEPTION 'ISSUE_CANCEL_FORBIDDEN';
-    END IF;
-    IF v_started THEN
-      RAISE EXCEPTION 'ISSUE_CANCEL_AFTER_START'
-        USING HINT = 'After work started, set cancel_requested_* instead of status=cancelled.';
-    END IF;
-    IF NEW.cancel_reason IS NULL OR length(btrim(NEW.cancel_reason)) < 3 THEN
-      RAISE EXCEPTION 'ISSUE_CANCEL_REASON_REQUIRED';
-    END IF;
-    NEW.cancelled_at := COALESCE(NEW.cancelled_at, now());
-    NEW.cancelled_by := COALESCE(NEW.cancelled_by, auth.uid());
-    NEW.is_public_broadcast := false;
-  END IF;
-
-  IF NEW.cancel_requested_at IS NOT NULL AND OLD.cancel_requested_at IS NULL THEN
-    IF NOT v_mgmt THEN
-      RAISE EXCEPTION 'ISSUE_CANCEL_REQUEST_FORBIDDEN';
-    END IF;
-    IF NEW.cancel_request_reason IS NULL OR length(btrim(NEW.cancel_request_reason)) < 3 THEN
-      RAISE EXCEPTION 'ISSUE_CANCEL_REASON_REQUIRED';
-    END IF;
-    NEW.cancel_requested_by := COALESCE(NEW.cancel_requested_by, auth.uid());
-  END IF;
-
-  IF v_broadcast_on THEN
-    IF NOT v_mgmt THEN
-      RAISE EXCEPTION 'ISSUE_BROADCAST_FORBIDDEN';
-    END IF;
-    IF v_claimed OR OLD.delegated_vendor_id IS NOT NULL THEN
-      RAISE EXCEPTION 'ISSUE_BROADCAST_LOCKED'
-        USING HINT = 'Marketplace broadcast after claim/delegate requires an authorized transfer.';
-    END IF;
-  END IF;
-
-  IF v_vendor_changed AND NEW.delegated_vendor_id IS NOT NULL AND NOT v_authorizing THEN
-    IF v_claimed OR OLD.delegated_vendor_id IS NOT NULL THEN
-      IF NEW.transfer_authorized_at IS NULL
-         OR NEW.transfer_to_vendor_id IS DISTINCT FROM NEW.delegated_vendor_id THEN
-        RAISE EXCEPTION 'ISSUE_TRANSFER_NEEDS_AUTH'
-          USING HINT = 'Contractor must authorize transfer_to_vendor_id before delegated_vendor_id changes.';
-      END IF;
-      NEW.assigned_staff_id := NULL;
-      NEW.claimed_at := NULL;
-      NEW.is_transfer_requested := false;
-    ELSIF NOT v_mgmt THEN
-      RAISE EXCEPTION 'ISSUE_DELEGATE_FORBIDDEN';
-    END IF;
-  END IF;
-
-  IF NEW.is_transfer_requested IS TRUE AND OLD.is_transfer_requested IS NOT TRUE THEN
-    IF NOT v_mgmt THEN
-      RAISE EXCEPTION 'ISSUE_TRANSFER_REQUEST_FORBIDDEN';
-    END IF;
-    IF NOT v_claimed AND OLD.delegated_vendor_id IS NULL THEN
-      RAISE EXCEPTION 'ISSUE_TRANSFER_NOT_NEEDED'
-        USING HINT = 'Unassigned tickets can be delegated directly.';
-    END IF;
-    IF NEW.transfer_to_vendor_id IS NULL
-       OR NEW.transfer_reason IS NULL
-       OR length(btrim(NEW.transfer_reason)) < 3 THEN
-      RAISE EXCEPTION 'ISSUE_TRANSFER_FIELDS_REQUIRED';
-    END IF;
-  END IF;
-
-  v_routing_changed :=
-    NEW.is_public_broadcast IS DISTINCT FROM OLD.is_public_broadcast
-    OR NEW.delegated_vendor_id IS DISTINCT FROM OLD.delegated_vendor_id
-    OR NEW.is_transfer_requested IS DISTINCT FROM OLD.is_transfer_requested
-    OR NEW.transfer_to_vendor_id IS DISTINCT FROM OLD.transfer_to_vendor_id
-    OR NEW.transfer_reason IS DISTINCT FROM OLD.transfer_reason
-    OR NEW.transfer_authorized_at IS DISTINCT FROM OLD.transfer_authorized_at
-    OR NEW.cancel_reason IS DISTINCT FROM OLD.cancel_reason
-    OR NEW.cancelled_at IS DISTINCT FROM OLD.cancelled_at
-    OR NEW.cancel_requested_at IS DISTINCT FROM OLD.cancel_requested_at
-    OR (NEW.status IN ('rejected', 'cancelled') AND NEW.status IS DISTINCT FROM OLD.status);
-
-  IF v_tech AND NOT v_mgmt AND v_routing_changed THEN
-    RAISE EXCEPTION 'ISSUE_ROUTING_FORBIDDEN'
-      USING HINT = 'Technicians cannot reject, cancel, broadcast, or reassign to another company.';
-  END IF;
-
-  RETURN NEW;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.enforce_property_issue_marketplace()
- RETURNS trigger
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_actor_org uuid;
-BEGIN
-  v_actor_org := public.get_my_org_id_safe();
-
-  IF NEW.is_public_broadcast IS NOT TRUE THEN
-    NEW.marketplace_scope := NULL;
-  ELSIF NEW.marketplace_scope IS NULL THEN
-    NEW.marketplace_scope := 'serving';
-    NEW.is_public_broadcast := true;
-  ELSE
-    NEW.is_public_broadcast := true;
-  END IF;
-
-  IF OLD.claimed_by_org_id IS NOT NULL
-     AND NEW.claimed_by_org_id IS DISTINCT FROM OLD.claimed_by_org_id THEN
-    RAISE EXCEPTION 'ISSUE_MARKETPLACE_ALREADY_CLAIMED'
-      USING HINT = 'Another company already took this job.';
-  END IF;
-
-  IF OLD.assigned_staff_id IS NOT NULL
-     AND NEW.assigned_staff_id IS DISTINCT FROM OLD.assigned_staff_id
-     AND NEW.assigned_staff_id IS NOT NULL THEN
-    IF NOT (
-      public.is_management_role(OLD.org_id)
-      OR (
-        OLD.claimed_by_org_id IS NOT NULL
-        AND public.is_management_role(OLD.claimed_by_org_id)
-      )
-    ) THEN
-      RAISE EXCEPTION 'ISSUE_MARKETPLACE_ALREADY_CLAIMED'
-        USING HINT = 'This job was already taken by someone else.';
-    END IF;
-  END IF;
-
-  IF OLD.assigned_staff_id IS NULL AND NEW.assigned_staff_id IS NOT NULL THEN
-    IF OLD.claimed_by_org_id IS NOT NULL
-       AND v_actor_org IS DISTINCT FROM OLD.claimed_by_org_id THEN
-      RAISE EXCEPTION 'ISSUE_MARKETPLACE_ALREADY_CLAIMED'
-        USING HINT = 'Another company already took this job.';
-    END IF;
-    NEW.claimed_by_org_id := COALESCE(NEW.claimed_by_org_id, OLD.claimed_by_org_id, v_actor_org);
-    IF OLD.is_public_broadcast IS TRUE THEN
-      NEW.is_public_broadcast := false;
-      NEW.marketplace_scope := NULL;
-    END IF;
-  END IF;
-
-  IF OLD.claimed_by_org_id IS NULL AND NEW.claimed_by_org_id IS NOT NULL THEN
-    IF OLD.is_public_broadcast IS TRUE THEN
-      NEW.is_public_broadcast := false;
-      NEW.marketplace_scope := NULL;
     END IF;
   END IF;
 
@@ -11230,435 +8144,6 @@ CREATE OR REPLACE FUNCTION public.enqueue_due_fleet_notifications()
  SECURITY DEFINER
  SET search_path TO 'private', 'public', 'pg_catalog'
 AS $function$ SELECT private.enqueue_due_fleet_notifications(); $function$;
-CREATE OR REPLACE FUNCTION public.enroll_building_for_legal_entity(p_org_id uuid, p_legal_entity_id uuid, p_google_place_id text, p_address text, p_latitude double precision, p_longitude double precision, p_module text)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_place text;
-  v_addr text;
-  v_master public.locations%ROWTYPE;
-  v_loc public.cleaning_locations%ROWTYPE;
-  v_owner public.legal_entities%ROWTYPE;
-  v_community_id uuid;
-  v_city text;
-  v_postal text;
-  v_created boolean := false;
-  v_already boolean := false;
-  v_entity uuid;
-BEGIN
-  IF (SELECT auth.uid()) IS NULL THEN RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED'; END IF;
-  IF p_org_id IS NULL OR NOT public.is_org_management(p_org_id) THEN RAISE EXCEPTION 'BUILDING_ENROLL_FORBIDDEN'; END IF;
-  IF p_module IS NULL OR p_module NOT IN ('cleaning', 'maintenance', 'admin') THEN RAISE EXCEPTION 'BUILDING_MODULE_INVALID'; END IF;
-
-  v_place := NULLIF(btrim(COALESCE(p_google_place_id, '')), '');
-  v_addr := NULLIF(btrim(COALESCE(p_address, '')), '');
-  v_entity := p_legal_entity_id;
-  IF v_place IS NULL OR v_addr IS NULL THEN RAISE EXCEPTION 'BUILDING_ADDRESS_REQUIRED'; END IF;
-
-  IF v_entity IS NOT NULL THEN
-    IF NOT EXISTS (
-      SELECT 1 FROM public.org_legal_entity_enrollments e
-      WHERE e.org_id = p_org_id AND e.legal_entity_id = v_entity AND e.status = 'active'
-    ) THEN RAISE EXCEPTION 'LEGAL_ENTITY_NOT_ENROLLED'; END IF;
-    UPDATE public.org_legal_entity_enrollments
-    SET is_cleaning = is_cleaning OR (p_module = 'cleaning'),
-        is_maintenance = is_maintenance OR (p_module = 'maintenance'),
-        is_admin = is_admin OR (p_module = 'admin')
-    WHERE org_id = p_org_id AND legal_entity_id = v_entity;
-  END IF;
-
-  SELECT * INTO v_master FROM public.locations WHERE google_place_id = v_place LIMIT 1;
-
-  IF FOUND THEN
-    IF v_entity IS NOT NULL AND v_master.legal_entity_id IS NOT NULL AND v_master.legal_entity_id IS DISTINCT FROM v_entity THEN
-      SELECT * INTO v_owner FROM public.legal_entities WHERE id = v_master.legal_entity_id;
-      RAISE EXCEPTION 'ADDRESS_OWNED_BY_OTHER_ENTITY'
-        USING DETAIL = jsonb_build_object('ownerNip', v_owner.nip_normalized, 'ownerName', v_owner.short_name)::text;
-    END IF;
-    IF v_entity IS NOT NULL AND v_master.legal_entity_id IS NULL THEN
-      UPDATE public.locations SET legal_entity_id = v_entity WHERE id = v_master.id RETURNING * INTO v_master;
-    END IF;
-  ELSE
-    v_postal := (regexp_match(v_addr, '[0-9]{2}-[0-9]{3}'))[1];
-    v_city := NULLIF(btrim(split_part(v_addr, ',', 2)), '');
-    INSERT INTO public.locations (org_id, google_place_id, full_address, latitude, longitude, city, postal_code, legal_entity_id)
-    VALUES (p_org_id, v_place, v_addr, p_latitude, p_longitude, v_city, v_postal, v_entity)
-    RETURNING * INTO v_master;
-  END IF;
-
-  IF v_entity IS NOT NULL THEN
-    SELECT c.id INTO v_community_id FROM public.communities c
-    WHERE c.legal_entity_id = v_entity AND c.org_id = p_org_id LIMIT 1;
-  END IF;
-
-  SELECT * INTO v_loc FROM public.cleaning_locations
-  WHERE org_id = p_org_id AND location_master_id = v_master.id LIMIT 1;
-
-  IF FOUND THEN
-    v_already := (p_module = 'cleaning' AND v_loc.is_cleaning_active)
-      OR (p_module = 'maintenance' AND v_loc.is_maintenance_active)
-      OR (p_module = 'admin' AND v_loc.is_admin_active);
-    UPDATE public.cleaning_locations SET
-      is_cleaning_active = is_cleaning_active OR (p_module = 'cleaning'),
-      is_maintenance_active = is_maintenance_active OR (p_module = 'maintenance'),
-      is_admin_active = is_admin_active OR (p_module = 'admin'),
-      is_active_in_serwis = is_active_in_serwis OR (p_module = 'maintenance'),
-      community_id = COALESCE(community_id, v_community_id),
-      status = 'active', address = v_addr, google_place_id = v_place,
-      place_id = COALESCE(place_id, v_place),
-      latitude = COALESCE(p_latitude, latitude), longitude = COALESCE(p_longitude, longitude)
-    WHERE id = v_loc.id RETURNING * INTO v_loc;
-  ELSE
-    INSERT INTO public.cleaning_locations (
-      org_id, location_master_id, address, google_place_id, place_id, latitude, longitude,
-      status, is_cleaning_active, is_maintenance_active, is_admin_active, is_active_in_serwis, community_id
-    ) VALUES (
-      p_org_id, v_master.id, v_addr, v_place, v_place, p_latitude, p_longitude,
-      'active', p_module = 'cleaning', p_module = 'maintenance', p_module = 'admin',
-      p_module = 'maintenance', v_community_id
-    ) RETURNING * INTO v_loc;
-    v_created := true;
-  END IF;
-
-  RETURN jsonb_build_object(
-    'status', CASE WHEN v_already THEN 'duplicate' WHEN v_created THEN 'created' ELSE 'enrolled' END,
-    'cleaningLocationId', v_loc.id,
-    'locationMasterId', v_master.id,
-    'address', v_loc.address,
-    'legalEntityId', v_master.legal_entity_id,
-    'contractorRecommended', v_master.legal_entity_id IS NULL
-  );
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.enroll_legal_entity_for_org(p_org_id uuid, p_legal_entity_id uuid, p_is_cleaning boolean DEFAULT false, p_is_maintenance boolean DEFAULT false, p_is_admin boolean DEFAULT false)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_row public.legal_entities%ROWTYPE;
-  v_enroll public.org_legal_entity_enrollments%ROWTYPE;
-BEGIN
-  IF (SELECT auth.uid()) IS NULL THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
-  END IF;
-
-  IF p_org_id IS NULL
-     OR (
-       NOT public.is_org_management(p_org_id)
-       AND NOT public.is_platform_admin()
-     )
-  THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_ENROLL_FORBIDDEN';
-  END IF;
-
-  SELECT * INTO v_row
-  FROM public.legal_entities
-  WHERE id = p_legal_entity_id;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_NOT_FOUND';
-  END IF;
-
-  INSERT INTO public.org_legal_entity_enrollments (
-    org_id,
-    legal_entity_id,
-    is_cleaning,
-    is_maintenance,
-    is_admin,
-    status
-  )
-  VALUES (
-    p_org_id,
-    p_legal_entity_id,
-    COALESCE(p_is_cleaning, false),
-    COALESCE(p_is_maintenance, false),
-    COALESCE(p_is_admin, false),
-    'active'
-  )
-  ON CONFLICT (org_id, legal_entity_id) DO UPDATE
-    SET
-      is_cleaning = public.org_legal_entity_enrollments.is_cleaning OR EXCLUDED.is_cleaning,
-      is_maintenance = public.org_legal_entity_enrollments.is_maintenance OR EXCLUDED.is_maintenance,
-      is_admin = public.org_legal_entity_enrollments.is_admin OR EXCLUDED.is_admin,
-      status = 'active'
-  RETURNING * INTO v_enroll;
-
-  PERFORM public.sync_legal_entity_legacy_overlay(v_row, p_org_id);
-
-  RETURN jsonb_build_object(
-    'status', 'enrolled',
-    'enrollmentId', v_enroll.id,
-    'alreadyEnrolledInThisOrg', true,
-    'entity', public.legal_entity_public_json(v_row)
-  );
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.ensure_my_billing_organization(p_name text, p_nip text DEFAULT NULL::text, p_address text DEFAULT NULL::text, p_city text DEFAULT NULL::text, p_postal_code text DEFAULT NULL::text)
- RETURNS uuid
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_uid uuid;
-  v_org_id uuid;
-  v_name text;
-  v_nip text;
-  v_slug text;
-  v_base_slug text;
-  v_attempt integer := 0;
-BEGIN
-  v_uid := auth.uid();
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'Wymagane logowanie'
-      USING ERRCODE = '42501';
-  END IF;
-
-  v_name := trim(COALESCE(p_name, ''));
-  IF v_name = '' THEN
-    RAISE EXCEPTION 'Nazwa firmy jest wymagana'
-      USING ERRCODE = '22023';
-  END IF;
-
-  v_nip := regexp_replace(trim(COALESCE(p_nip, '')), '\s+', '', 'g');
-  IF v_nip = '' THEN
-    v_nip := NULL;
-  ELSIF v_nip !~ '^[0-9]{10}$' THEN
-    RAISE EXCEPTION 'NIP musi składać się z 10 cyfr'
-      USING ERRCODE = '22023';
-  END IF;
-
-  SELECT m.org_id
-    INTO v_org_id
-  FROM public.memberships m
-  WHERE m.user_id = v_uid
-    AND COALESCE(m.is_active, true) = true
-  ORDER BY
-    CASE
-      WHEN lower(trim(m.role)) IN ('owner', 'wlasciciel', 'admin', 'coordinator') THEN 0
-      ELSE 1
-    END,
-    m.created_at NULLS LAST
-  LIMIT 1;
-
-  IF v_org_id IS NOT NULL THEN
-    IF public.is_platform_admin() OR public.is_management_role(v_org_id) OR public.is_org_management(v_org_id) THEN
-      UPDATE public.organizations
-      SET
-        name = CASE WHEN NULLIF(trim(COALESCE(name, '')), '') IS NULL THEN v_name ELSE name END,
-        nip = COALESCE(v_nip, nip),
-        address = COALESCE(NULLIF(trim(COALESCE(p_address, '')), ''), address),
-        city = COALESCE(NULLIF(trim(COALESCE(p_city, '')), ''), city),
-        postal_code = COALESCE(NULLIF(trim(COALESCE(p_postal_code, '')), ''), postal_code)
-      WHERE id = v_org_id;
-    END IF;
-    RETURN v_org_id;
-  END IF;
-
-  v_slug := lower(v_name);
-  v_slug := translate(v_slug, 'ąćęłńóśźżĄĆĘŁŃÓŚŹŻ', 'acelnoszzacelnoszz');
-  v_slug := regexp_replace(v_slug, '[^a-z0-9]', '', 'g');
-  v_slug := left(v_slug, 40);
-  IF length(v_slug) < 2 THEN
-    v_slug := 'firma' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 8);
-  END IF;
-  v_base_slug := v_slug;
-
-  LOOP
-    BEGIN
-      INSERT INTO public.organizations (name, slug, nip, address, city, postal_code, owner_id)
-      VALUES (
-        v_name,
-        v_slug,
-        v_nip,
-        NULLIF(trim(COALESCE(p_address, '')), ''),
-        NULLIF(trim(COALESCE(p_city, '')), ''),
-        NULLIF(trim(COALESCE(p_postal_code, '')), ''),
-        v_uid
-      )
-      RETURNING id INTO v_org_id;
-      EXIT;
-    EXCEPTION
-      WHEN unique_violation THEN
-        v_attempt := v_attempt + 1;
-        IF v_attempt > 8 THEN
-          RAISE EXCEPTION 'Nie udało się utworzyć unikalnego identyfikatora firmy'
-            USING ERRCODE = '23505';
-        END IF;
-        v_slug := left(v_base_slug, 32) || v_attempt::text;
-    END;
-  END LOOP;
-
-  INSERT INTO public.memberships (user_id, org_id, role)
-  VALUES (v_uid, v_org_id, 'owner');
-
-  RETURN v_org_id;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.ensure_org_inbound_mailboxes(p_org_id uuid)
- RETURNS SETOF org_inbound_mailboxes
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_slug text;
-  v_mod text;
-  v_alias text;
-BEGIN
-  IF p_org_id IS NULL THEN
-    RAISE EXCEPTION 'Brak organizacji.';
-  END IF;
-
-  IF NOT (SELECT public.is_platform_admin())
-     AND NOT (SELECT public.is_org_management(p_org_id)) THEN
-    RAISE EXCEPTION 'Brak uprawnień do konfiguracji skrzynek.';
-  END IF;
-
-  SELECT lower(regexp_replace(COALESCE(o.slug, ''), '[^a-z0-9]+', '', 'g'))
-    INTO v_slug
-  FROM public.organizations o
-  WHERE o.id = p_org_id;
-
-  IF v_slug IS NULL THEN
-    RAISE EXCEPTION 'Nie znaleziono organizacji.';
-  END IF;
-
-  IF v_slug = '' OR length(v_slug) < 2 THEN
-    v_slug := substr(replace(p_org_id::text, '-', ''), 1, 12);
-  END IF;
-
-  FOREACH v_mod IN ARRAY ARRAY['serwis', 'administracja'] LOOP
-    v_alias := 'usterki+' || v_mod || '-' || v_slug;
-    IF length(v_alias) > 64 THEN
-      v_alias := left(v_alias, 64);
-    END IF;
-    BEGIN
-      INSERT INTO public.org_inbound_mailboxes (org_id, module, alias_local_part)
-      VALUES (p_org_id, v_mod, v_alias)
-      ON CONFLICT (org_id, module) DO NOTHING;
-    EXCEPTION
-      WHEN unique_violation THEN
-        INSERT INTO public.org_inbound_mailboxes (org_id, module, alias_local_part)
-        VALUES (
-          p_org_id,
-          v_mod,
-          left(
-            'usterki+' || v_mod || '-' || v_slug || substr(replace(p_org_id::text, '-', ''), 1, 6),
-            64
-          )
-        )
-        ON CONFLICT (org_id, module) DO NOTHING;
-    END;
-  END LOOP;
-
-  RETURN QUERY
-  SELECT *
-  FROM public.org_inbound_mailboxes
-  WHERE org_id = p_org_id
-    AND module IN ('serwis', 'administracja')
-  ORDER BY module;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.ensure_org_serwis_billing_settings(p_org_id uuid)
- RETURNS org_serwis_billing_settings
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_row public.org_serwis_billing_settings;
-  v_slug text;
-  v_base text;
-  v_code text;
-  v_i integer := 0;
-  v_suffix text;
-BEGIN
-  SELECT * INTO v_row
-  FROM public.org_serwis_billing_settings
-  WHERE org_id = p_org_id;
-
-  IF FOUND THEN
-    RETURN v_row;
-  END IF;
-
-  SELECT slug INTO v_slug
-  FROM public.organizations
-  WHERE id = p_org_id;
-
-  IF v_slug IS NULL THEN
-    RAISE EXCEPTION 'ISSUE_PROTOCOL_ORG_REQUIRED';
-  END IF;
-
-  v_base := public.normalize_protocol_org_code(v_slug);
-  v_code := v_base;
-
-  WHILE EXISTS (
-    SELECT 1
-    FROM public.org_serwis_billing_settings s
-    WHERE s.protocol_org_code = v_code
-  )
-  LOOP
-    v_i := v_i + 1;
-    IF v_i > 99 THEN
-      RAISE EXCEPTION 'PROTOCOL_ORG_CODE_TAKEN';
-    END IF;
-    v_suffix := v_i::text;
-    v_code := left(v_base, GREATEST(2, 12 - length(v_suffix))) || v_suffix;
-  END LOOP;
-
-  INSERT INTO public.org_serwis_billing_settings (
-    org_id,
-    protocol_org_code
-  )
-  VALUES (p_org_id, v_code)
-  ON CONFLICT (org_id) DO UPDATE
-    SET protocol_org_code = public.org_serwis_billing_settings.protocol_org_code
-  RETURNING * INTO v_row;
-
-  RETURN v_row;
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.ensure_resident_order_settings(p_community_id uuid)
- RETURNS resident_order_settings
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_org uuid;
-  v_row public.resident_order_settings;
-BEGIN
-  v_org := private.resident_order_require_community_management(p_community_id);
-
-  INSERT INTO public.resident_order_settings (
-    community_id,
-    org_id,
-    email_subject_template,
-    email_body_template,
-    updated_by
-  )
-  VALUES (
-    p_community_id,
-    v_org,
-    private.resident_order_default_subject(),
-    private.resident_order_default_body(),
-    (SELECT auth.uid())
-  )
-  ON CONFLICT (community_id) DO NOTHING;
-
-  SELECT * INTO v_row
-  FROM public.resident_order_settings
-  WHERE community_id = p_community_id;
-
-  RETURN v_row;
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.finalize_legal_consent(p_batch_id uuid, p_pdf_sha256 text, p_pdf_storage_path text, p_document_ids uuid[])
  RETURNS jsonb
  LANGUAGE sql
@@ -11718,47 +8203,6 @@ begin
 
   return v_api_key;
 end;
-$function$;
-CREATE OR REPLACE FUNCTION public.get_community_estate(p_community_id uuid)
- RETURNS TABLE(estate_id uuid, estate_name text, estate_status text, created_by_org_id uuid, member_id uuid, member_status estate_member_status, invited_by_org_id uuid, consented_at timestamp with time zone)
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_org uuid;
-BEGIN
-  PERFORM private.estate_require_actor();
-
-  SELECT c.org_id INTO v_org
-  FROM public.communities c
-  WHERE c.id = p_community_id;
-
-  IF v_org IS NULL THEN
-    RAISE EXCEPTION 'Nie znaleziono wspólnoty.';
-  END IF;
-
-  IF NOT public.is_org_member(v_org) THEN
-    RAISE EXCEPTION 'Brak dostępu do tej wspólnoty.';
-  END IF;
-
-  RETURN QUERY
-  SELECT
-    e.id,
-    e.name,
-    e.status,
-    e.created_by_org_id,
-    em.id,
-    em.status,
-    em.invited_by_org_id,
-    em.consented_at
-  FROM public.estate_members em
-  JOIN public.estates e ON e.id = em.estate_id
-  WHERE em.community_id = p_community_id
-    AND em.status IN ('invited', 'accepted')
-  ORDER BY CASE WHEN em.status = 'accepted' THEN 0 ELSE 1 END, em.created_at DESC
-  LIMIT 1;
-END;
 $function$;
 CREATE OR REPLACE FUNCTION public.get_duty_push_job(p_alert_id uuid)
  RETURNS jsonb
@@ -11830,23 +8274,6 @@ CREATE OR REPLACE FUNCTION public.get_fleet_notification_email_payload(p_dispatc
  SECURITY DEFINER
  SET search_path TO 'private', 'public', 'pg_catalog'
 AS $function$ BEGIN RETURN private.lease_fleet_notification_dispatch(p_dispatch_id); END; $function$;
-CREATE OR REPLACE FUNCTION public.get_issue_email_payload(p_issue_id uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_issue public.property_issues%ROWTYPE;
-BEGIN
-  SELECT * INTO v_issue FROM public.property_issues WHERE id = p_issue_id;
-  IF v_issue.id IS NULL THEN
-    RAISE EXCEPTION 'Nie znaleziono zgłoszenia.';
-  END IF;
-  PERFORM private.vendor_email_require_management(v_issue.org_id);
-  RETURN private.vendor_email_build_payload(p_issue_id);
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.get_legal_welcome_email_payload(p_dispatch_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -11936,168 +8363,6 @@ CREATE OR REPLACE FUNCTION public.get_my_orgs_safe()
  SET search_path TO 'public'
 AS $function$
     SELECT org_id FROM public.memberships WHERE user_id = auth.uid();
-$function$;
-CREATE OR REPLACE FUNCTION public.get_org_ai_quota(p_org_id uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_limit integer;
-  v_used integer;
-  v_month date := private.inbound_month_start();
-BEGIN
-  IF p_org_id IS NULL THEN RAISE EXCEPTION 'Brak organizacji.'; END IF;
-  IF NOT (SELECT public.is_platform_admin()) AND NOT (SELECT public.is_org_member(p_org_id)) THEN
-    RAISE EXCEPTION 'Brak dostępu do limitu AI.';
-  END IF;
-  v_limit := private.inbound_ai_monthly_limit(p_org_id);
-  SELECT COALESCE(u.parse_count, 0) INTO v_used
-  FROM public.org_ai_usage_monthly u
-  WHERE u.org_id = p_org_id AND u.year_month = v_month;
-  v_used := COALESCE(v_used, 0);
-  RETURN jsonb_build_object(
-    'org_id', p_org_id, 'year_month', v_month,
-    'ai_parses_limit', v_limit, 'ai_parses_used', v_used,
-    'ai_parses_remaining', GREATEST(v_limit - v_used, 0),
-    'has_ai_auto', private.inbound_has_ai_auto(p_org_id)
-  );
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.get_org_serwis_billing_settings(p_org_id uuid)
- RETURNS org_serwis_billing_settings
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-BEGIN
-  IF auth.uid() IS NULL THEN
-    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
-  END IF;
-  IF p_org_id IS NULL THEN
-    RAISE EXCEPTION 'ISSUE_PROTOCOL_ORG_REQUIRED';
-  END IF;
-  IF NOT (
-    public.is_serwis_dispatcher_or_owner(p_org_id)
-    OR public.is_serwis_technician_role(p_org_id)
-  ) THEN
-    RAISE EXCEPTION 'ISSUE_BILLING_FORBIDDEN';
-  END IF;
-
-  RETURN public.ensure_org_serwis_billing_settings(p_org_id);
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.get_partner_cleaning_work_scope(p_location_master_id uuid)
- RETURNS TABLE(cleaning_org_id uuid, cleaning_org_name text, partner_legal_entity_id uuid, cleaning_location_id uuid, has_active_mandate boolean, has_active_cooperation boolean, section_id uuid, section_name text, section_is_active boolean, section_sort_order integer, checklist_id uuid, checklist_name text, frequency text, frequency_config jsonb, baseline_date date, requires_photo boolean, is_active boolean)
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'private'
-AS $function$
-DECLARE
-  v_admin record;
-  v_partner record;
-  v_org_name text;
-  v_le uuid;
-BEGIN
-  PERFORM private.cleaning_scope_require_actor();
-
-  IF p_location_master_id IS NULL THEN
-    RAISE EXCEPTION 'CLEANING_SCOPE_FORBIDDEN';
-  END IF;
-
-  SELECT * INTO v_admin
-  FROM private.resolve_admin_location_for_scope(p_location_master_id);
-
-  IF v_admin.admin_location_id IS NULL THEN
-    RAISE EXCEPTION 'CLEANING_SCOPE_FORBIDDEN';
-  END IF;
-
-  SELECT * INTO v_partner
-  FROM private.resolve_partner_cleaning_location(
-    p_location_master_id,
-    v_admin.admin_org_id,
-    v_admin.community_id
-  );
-
-  IF v_partner.cleaning_location_id IS NULL THEN
-    RAISE EXCEPTION 'CLEANING_SCOPE_NO_PARTNER';
-  END IF;
-
-  SELECT COALESCE(o.name, v_partner.cleaning_org_id::text)
-  INTO v_org_name
-  FROM public.organizations o
-  WHERE o.id = v_partner.cleaning_org_id;
-
-  SELECT e.legal_entity_id
-  INTO v_le
-  FROM public.org_legal_entity_enrollments e
-  WHERE e.org_id = v_partner.cleaning_org_id
-  ORDER BY COALESCE(e.is_cleaning, false) DESC, e.created_at
-  LIMIT 1;
-
-  RETURN QUERY
-  SELECT
-    v_partner.cleaning_org_id,
-    COALESCE(v_org_name, v_partner.cleaning_org_id::text),
-    v_le,
-    v_partner.cleaning_location_id,
-    v_partner.has_active_mandate,
-    v_partner.has_active_cooperation,
-    items.section_id,
-    items.section_name,
-    COALESCE(items.section_is_active, false),
-    COALESCE(items.section_sort_order, 0),
-    items.checklist_id,
-    items.checklist_name,
-    items.frequency,
-    items.frequency_config,
-    items.baseline_date,
-    COALESCE(items.requires_photo, false),
-    COALESCE(items.is_active, false)
-  FROM (SELECT 1) AS header
-  LEFT JOIN (
-    SELECT
-      ps.id AS section_id,
-      ps.name AS section_name,
-      COALESCE(ps.is_active, true) AS section_is_active,
-      COALESCE(ps.sort_order, 0) AS section_sort_order,
-      chk.id AS checklist_id,
-      chk.name AS checklist_name,
-      chk.frequency,
-      chk.frequency_config,
-      chk.baseline_date,
-      COALESCE(chk.requires_photo, false) AS requires_photo,
-      COALESCE(chk.is_active, true) AS is_active
-    FROM public.property_sections ps
-    LEFT JOIN public.property_checklists chk
-      ON chk.section_id = ps.id
-     AND chk.location_id = v_partner.cleaning_location_id
-    WHERE ps.location_id = v_partner.cleaning_location_id
-
-    UNION ALL
-
-    SELECT
-      NULL::uuid,
-      NULL::text,
-      false,
-      0,
-      chk.id,
-      chk.name,
-      chk.frequency,
-      chk.frequency_config,
-      chk.baseline_date,
-      COALESCE(chk.requires_photo, false),
-      COALESCE(chk.is_active, true)
-    FROM public.property_checklists chk
-    WHERE chk.location_id = v_partner.cleaning_location_id
-      AND chk.section_id IS NULL
-  ) AS items ON true
-  ORDER BY
-    COALESCE(items.section_sort_order, 0),
-    COALESCE(items.section_name, ''),
-    COALESCE(items.checklist_name, '');
-END;
 $function$;
 CREATE OR REPLACE FUNCTION public.get_profile_by_email(target_email text)
  RETURNS json
@@ -12196,75 +8461,6 @@ AS $function$
     AND (m.valid_until IS NULL OR m.valid_until >= CURRENT_DATE)
   ORDER BY m.created_at DESC;
 $function$;
-CREATE OR REPLACE FUNCTION public.get_resident_order_email_payload(p_order_id uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_order public.resident_orders%ROWTYPE;
-  v_settings public.resident_order_settings%ROWTYPE;
-  v_org public.organizations%ROWTYPE;
-  v_community public.communities%ROWTYPE;
-  v_loc public.cleaning_locations%ROWTYPE;
-  v_profile public.profiles%ROWTYPE;
-  v_company public.companies%ROWTYPE;
-  v_item public.resident_order_catalog_items%ROWTYPE;
-BEGIN
-  SELECT * INTO v_order FROM public.resident_orders WHERE id = p_order_id;
-  IF v_order.id IS NULL THEN
-    RAISE EXCEPTION 'Nie znaleziono zamówienia.';
-  END IF;
-
-  IF (SELECT auth.role()) IS DISTINCT FROM 'service_role'
-     AND NOT public.can_manage_resident_orders(v_order.org_id) THEN
-    RAISE EXCEPTION 'Brak uprawnień do podglądu szablonu zamówienia.';
-  END IF;
-
-  SELECT * INTO v_org FROM public.organizations WHERE id = v_order.org_id;
-  SELECT * INTO v_community FROM public.communities WHERE id = v_order.community_id;
-  SELECT * INTO v_loc FROM public.cleaning_locations WHERE id = v_order.location_id;
-  SELECT * INTO v_profile FROM public.profiles WHERE id = v_order.resident_user_id;
-  SELECT * INTO v_settings FROM public.resident_order_settings WHERE community_id = v_order.community_id;
-  SELECT * INTO v_company FROM public.companies WHERE id = v_order.fulfillment_company_id;
-  SELECT * INTO v_item FROM public.resident_order_catalog_items WHERE id = v_order.catalog_item_id;
-
-  RETURN jsonb_build_object(
-    'orderId', v_order.id,
-    'toEmail', COALESCE(v_company.email, ''),
-    'toName', COALESCE(v_company.name, ''),
-    'subjectTemplate', COALESCE(v_settings.email_subject_template, private.resident_order_default_subject()),
-    'bodyTemplate', COALESCE(v_settings.email_body_template, private.resident_order_default_body()),
-    'variables', jsonb_build_object(
-      'org.name', COALESCE(v_org.name, ''),
-      'org.nip', COALESCE(v_org.nip, ''),
-      'org.address', concat_ws(', ', NULLIF(v_org.address, ''), NULLIF(v_org.postal_code, ''), NULLIF(v_org.city, '')),
-      'org.support_email', COALESCE(v_org.support_email, ''),
-      'community.name', COALESCE(v_community.name, ''),
-      'community.legal_name', COALESCE(v_community.legal_name, ''),
-      'community.nip', COALESCE(v_community.nip, ''),
-      'community.board_email', COALESCE(v_community.board_email, ''),
-      'building.name', COALESCE(v_loc.name, ''),
-      'building.address', COALESCE(v_loc.address, ''),
-      'unit.number', COALESCE(v_order.unit_number, ''),
-      'resident.full_name', COALESCE(v_profile.full_name, ''),
-      'resident.email', COALESCE(v_profile.email, v_profile.contact_email, ''),
-      'resident.phone', COALESCE(v_profile.phone, ''),
-      'order.id', v_order.id::text,
-      'order.notes', COALESCE(v_order.notes, ''),
-      'order.quantity', v_order.quantity::text,
-      'order.created_at', to_char(v_order.created_at AT TIME ZONE 'Europe/Warsaw', 'YYYY-MM-DD HH24:MI'),
-      'order.contact_name', COALESCE(v_order.contact_name, ''),
-      'order.contact_phone', COALESCE(v_order.contact_phone, ''),
-      'order.contact_email', COALESCE(v_order.contact_email, ''),
-      'item.name', COALESCE(v_order.item_name, ''),
-      'item.description', COALESCE(v_item.description, ''),
-      'item.price_label', private.resident_order_price_label(v_order.item_price_amount, v_order.item_price_kind)
-    )
-  );
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.get_sop_cron_secret()
  RETURNS text
  LANGUAGE sql
@@ -12323,57 +8519,6 @@ BEGIN
   RETURN v_updated;
 END;
 $function$;
-CREATE OR REPLACE FUNCTION public.guard_unit_inspection_record_update()
- RETURNS trigger
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_org uuid;
-BEGIN
-  SELECT c.org_id INTO v_org
-  FROM public.inspection_campaigns c
-  WHERE c.id = OLD.campaign_id;
-
-  IF v_org IS NOT NULL AND public.is_serwis_dispatcher_or_owner(v_org) THEN
-    RETURN NEW;
-  END IF;
-
-  IF public.resident_matches_unit_inspection_record(OLD.id)
-     AND NEW.campaign_id IS NOT DISTINCT FROM OLD.campaign_id
-     AND NEW.unit_number IS NOT DISTINCT FROM OLD.unit_number
-     AND NEW.building_identifier IS NOT DISTINCT FROM OLD.building_identifier
-     AND NEW.status IS NOT DISTINCT FROM OLD.status
-     AND NEW.notes IS NOT DISTINCT FROM OLD.notes
-     AND NEW.inspection_date IS NOT DISTINCT FROM OLD.inspection_date
-     AND NEW.photo_url IS NOT DISTINCT FROM OLD.photo_url
-     AND NEW.signature_url IS NOT DISTINCT FROM OLD.signature_url
-  THEN
-    NEW.resident_home_by := auth.uid();
-    NEW.resident_home_at := CASE
-      WHEN NEW.resident_is_home THEN now()
-      ELSE NULL
-    END;
-    NEW.updated_at := now();
-    RETURN NEW;
-  END IF;
-
-  IF public.is_inspection_campaign_assignee(OLD.campaign_id) THEN
-    NEW.campaign_id := OLD.campaign_id;
-    NEW.unit_number := OLD.unit_number;
-    NEW.building_identifier := OLD.building_identifier;
-    NEW.resident_is_home := OLD.resident_is_home;
-    NEW.resident_home_at := OLD.resident_home_at;
-    NEW.resident_home_by := OLD.resident_home_by;
-    NEW.updated_at := now();
-    RETURN NEW;
-  END IF;
-
-  RAISE EXCEPTION 'Brak uprawnień do aktualizacji rekordu przeglądu.'
-    USING ERRCODE = '42501';
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -12415,6 +8560,16 @@ AS $function$
       AND la.user_id = (SELECT auth.uid())
       AND (la.expires_at IS NULL OR la.expires_at > now())
   );
+$function$;
+CREATE OR REPLACE FUNCTION public.can_read_community_board_row(p_location_id uuid, p_estate_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT
+    public.has_active_location_access(p_location_id)
+    OR (p_estate_id IS NOT NULL AND public.has_estate_social_access(p_estate_id));
 $function$;
 CREATE OR REPLACE FUNCTION public.has_location_access(target_location_id uuid)
  RETURNS boolean
@@ -12641,6 +8796,1247 @@ BEGIN
   );
 END;
 $function$;
+CREATE OR REPLACE FUNCTION public.is_active_org_member(p_org_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.memberships m
+    WHERE m.org_id = p_org_id
+      AND m.user_id = (SELECT auth.uid())
+      AND COALESCE(m.is_active, true) = true
+  );
+$function$;
+CREATE OR REPLACE FUNCTION public.is_admin_safe(target_org_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM public.memberships
+    WHERE org_id = target_org_id
+    AND user_id = auth.uid()
+    AND role ILIKE ANY (ARRAY['owner', 'admin', 'manager', 'coordinator']) -- ILIKE = ignoruj wielkość liter
+  );
+$function$;
+CREATE OR REPLACE FUNCTION public.is_cleaning_org_manager(p_org_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.memberships m
+    WHERE m.org_id = p_org_id
+      AND m.user_id = auth.uid()
+      AND m.role = ANY (ARRAY['owner'::text, 'coordinator'::text])
+      AND COALESCE(m.is_active, true)
+  );
+$function$;
+CREATE OR REPLACE FUNCTION public.create_cleaning_extra_job(p_org_id uuid, p_location_id uuid, p_assigned_staff_id uuid, p_title text, p_instructions text DEFAULT NULL::text, p_requires_photo boolean DEFAULT false, p_gps_required boolean DEFAULT true, p_qr_required boolean DEFAULT false, p_biometric_required boolean DEFAULT false, p_pay_mode text DEFAULT 'hourly'::text, p_employee_hourly_rate numeric DEFAULT NULL::numeric, p_client_hourly_rate numeric DEFAULT NULL::numeric, p_employee_fixed_amount numeric DEFAULT NULL::numeric, p_client_fixed_amount numeric DEFAULT NULL::numeric)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_task_id uuid;
+  v_job_id uuid;
+  v_title text := btrim(p_title);
+BEGIN
+  IF NOT public.is_cleaning_org_manager(p_org_id) THEN
+    RAISE EXCEPTION 'Only coordinators and owners can create extra jobs';
+  END IF;
+  IF v_title IS NULL OR char_length(v_title) < 1 THEN
+    RAISE EXCEPTION 'Title is required';
+  END IF;
+  IF p_pay_mode NOT IN ('hourly', 'fixed') THEN
+    RAISE EXCEPTION 'Invalid pay mode';
+  END IF;
+  IF p_pay_mode = 'fixed' AND p_employee_fixed_amount IS NULL THEN
+    RAISE EXCEPTION 'Fixed extra jobs require an employee amount';
+  END IF;
+
+  INSERT INTO public.cleaning_tasks (
+    org_id, location_id, assigned_staff_id, status, task_type, scheduled_at, coordinator_notes, section_id
+  )
+  VALUES (
+    p_org_id, p_location_id, p_assigned_staff_id, 'pending', 'extra_paid', now(), v_title, NULL
+  )
+  RETURNING id INTO v_task_id;
+
+  INSERT INTO public.cleaning_extra_jobs (
+    org_id, task_id, location_id, assigned_staff_id, created_by, origin, title, instructions,
+    requires_photo, gps_required, qr_required, biometric_required, pay_mode,
+    employee_hourly_rate, client_hourly_rate, employee_fixed_amount, client_fixed_amount,
+    approval_status, approved_by, approved_at
+  )
+  VALUES (
+    p_org_id, v_task_id, p_location_id, p_assigned_staff_id, auth.uid(), 'coordinator', v_title,
+    NULLIF(btrim(COALESCE(p_instructions, '')), ''),
+    COALESCE(p_requires_photo, false), COALESCE(p_gps_required, true), COALESCE(p_qr_required, false),
+    COALESCE(p_biometric_required, false), p_pay_mode, p_employee_hourly_rate, p_client_hourly_rate,
+    p_employee_fixed_amount, p_client_fixed_amount, 'approved', auth.uid(), now()
+  )
+  RETURNING id INTO v_job_id;
+
+  RETURN v_job_id;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.is_inspection_campaign_assignee(p_campaign_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.inspection_campaign_assignees a
+    WHERE a.campaign_id = p_campaign_id
+      AND a.technician_id = auth.uid()
+  );
+$function$;
+CREATE OR REPLACE FUNCTION public.is_management_role(target_org_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.memberships m
+    WHERE m.org_id = target_org_id
+      AND m.user_id = (SELECT auth.uid())
+      AND COALESCE(m.is_active, true) = true
+      AND m.role IN ('owner', 'admin', 'coordinator')
+  );
+$function$;
+CREATE OR REPLACE FUNCTION public.enforce_property_issue_marketplace()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_actor_org uuid;
+BEGIN
+  v_actor_org := public.get_my_org_id_safe();
+
+  IF NEW.is_public_broadcast IS NOT TRUE THEN
+    NEW.marketplace_scope := NULL;
+  ELSIF NEW.marketplace_scope IS NULL THEN
+    NEW.marketplace_scope := 'serving';
+    NEW.is_public_broadcast := true;
+  ELSE
+    NEW.is_public_broadcast := true;
+  END IF;
+
+  IF OLD.claimed_by_org_id IS NOT NULL
+     AND NEW.claimed_by_org_id IS DISTINCT FROM OLD.claimed_by_org_id THEN
+    RAISE EXCEPTION 'ISSUE_MARKETPLACE_ALREADY_CLAIMED'
+      USING HINT = 'Another company already took this job.';
+  END IF;
+
+  IF OLD.assigned_staff_id IS NOT NULL
+     AND NEW.assigned_staff_id IS DISTINCT FROM OLD.assigned_staff_id
+     AND NEW.assigned_staff_id IS NOT NULL THEN
+    IF NOT (
+      public.is_management_role(OLD.org_id)
+      OR (
+        OLD.claimed_by_org_id IS NOT NULL
+        AND public.is_management_role(OLD.claimed_by_org_id)
+      )
+    ) THEN
+      RAISE EXCEPTION 'ISSUE_MARKETPLACE_ALREADY_CLAIMED'
+        USING HINT = 'This job was already taken by someone else.';
+    END IF;
+  END IF;
+
+  IF OLD.assigned_staff_id IS NULL AND NEW.assigned_staff_id IS NOT NULL THEN
+    IF OLD.claimed_by_org_id IS NOT NULL
+       AND v_actor_org IS DISTINCT FROM OLD.claimed_by_org_id THEN
+      RAISE EXCEPTION 'ISSUE_MARKETPLACE_ALREADY_CLAIMED'
+        USING HINT = 'Another company already took this job.';
+    END IF;
+    NEW.claimed_by_org_id := COALESCE(NEW.claimed_by_org_id, OLD.claimed_by_org_id, v_actor_org);
+    IF OLD.is_public_broadcast IS TRUE THEN
+      NEW.is_public_broadcast := false;
+      NEW.marketplace_scope := NULL;
+    END IF;
+  END IF;
+
+  IF OLD.claimed_by_org_id IS NULL AND NEW.claimed_by_org_id IS NOT NULL THEN
+    IF OLD.is_public_broadcast IS TRUE THEN
+      NEW.is_public_broadcast := false;
+      NEW.marketplace_scope := NULL;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.is_manager()
+ RETURNS boolean
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM memberships 
+    WHERE user_id = auth.uid() 
+    AND role IN ('owner', 'admin', 'coordinator')
+  );
+$function$;
+CREATE OR REPLACE FUNCTION public.is_manager_safe()
+ RETURNS boolean
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM memberships 
+    WHERE user_id = auth.uid() 
+    AND role IN ('owner', 'admin', 'coordinator')
+  );
+$function$;
+CREATE OR REPLACE FUNCTION public.is_org_admin_team(target_org_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM public.memberships m
+    WHERE m.org_id = target_org_id
+      AND m.user_id = (SELECT auth.uid())
+      AND COALESCE(m.is_active, true) = true
+      AND lower(btrim(COALESCE(m.role, ''))) IN (
+        'owner', 'admin', 'administrator', 'manager',
+        'coordinator', 'koordynator',
+        'wlasciciel', 'właściciel',
+        'assistant', 'accountant'
+      )
+  );
+$function$;
+CREATE OR REPLACE FUNCTION public.is_org_billing_owner(p_org_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.organizations o
+    WHERE o.id = p_org_id
+      AND o.owner_id = (SELECT auth.uid())
+  )
+  OR EXISTS (
+    SELECT 1
+    FROM public.memberships m
+    WHERE m.org_id = p_org_id
+      AND m.user_id = (SELECT auth.uid())
+      AND COALESCE(m.is_active, true) = true
+      AND m.role ILIKE ANY (ARRAY['owner', 'wlasciciel'])
+  );
+$function$;
+CREATE OR REPLACE FUNCTION public.is_org_management(target_org_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.memberships m
+    WHERE m.org_id = target_org_id
+      AND m.user_id = (SELECT auth.uid())
+      AND COALESCE(m.is_active, true) = true
+      AND m.role ILIKE ANY (
+        ARRAY[
+          'owner',
+          'admin',
+          'administrator',
+          'manager',
+          'coordinator',
+          'koordynator',
+          'wlasciciel'
+        ]
+      )
+  );
+$function$;
+CREATE OR REPLACE FUNCTION private.can_access_equipment_protocol_object(p_object_name text, p_write boolean DEFAULT false)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'storage'
+AS $function$
+DECLARE
+  v_actor uuid := (SELECT auth.uid());
+  v_parts text[];
+  v_org uuid;
+  v_protocol_id uuid;
+  v_protocol public.equipment_protocols;
+BEGIN
+  IF v_actor IS NULL OR p_object_name IS NULL THEN
+    RETURN false;
+  END IF;
+
+  v_parts := storage.foldername(p_object_name);
+  IF array_length(v_parts, 1) IS NULL OR array_length(v_parts, 1) < 2 THEN
+    RETURN false;
+  END IF;
+
+  BEGIN
+    v_org := v_parts[1]::uuid;
+    v_protocol_id := v_parts[2]::uuid;
+  EXCEPTION WHEN invalid_text_representation THEN
+    RETURN false;
+  END;
+
+  SELECT * INTO v_protocol
+  FROM public.equipment_protocols
+  WHERE id = v_protocol_id
+    AND org_id = v_org;
+
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+
+  IF p_write THEN
+    IF v_protocol.status IS DISTINCT FROM 'pending' THEN
+      RETURN false;
+    END IF;
+    RETURN
+      public.is_org_management(v_protocol.org_id)
+      OR v_actor = v_protocol.initiated_by;
+  END IF;
+
+  RETURN
+    public.is_org_management(v_protocol.org_id)
+    OR v_actor = v_protocol.worker_id
+    OR v_actor = v_protocol.initiated_by;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.cancel_equipment_protocol(p_protocol_id uuid)
+ RETURNS equipment_protocols
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_actor uuid := private.equipment_require_actor();
+  v_protocol public.equipment_protocols;
+BEGIN
+  PERFORM private.equipment_set_rpc_flag();
+  SELECT * INTO v_protocol FROM public.equipment_protocols WHERE id = p_protocol_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'EQUIPMENT_NOT_FOUND'; END IF;
+  IF v_protocol.status IS DISTINCT FROM 'pending' THEN RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE'; END IF;
+  IF v_actor IS DISTINCT FROM v_protocol.initiated_by AND NOT public.is_org_management(v_protocol.org_id) THEN
+    RAISE EXCEPTION 'EQUIPMENT_FORBIDDEN';
+  END IF;
+  UPDATE public.equipment_protocols SET status = 'cancelled', responded_by = v_actor, responded_at = now()
+  WHERE id = p_protocol_id RETURNING * INTO v_protocol;
+  PERFORM private.equipment_apply_protocol_resolution(v_protocol, 'cancelled');
+  RETURN v_protocol;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.deactivate_community_for_org(p_org_id uuid, p_community_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_actor uuid;
+  v_row public.communities%ROWTYPE;
+  v_mandates integer := 0;
+  v_buildings integer := 0;
+  v_coop integer := 0;
+BEGIN
+  v_actor := private.mandate_require_actor();
+  PERFORM private.community_set_rpc_flag();
+  PERFORM private.mandate_set_rpc_flag();
+
+  IF p_org_id IS NULL OR NOT public.is_org_management(p_org_id) THEN
+    RAISE EXCEPTION 'COMMUNITY_DEACTIVATE_FORBIDDEN';
+  END IF;
+
+  SELECT * INTO v_row
+  FROM public.communities
+  WHERE id = p_community_id
+    AND org_id = p_org_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'COMMUNITY_NOT_FOUND';
+  END IF;
+
+  IF v_row.status = 'inactive' THEN
+    RETURN jsonb_build_object(
+      'communityId', v_row.id,
+      'status', v_row.status,
+      'deactivatedAt', v_row.deactivated_at,
+      'mandatesSuperseded', 0,
+      'buildingsAdminPaused', 0
+    );
+  END IF;
+
+  UPDATE public.communities
+  SET
+    status = 'inactive',
+    deactivated_at = now(),
+    deactivated_by = v_actor
+  WHERE id = v_row.id
+  RETURNING * INTO v_row;
+
+  IF v_row.legal_entity_id IS NOT NULL THEN
+    UPDATE public.org_legal_entity_enrollments
+    SET status = 'inactive'
+    WHERE org_id = p_org_id
+      AND legal_entity_id = v_row.legal_entity_id
+      AND status IS DISTINCT FROM 'inactive';
+  END IF;
+
+  UPDATE public.cleaning_locations
+  SET is_admin_active = false
+  WHERE org_id = p_org_id
+    AND community_id = v_row.id
+    AND is_admin_active IS TRUE;
+  GET DIAGNOSTICS v_buildings = ROW_COUNT;
+
+  IF v_row.legal_entity_id IS NOT NULL THEN
+    UPDATE public.service_mandates
+    SET
+      status = 'superseded',
+      revoked_by_org_id = p_org_id,
+      revoked_at = now()
+    WHERE org_id = p_org_id
+      AND community_legal_entity_id = v_row.legal_entity_id
+      AND module = 'admin'
+      AND status IN ('active', 'paused');
+    GET DIAGNOSTICS v_mandates = ROW_COUNT;
+
+    UPDATE public.building_cooperation_links
+    SET status = 'paused'
+    WHERE admin_org_id = p_org_id
+      AND status = 'active'
+      AND location_master_id IN (
+        SELECT cl.location_master_id
+        FROM public.cleaning_locations cl
+        WHERE cl.org_id = p_org_id
+          AND cl.community_id = v_row.id
+          AND cl.location_master_id IS NOT NULL
+      );
+    GET DIAGNOSTICS v_coop = ROW_COUNT;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'communityId', v_row.id,
+    'status', v_row.status,
+    'deactivatedAt', v_row.deactivated_at,
+    'mandatesSuperseded', v_mandates,
+    'buildingsAdminPaused', v_buildings,
+    'cooperationPaused', v_coop
+  );
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.estate_require_community_management(p_community_id uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_org uuid;
+BEGIN
+  PERFORM private.estate_require_actor();
+
+  SELECT c.org_id INTO v_org
+  FROM public.communities c
+  WHERE c.id = p_community_id;
+
+  IF v_org IS NULL THEN
+    RAISE EXCEPTION 'Nie znaleziono wspólnoty.';
+  END IF;
+
+  IF NOT public.is_org_management(v_org) THEN
+    RAISE EXCEPTION 'Brak uprawnień do zarządzania tą wspólnotą.';
+  END IF;
+
+  RETURN v_org;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.initiate_equipment_handover(p_org_id uuid, p_worker_id uuid, p_kind text, p_asset_id uuid DEFAULT NULL::uuid, p_key_name text DEFAULT NULL::text, p_key_type text DEFAULT 'other'::text, p_condition_notes text DEFAULT NULL::text, p_photo_urls text[] DEFAULT '{}'::text[])
+ RETURNS equipment_protocols
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_actor uuid := private.equipment_require_actor();
+  v_protocol public.equipment_protocols;
+  v_staff_id uuid;
+  v_key_type text := lower(btrim(COALESCE(p_key_type, 'other')));
+  v_notes text := NULLIF(btrim(COALESCE(p_condition_notes, '')), '');
+BEGIN
+  IF NOT public.is_org_management(p_org_id) THEN
+    RAISE EXCEPTION 'EQUIPMENT_FORBIDDEN';
+  END IF;
+
+  PERFORM private.equipment_assert_active_member(p_org_id, p_worker_id);
+
+  IF p_kind NOT IN ('asset', 'key_card') THEN
+    RAISE EXCEPTION 'EQUIPMENT_INVALID_KIND';
+  END IF;
+
+  PERFORM private.equipment_set_rpc_flag();
+
+  IF p_kind = 'asset' THEN
+    IF p_asset_id IS NULL THEN
+      RAISE EXCEPTION 'EQUIPMENT_ASSET_REQUIRED';
+    END IF;
+
+    UPDATE public.equipment_assets
+    SET
+      status = 'pending_handover',
+      current_holder_id = p_worker_id,
+      notes = v_notes
+    WHERE id = p_asset_id
+      AND org_id = p_org_id
+      AND status = 'available'
+      AND current_holder_id IS NULL
+    RETURNING id INTO v_staff_id;
+
+    IF v_staff_id IS NULL THEN
+      RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE';
+    END IF;
+
+    INSERT INTO public.equipment_protocols (
+      org_id, kind, asset_id, worker_id, direction, status,
+      initiated_by, condition_notes, photo_urls
+    ) VALUES (
+      p_org_id, 'asset', p_asset_id, p_worker_id, 'handover', 'pending',
+      v_actor, v_notes,
+      private.equipment_normalize_photo_urls(p_photo_urls)
+    )
+    RETURNING * INTO v_protocol;
+  ELSE
+    IF btrim(COALESCE(p_key_name, '')) = '' THEN
+      RAISE EXCEPTION 'EQUIPMENT_NAME_REQUIRED';
+    END IF;
+    IF v_key_type NOT IN ('key', 'card', 'other') THEN
+      RAISE EXCEPTION 'EQUIPMENT_INVALID_TYPE';
+    END IF;
+
+    INSERT INTO public.staff_equipment (
+      org_id, staff_id, type, name, status, assigned_at, created_by
+    ) VALUES (
+      p_org_id, p_worker_id, v_key_type, btrim(p_key_name),
+      'pending_handover', now(), v_actor
+    )
+    RETURNING id INTO v_staff_id;
+
+    INSERT INTO public.equipment_protocols (
+      org_id, kind, staff_equipment_id, worker_id, direction, status,
+      initiated_by, condition_notes, photo_urls
+    ) VALUES (
+      p_org_id, 'key_card', v_staff_id, p_worker_id, 'handover', 'pending',
+      v_actor, v_notes,
+      private.equipment_normalize_photo_urls(p_photo_urls)
+    )
+    RETURNING * INTO v_protocol;
+  END IF;
+
+  RETURN v_protocol;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.initiate_equipment_return(p_kind text, p_asset_id uuid DEFAULT NULL::uuid, p_staff_equipment_id uuid DEFAULT NULL::uuid, p_condition_notes text DEFAULT NULL::text, p_photo_urls text[] DEFAULT '{}'::text[])
+ RETURNS equipment_protocols
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_actor uuid := private.equipment_require_actor();
+  v_protocol public.equipment_protocols;
+  v_org uuid; v_worker uuid; v_mgmt boolean;
+BEGIN
+  IF p_kind NOT IN ('asset', 'key_card') THEN RAISE EXCEPTION 'EQUIPMENT_INVALID_KIND'; END IF;
+  PERFORM private.equipment_set_rpc_flag();
+  IF p_kind = 'asset' THEN
+    IF p_asset_id IS NULL THEN RAISE EXCEPTION 'EQUIPMENT_ASSET_REQUIRED'; END IF;
+    SELECT org_id, current_holder_id INTO v_org, v_worker FROM public.equipment_assets WHERE id = p_asset_id FOR UPDATE;
+    IF v_org IS NULL THEN RAISE EXCEPTION 'EQUIPMENT_NOT_FOUND'; END IF;
+    v_mgmt := public.is_org_management(v_org);
+    IF NOT v_mgmt AND v_actor IS DISTINCT FROM v_worker THEN RAISE EXCEPTION 'EQUIPMENT_FORBIDDEN'; END IF;
+    IF v_worker IS NULL THEN RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE'; END IF;
+    UPDATE public.equipment_assets SET status = 'pending_return' WHERE id = p_asset_id AND status = 'assigned' AND current_holder_id = v_worker;
+    IF NOT FOUND THEN RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE'; END IF;
+    INSERT INTO public.equipment_protocols (org_id, kind, asset_id, worker_id, direction, status, initiated_by, condition_notes, photo_urls)
+    VALUES (v_org, 'asset', p_asset_id, v_worker, 'return', 'pending', v_actor, NULLIF(btrim(COALESCE(p_condition_notes, '')), ''), private.equipment_normalize_photo_urls(p_photo_urls))
+    RETURNING * INTO v_protocol;
+  ELSE
+    IF p_staff_equipment_id IS NULL THEN RAISE EXCEPTION 'EQUIPMENT_ITEM_REQUIRED'; END IF;
+    SELECT org_id, staff_id INTO v_org, v_worker FROM public.staff_equipment WHERE id = p_staff_equipment_id FOR UPDATE;
+    IF v_org IS NULL THEN RAISE EXCEPTION 'EQUIPMENT_NOT_FOUND'; END IF;
+    v_mgmt := public.is_org_management(v_org);
+    IF NOT v_mgmt AND v_actor IS DISTINCT FROM v_worker THEN RAISE EXCEPTION 'EQUIPMENT_FORBIDDEN'; END IF;
+    UPDATE public.staff_equipment SET status = 'pending_return' WHERE id = p_staff_equipment_id AND status = 'assigned' AND staff_id = v_worker;
+    IF NOT FOUND THEN RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE'; END IF;
+    INSERT INTO public.equipment_protocols (org_id, kind, staff_equipment_id, worker_id, direction, status, initiated_by, condition_notes, photo_urls)
+    VALUES (v_org, 'key_card', p_staff_equipment_id, v_worker, 'return', 'pending', v_actor, NULLIF(btrim(COALESCE(p_condition_notes, '')), ''), private.equipment_normalize_photo_urls(p_photo_urls))
+    RETURNING * INTO v_protocol;
+  END IF;
+  RETURN v_protocol;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.invite_service_mandate(p_acting_org_id uuid, p_community_legal_entity_id uuid, p_location_master_id uuid, p_partner_org_id uuid, p_partner_legal_entity_id uuid, p_module domio_module, p_role mandate_role, p_valid_from timestamp with time zone DEFAULT now(), p_valid_until timestamp with time zone DEFAULT NULL::timestamp with time zone, p_notes text DEFAULT NULL::text)
+ RETURNS service_mandates
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE v_row public.service_mandates; v_bootstrap boolean := false; v_status public.mandate_status := 'invited'; v_accepted_at timestamptz := NULL; v_accepted_by uuid := NULL;
+BEGIN
+  PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag();
+  IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.legal_entities WHERE id = p_community_legal_entity_id) THEN RAISE EXCEPTION 'MANDATE_COMMUNITY_NOT_FOUND'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.legal_entities WHERE id = p_partner_legal_entity_id) THEN RAISE EXCEPTION 'MANDATE_PARTNER_NOT_FOUND'; END IF;
+  IF p_role = 'external_designee' THEN
+    IF p_partner_org_id IS NOT NULL THEN RAISE EXCEPTION 'MANDATE_EXTERNAL_HAS_NO_ORG'; END IF;
+    v_status := 'active'; v_accepted_at := now(); v_accepted_by := p_acting_org_id;
+  ELSIF p_role <> 'external_designee' AND p_partner_org_id IS NULL THEN RAISE EXCEPTION 'MANDATE_ORG_REQUIRED'; END IF;
+  IF p_module = 'admin' AND p_role = 'primary_operator' AND p_partner_org_id = p_acting_org_id THEN
+    v_bootstrap := NOT EXISTS (SELECT 1 FROM public.service_mandates sm WHERE sm.community_legal_entity_id = p_community_legal_entity_id AND sm.module = 'admin' AND sm.status = 'active' AND sm.role = 'primary_operator' AND sm.location_master_id IS NOT DISTINCT FROM p_location_master_id);
+    IF v_bootstrap THEN v_status := 'active'; v_accepted_at := now(); v_accepted_by := p_acting_org_id; ELSE RAISE EXCEPTION 'MANDATE_PRIMARY_EXISTS'; END IF;
+  ELSIF p_role = 'external_designee' THEN NULL;
+  ELSIF p_module = 'admin' AND p_role = 'co_operator' AND p_partner_org_id = p_acting_org_id THEN
+    IF NOT EXISTS (SELECT 1 FROM public.service_mandates sm WHERE sm.community_legal_entity_id = p_community_legal_entity_id AND sm.module = 'admin' AND sm.status = 'active' AND sm.role = 'primary_operator' AND (sm.location_master_id IS NULL OR sm.location_master_id IS NOT DISTINCT FROM p_location_master_id)) THEN RAISE EXCEPTION 'MANDATE_NO_PRIMARY_ADMIN'; END IF;
+    v_status := 'invited';
+  ELSE
+    IF NOT private.has_active_admin_mandate(p_acting_org_id, p_community_legal_entity_id, p_location_master_id) THEN RAISE EXCEPTION 'MANDATE_ADMIN_REQUIRED'; END IF;
+    v_status := 'invited';
+  END IF;
+  INSERT INTO public.service_mandates (community_legal_entity_id, location_master_id, org_id, partner_legal_entity_id, module, role, status, valid_from, valid_until, appointed_by_org_id, accepted_by_org_id, accepted_at, notes)
+  VALUES (p_community_legal_entity_id, p_location_master_id, p_partner_org_id, p_partner_legal_entity_id, p_module, p_role, v_status, COALESCE(p_valid_from, now()), p_valid_until, p_acting_org_id, v_accepted_by, v_accepted_at, p_notes)
+  RETURNING * INTO v_row;
+  RETURN v_row;
+END; $function$;
+CREATE OR REPLACE FUNCTION private.propose_succession(p_acting_org_id uuid, p_community_legal_entity_id uuid, p_location_master_id uuid, p_to_org_id uuid, p_to_legal_entity_id uuid, p_mode succession_mode DEFAULT 'share_read'::succession_mode, p_resource_scope succession_resource[] DEFAULT ARRAY['all'::succession_resource], p_notes text DEFAULT NULL::text)
+ RETURNS succession_events
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ DECLARE v_row public.succession_events; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; IF NOT private.has_active_admin_mandate(p_acting_org_id, p_community_legal_entity_id, p_location_master_id) THEN RAISE EXCEPTION 'MANDATE_ADMIN_REQUIRED'; END IF; IF NOT EXISTS (SELECT 1 FROM public.legal_entities WHERE id = p_to_legal_entity_id) THEN RAISE EXCEPTION 'SUCCESSION_PARTNER_NOT_FOUND'; END IF; INSERT INTO public.succession_events (community_legal_entity_id, location_master_id, from_org_id, to_org_id, to_legal_entity_id, mode, status, resource_scope, notes) VALUES (p_community_legal_entity_id, p_location_master_id, p_acting_org_id, p_to_org_id, p_to_legal_entity_id, COALESCE(p_mode, 'share_read'), 'proposed', COALESCE(p_resource_scope, ARRAY['all'::public.succession_resource]), p_notes) RETURNING * INTO v_row; RETURN v_row; END; $function$;
+CREATE OR REPLACE FUNCTION private.respond_equipment_protocol(p_protocol_id uuid, p_accept boolean, p_condition_notes text DEFAULT NULL::text, p_photo_urls text[] DEFAULT NULL::text[], p_rejection_reason text DEFAULT NULL::text)
+ RETURNS equipment_protocols
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_actor uuid := private.equipment_require_actor();
+  v_protocol public.equipment_protocols;
+  v_is_mgmt boolean;
+  v_is_worker boolean;
+  v_is_initiator boolean;
+  v_is_counterparty boolean;
+  v_terminal text;
+  v_reason text;
+BEGIN
+  PERFORM private.equipment_set_rpc_flag();
+
+  SELECT *
+  INTO v_protocol
+  FROM public.equipment_protocols
+  WHERE id = p_protocol_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'EQUIPMENT_NOT_FOUND';
+  END IF;
+
+  IF v_protocol.status IS DISTINCT FROM 'pending' THEN
+    RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE';
+  END IF;
+
+  v_is_mgmt := public.is_org_management(v_protocol.org_id);
+  v_is_worker := v_actor = v_protocol.worker_id;
+  v_is_initiator := v_actor = v_protocol.initiated_by;
+  v_is_counterparty := (v_is_worker OR v_is_mgmt) AND NOT v_is_initiator;
+
+  IF v_protocol.direction = 'handover' THEN
+    IF NOT v_is_worker OR v_is_initiator THEN
+      RAISE EXCEPTION 'EQUIPMENT_NOT_COUNTERPARTY';
+    END IF;
+  ELSE
+    IF NOT v_is_counterparty THEN
+      RAISE EXCEPTION 'EQUIPMENT_NOT_COUNTERPARTY';
+    END IF;
+  END IF;
+
+  v_terminal := CASE WHEN p_accept THEN 'accepted' ELSE 'rejected' END;
+
+  IF p_accept THEN
+    UPDATE public.equipment_protocols
+    SET
+      status = 'accepted',
+      responded_by = v_actor,
+      responded_at = now()
+    WHERE id = p_protocol_id
+    RETURNING * INTO v_protocol;
+  ELSE
+    v_reason := NULLIF(btrim(COALESCE(p_rejection_reason, p_condition_notes, '')), '');
+    IF v_reason IS NULL THEN
+      RAISE EXCEPTION 'EQUIPMENT_REJECTION_REASON_REQUIRED';
+    END IF;
+    IF char_length(v_reason) > 2000 THEN
+      RAISE EXCEPTION 'EQUIPMENT_NOTES_TOO_LONG';
+    END IF;
+
+    UPDATE public.equipment_protocols
+    SET
+      status = 'rejected',
+      responded_by = v_actor,
+      responded_at = now(),
+      rejection_reason = v_reason
+    WHERE id = p_protocol_id
+    RETURNING * INTO v_protocol;
+  END IF;
+
+  PERFORM private.equipment_apply_protocol_resolution(v_protocol, v_terminal);
+  RETURN v_protocol;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.retire_equipment_asset(p_asset_id uuid)
+ RETURNS equipment_assets
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_actor uuid := private.equipment_require_actor();
+  v_asset public.equipment_assets;
+BEGIN
+  SELECT * INTO v_asset FROM public.equipment_assets WHERE id = p_asset_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'EQUIPMENT_NOT_FOUND'; END IF;
+  IF NOT public.is_org_management(v_asset.org_id) THEN RAISE EXCEPTION 'EQUIPMENT_FORBIDDEN'; END IF;
+  IF v_asset.status IS DISTINCT FROM 'available' THEN RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE'; END IF;
+  PERFORM private.equipment_set_rpc_flag();
+  UPDATE public.equipment_assets SET status = 'retired' WHERE id = p_asset_id RETURNING * INTO v_asset;
+  RETURN v_asset;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.set_equipment_protocol_evidence(p_protocol_id uuid, p_condition_notes text DEFAULT NULL::text, p_photo_urls text[] DEFAULT NULL::text[])
+ RETURNS equipment_protocols
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_actor uuid := private.equipment_require_actor();
+  v_protocol public.equipment_protocols;
+BEGIN
+  PERFORM private.equipment_set_rpc_flag();
+
+  SELECT *
+  INTO v_protocol
+  FROM public.equipment_protocols
+  WHERE id = p_protocol_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'EQUIPMENT_NOT_FOUND';
+  END IF;
+
+  IF v_protocol.status IS DISTINCT FROM 'pending' THEN
+    RAISE EXCEPTION 'EQUIPMENT_INVALID_STATE';
+  END IF;
+
+  IF v_actor IS DISTINCT FROM v_protocol.initiated_by
+     AND NOT public.is_org_management(v_protocol.org_id) THEN
+    RAISE EXCEPTION 'EQUIPMENT_FORBIDDEN';
+  END IF;
+
+  UPDATE public.equipment_protocols
+  SET
+    condition_notes = COALESCE(
+      NULLIF(btrim(COALESCE(p_condition_notes, '')), ''),
+      condition_notes
+    ),
+    photo_urls = CASE
+      WHEN p_photo_urls IS NULL THEN photo_urls
+      ELSE private.equipment_normalize_photo_urls(p_photo_urls)
+    END
+  WHERE id = p_protocol_id
+  RETURNING * INTO v_protocol;
+
+  RETURN v_protocol;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.upsert_building_cooperation_link(p_acting_org_id uuid, p_location_master_id uuid, p_community_legal_entity_id uuid, p_cleaning_org_id uuid, p_maintenance_org_id uuid, p_cleaning_issues_to_serwis boolean DEFAULT true, p_skip_admin_triage boolean DEFAULT false)
+ RETURNS building_cooperation_links
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE v_row public.building_cooperation_links;
+BEGIN
+  PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag();
+  IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF;
+  IF NOT private.has_active_admin_mandate(p_acting_org_id, p_community_legal_entity_id, p_location_master_id) THEN RAISE EXCEPTION 'MANDATE_ADMIN_REQUIRED'; END IF;
+  IF p_cleaning_org_id IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM public.service_mandates sm WHERE sm.org_id = p_cleaning_org_id AND sm.community_legal_entity_id = p_community_legal_entity_id AND sm.module = 'cleaning' AND sm.status = 'active' AND (sm.location_master_id IS NULL OR sm.location_master_id = p_location_master_id)) THEN RAISE EXCEPTION 'COOP_CLEANING_MANDATE_INACTIVE'; END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.cleaning_locations cl WHERE cl.org_id = p_cleaning_org_id AND cl.location_master_id = p_location_master_id AND cl.is_cleaning_active) THEN RAISE EXCEPTION 'COOP_CLEANING_NOT_ENROLLED'; END IF;
+  END IF;
+  IF p_maintenance_org_id IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM public.service_mandates sm WHERE sm.org_id = p_maintenance_org_id AND sm.community_legal_entity_id = p_community_legal_entity_id AND sm.module = 'maintenance' AND sm.status = 'active' AND (sm.location_master_id IS NULL OR sm.location_master_id = p_location_master_id)) THEN RAISE EXCEPTION 'COOP_MAINTENANCE_MANDATE_INACTIVE'; END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.cleaning_locations cl WHERE cl.org_id = p_maintenance_org_id AND cl.location_master_id = p_location_master_id AND cl.is_maintenance_active) THEN RAISE EXCEPTION 'COOP_MAINTENANCE_NOT_ENROLLED'; END IF;
+  END IF;
+  SELECT * INTO v_row FROM public.building_cooperation_links WHERE location_master_id = p_location_master_id AND admin_org_id = p_acting_org_id AND status = 'active' FOR UPDATE;
+  IF FOUND THEN
+    UPDATE public.building_cooperation_links SET cleaning_org_id = p_cleaning_org_id, maintenance_org_id = p_maintenance_org_id, cleaning_issues_to_serwis = COALESCE(p_cleaning_issues_to_serwis, true), skip_admin_triage = COALESCE(p_skip_admin_triage, false) WHERE id = v_row.id RETURNING * INTO v_row;
+  ELSE
+    INSERT INTO public.building_cooperation_links (location_master_id, admin_org_id, cleaning_org_id, maintenance_org_id, cleaning_issues_to_serwis, skip_admin_triage, status)
+    VALUES (p_location_master_id, p_acting_org_id, p_cleaning_org_id, p_maintenance_org_id, COALESCE(p_cleaning_issues_to_serwis, true), COALESCE(p_skip_admin_triage, false), 'active') RETURNING * INTO v_row;
+  END IF;
+  RETURN v_row;
+END; $function$;
+CREATE OR REPLACE FUNCTION public.can_access_equipment_protocol_object(p_object_name text, p_write boolean DEFAULT false)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'private', 'public'
+AS $function$
+  SELECT private.can_access_equipment_protocol_object(p_object_name, p_write);
+$function$;
+CREATE OR REPLACE FUNCTION public.can_manage_resident_orders(p_org_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT public.is_org_management(p_org_id) OR public.is_management_role(p_org_id);
+$function$;
+CREATE OR REPLACE FUNCTION private.resident_order_require_community_management(p_community_id uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_org uuid;
+BEGIN
+  PERFORM private.resident_order_require_actor();
+
+  SELECT c.org_id INTO v_org
+  FROM public.communities c
+  WHERE c.id = p_community_id;
+
+  IF v_org IS NULL THEN
+    RAISE EXCEPTION 'Nie znaleziono wspólnoty.';
+  END IF;
+
+  IF NOT public.can_manage_resident_orders(v_org) THEN
+    RAISE EXCEPTION 'Brak uprawnień do zarządzania zamówieniami tej wspólnoty.';
+  END IF;
+
+  RETURN v_org;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.can_manage_serwis_duty(target_org_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT public.is_org_management(target_org_id)
+    OR public.is_management_role(target_org_id);
+$function$;
+CREATE OR REPLACE FUNCTION public.cancel_equipment_protocol(p_protocol_id uuid)
+ RETURNS equipment_protocols
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO 'private', 'public'
+AS $function$
+  SELECT * FROM private.cancel_equipment_protocol(p_protocol_id);
+$function$;
+CREATE OR REPLACE FUNCTION public.create_estate(p_name text, p_community_id uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_org uuid := private.estate_require_community_management(p_community_id);
+  v_actor uuid := (SELECT auth.uid());
+  v_estate uuid;
+  v_name text := btrim(COALESCE(p_name, ''));
+BEGIN
+  IF length(v_name) < 2 THEN
+    RAISE EXCEPTION 'Podaj nazwę osiedla (min. 2 znaki).';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.estate_members em
+    WHERE em.community_id = p_community_id
+      AND em.status IN ('invited', 'accepted')
+  ) THEN
+    RAISE EXCEPTION 'Ta wspólnota ma już zaproszenie lub należy do osiedla.';
+  END IF;
+
+  INSERT INTO public.estates (name, created_by_org_id, created_by_user_id, status)
+  VALUES (v_name, v_org, v_actor, 'active')
+  RETURNING id INTO v_estate;
+
+  INSERT INTO public.estate_members (
+    estate_id, community_id, org_id, status, invited_by_org_id, consented_at, consented_by
+  )
+  VALUES (
+    v_estate, p_community_id, v_org, 'accepted', v_org, now(), v_actor
+  );
+
+  RETURN v_estate;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.deactivate_community_for_org(p_org_id uuid, p_community_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+BEGIN
+  RETURN private.deactivate_community_for_org(p_org_id, p_community_id);
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.dispatch_duty_alert(p_issue_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_org uuid;
+  v_result jsonb;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN
+    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
+  END IF;
+
+  SELECT COALESCE(claimed_by_org_id, org_id) INTO v_org
+  FROM public.property_issues WHERE id = p_issue_id;
+
+  IF v_org IS NULL THEN
+    RAISE EXCEPTION 'ISSUE_NOT_FOUND';
+  END IF;
+
+  IF NOT (
+    public.can_manage_serwis_duty(v_org)
+    OR public.is_org_management(v_org)
+    OR public.is_management_role(v_org)
+  ) THEN
+    RAISE EXCEPTION 'DUTY_DISPATCH_FORBIDDEN';
+  END IF;
+
+  v_result := private.try_dispatch_duty_alert(p_issue_id);
+  IF COALESCE((v_result ->> 'ok')::boolean, false) IS NOT TRUE THEN
+    RAISE EXCEPTION '%', COALESCE(v_result ->> 'reason', 'DUTY_DISPATCH_FAILED');
+  END IF;
+  RETURN v_result;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.enforce_duty_alert_update()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_mgmt boolean;
+BEGIN
+  v_mgmt := public.can_manage_serwis_duty(OLD.org_id);
+  IF v_mgmt OR (SELECT auth.uid()) IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF OLD.target_user_id IS DISTINCT FROM (SELECT auth.uid()) THEN
+    RAISE EXCEPTION 'DUTY_ALERT_FORBIDDEN'
+      USING HINT = 'Only the duty target can acknowledge this alert.';
+  END IF;
+
+  IF OLD.status IS DISTINCT FROM 'pending' OR NEW.status IS DISTINCT FROM 'accepted' THEN
+    RAISE EXCEPTION 'DUTY_ALERT_ACCEPT_ONLY'
+      USING HINT = 'The duty target may only move pending to accepted.';
+  END IF;
+
+  IF NEW.org_id IS DISTINCT FROM OLD.org_id
+     OR NEW.issue_id IS DISTINCT FROM OLD.issue_id
+     OR NEW.target_user_id IS DISTINCT FROM OLD.target_user_id
+     OR NEW.max_attempts IS DISTINCT FROM OLD.max_attempts THEN
+    RAISE EXCEPTION 'DUTY_ALERT_IMMUTABLE';
+  END IF;
+
+  NEW.accepted_at := COALESCE(NEW.accepted_at, now());
+  NEW.accepted_by := COALESCE(NEW.accepted_by, (SELECT auth.uid()));
+  RETURN NEW;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.enforce_property_issue_duty_flags()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_org uuid;
+  v_mgmt boolean;
+  v_flags_changed boolean;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  v_org := COALESCE(NEW.org_id, OLD.org_id);
+  v_mgmt := v_org IS NOT NULL AND (
+    public.is_management_role(v_org) OR public.is_org_management(v_org)
+  );
+
+  IF TG_OP = 'INSERT' THEN
+    IF (
+      NEW.immediate_fulfillment IS TRUE
+      OR NEW.emergency_mode IS TRUE
+      OR NEW.emergency_vendor_id IS NOT NULL
+    ) AND NOT v_mgmt THEN
+      RAISE EXCEPTION 'ISSUE_DUTY_FLAGS_FORBIDDEN'
+        USING HINT = 'Only Administracja management can set emergency / immediate fulfillment.';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  v_flags_changed :=
+    NEW.immediate_fulfillment IS DISTINCT FROM OLD.immediate_fulfillment
+    OR NEW.emergency_mode IS DISTINCT FROM OLD.emergency_mode
+    OR NEW.emergency_vendor_id IS DISTINCT FROM OLD.emergency_vendor_id;
+
+  IF v_flags_changed AND NOT v_mgmt THEN
+    RAISE EXCEPTION 'ISSUE_DUTY_FLAGS_FORBIDDEN'
+      USING HINT = 'Serwis staff cannot change emergency_mode or immediate_fulfillment.';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.enroll_building_for_legal_entity(p_org_id uuid, p_legal_entity_id uuid, p_google_place_id text, p_address text, p_latitude double precision, p_longitude double precision, p_module text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_place text;
+  v_addr text;
+  v_master public.locations%ROWTYPE;
+  v_loc public.cleaning_locations%ROWTYPE;
+  v_owner public.legal_entities%ROWTYPE;
+  v_community_id uuid;
+  v_city text;
+  v_postal text;
+  v_created boolean := false;
+  v_already boolean := false;
+  v_entity uuid;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED'; END IF;
+  IF p_org_id IS NULL OR NOT public.is_org_management(p_org_id) THEN RAISE EXCEPTION 'BUILDING_ENROLL_FORBIDDEN'; END IF;
+  IF p_module IS NULL OR p_module NOT IN ('cleaning', 'maintenance', 'admin') THEN RAISE EXCEPTION 'BUILDING_MODULE_INVALID'; END IF;
+
+  v_place := NULLIF(btrim(COALESCE(p_google_place_id, '')), '');
+  v_addr := NULLIF(btrim(COALESCE(p_address, '')), '');
+  v_entity := p_legal_entity_id;
+  IF v_place IS NULL OR v_addr IS NULL THEN RAISE EXCEPTION 'BUILDING_ADDRESS_REQUIRED'; END IF;
+
+  IF v_entity IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.org_legal_entity_enrollments e
+      WHERE e.org_id = p_org_id AND e.legal_entity_id = v_entity AND e.status = 'active'
+    ) THEN RAISE EXCEPTION 'LEGAL_ENTITY_NOT_ENROLLED'; END IF;
+    UPDATE public.org_legal_entity_enrollments
+    SET is_cleaning = is_cleaning OR (p_module = 'cleaning'),
+        is_maintenance = is_maintenance OR (p_module = 'maintenance'),
+        is_admin = is_admin OR (p_module = 'admin')
+    WHERE org_id = p_org_id AND legal_entity_id = v_entity;
+  END IF;
+
+  SELECT * INTO v_master FROM public.locations WHERE google_place_id = v_place LIMIT 1;
+
+  IF FOUND THEN
+    IF v_entity IS NOT NULL AND v_master.legal_entity_id IS NOT NULL AND v_master.legal_entity_id IS DISTINCT FROM v_entity THEN
+      SELECT * INTO v_owner FROM public.legal_entities WHERE id = v_master.legal_entity_id;
+      RAISE EXCEPTION 'ADDRESS_OWNED_BY_OTHER_ENTITY'
+        USING DETAIL = jsonb_build_object('ownerNip', v_owner.nip_normalized, 'ownerName', v_owner.short_name)::text;
+    END IF;
+    IF v_entity IS NOT NULL AND v_master.legal_entity_id IS NULL THEN
+      UPDATE public.locations SET legal_entity_id = v_entity WHERE id = v_master.id RETURNING * INTO v_master;
+    END IF;
+  ELSE
+    v_postal := (regexp_match(v_addr, '[0-9]{2}-[0-9]{3}'))[1];
+    v_city := NULLIF(btrim(split_part(v_addr, ',', 2)), '');
+    INSERT INTO public.locations (org_id, google_place_id, full_address, latitude, longitude, city, postal_code, legal_entity_id)
+    VALUES (p_org_id, v_place, v_addr, p_latitude, p_longitude, v_city, v_postal, v_entity)
+    RETURNING * INTO v_master;
+  END IF;
+
+  IF v_entity IS NOT NULL THEN
+    SELECT c.id INTO v_community_id FROM public.communities c
+    WHERE c.legal_entity_id = v_entity AND c.org_id = p_org_id LIMIT 1;
+  END IF;
+
+  SELECT * INTO v_loc FROM public.cleaning_locations
+  WHERE org_id = p_org_id AND location_master_id = v_master.id LIMIT 1;
+
+  IF FOUND THEN
+    v_already := (p_module = 'cleaning' AND v_loc.is_cleaning_active)
+      OR (p_module = 'maintenance' AND v_loc.is_maintenance_active)
+      OR (p_module = 'admin' AND v_loc.is_admin_active);
+    UPDATE public.cleaning_locations SET
+      is_cleaning_active = is_cleaning_active OR (p_module = 'cleaning'),
+      is_maintenance_active = is_maintenance_active OR (p_module = 'maintenance'),
+      is_admin_active = is_admin_active OR (p_module = 'admin'),
+      is_active_in_serwis = is_active_in_serwis OR (p_module = 'maintenance'),
+      community_id = COALESCE(community_id, v_community_id),
+      status = 'active', address = v_addr, google_place_id = v_place,
+      place_id = COALESCE(place_id, v_place),
+      latitude = COALESCE(p_latitude, latitude), longitude = COALESCE(p_longitude, longitude)
+    WHERE id = v_loc.id RETURNING * INTO v_loc;
+  ELSE
+    INSERT INTO public.cleaning_locations (
+      org_id, location_master_id, address, google_place_id, place_id, latitude, longitude,
+      status, is_cleaning_active, is_maintenance_active, is_admin_active, is_active_in_serwis, community_id
+    ) VALUES (
+      p_org_id, v_master.id, v_addr, v_place, v_place, p_latitude, p_longitude,
+      'active', p_module = 'cleaning', p_module = 'maintenance', p_module = 'admin',
+      p_module = 'maintenance', v_community_id
+    ) RETURNING * INTO v_loc;
+    v_created := true;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'status', CASE WHEN v_already THEN 'duplicate' WHEN v_created THEN 'created' ELSE 'enrolled' END,
+    'cleaningLocationId', v_loc.id,
+    'locationMasterId', v_master.id,
+    'address', v_loc.address,
+    'legalEntityId', v_master.legal_entity_id,
+    'contractorRecommended', v_master.legal_entity_id IS NULL
+  );
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.ensure_resident_order_settings(p_community_id uuid)
+ RETURNS resident_order_settings
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_org uuid;
+  v_row public.resident_order_settings;
+BEGIN
+  v_org := private.resident_order_require_community_management(p_community_id);
+
+  INSERT INTO public.resident_order_settings (
+    community_id,
+    org_id,
+    email_subject_template,
+    email_body_template,
+    updated_by
+  )
+  VALUES (
+    p_community_id,
+    v_org,
+    private.resident_order_default_subject(),
+    private.resident_order_default_body(),
+    (SELECT auth.uid())
+  )
+  ON CONFLICT (community_id) DO NOTHING;
+
+  SELECT * INTO v_row
+  FROM public.resident_order_settings
+  WHERE community_id = p_community_id;
+
+  RETURN v_row;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.get_resident_order_email_payload(p_order_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_order public.resident_orders%ROWTYPE;
+  v_settings public.resident_order_settings%ROWTYPE;
+  v_org public.organizations%ROWTYPE;
+  v_community public.communities%ROWTYPE;
+  v_loc public.cleaning_locations%ROWTYPE;
+  v_profile public.profiles%ROWTYPE;
+  v_company public.companies%ROWTYPE;
+  v_item public.resident_order_catalog_items%ROWTYPE;
+BEGIN
+  SELECT * INTO v_order FROM public.resident_orders WHERE id = p_order_id;
+  IF v_order.id IS NULL THEN
+    RAISE EXCEPTION 'Nie znaleziono zamówienia.';
+  END IF;
+
+  IF (SELECT auth.role()) IS DISTINCT FROM 'service_role'
+     AND NOT public.can_manage_resident_orders(v_order.org_id) THEN
+    RAISE EXCEPTION 'Brak uprawnień do podglądu szablonu zamówienia.';
+  END IF;
+
+  SELECT * INTO v_org FROM public.organizations WHERE id = v_order.org_id;
+  SELECT * INTO v_community FROM public.communities WHERE id = v_order.community_id;
+  SELECT * INTO v_loc FROM public.cleaning_locations WHERE id = v_order.location_id;
+  SELECT * INTO v_profile FROM public.profiles WHERE id = v_order.resident_user_id;
+  SELECT * INTO v_settings FROM public.resident_order_settings WHERE community_id = v_order.community_id;
+  SELECT * INTO v_company FROM public.companies WHERE id = v_order.fulfillment_company_id;
+  SELECT * INTO v_item FROM public.resident_order_catalog_items WHERE id = v_order.catalog_item_id;
+
+  RETURN jsonb_build_object(
+    'orderId', v_order.id,
+    'toEmail', COALESCE(v_company.email, ''),
+    'toName', COALESCE(v_company.name, ''),
+    'subjectTemplate', COALESCE(v_settings.email_subject_template, private.resident_order_default_subject()),
+    'bodyTemplate', COALESCE(v_settings.email_body_template, private.resident_order_default_body()),
+    'variables', jsonb_build_object(
+      'org.name', COALESCE(v_org.name, ''),
+      'org.nip', COALESCE(v_org.nip, ''),
+      'org.address', concat_ws(', ', NULLIF(v_org.address, ''), NULLIF(v_org.postal_code, ''), NULLIF(v_org.city, '')),
+      'org.support_email', COALESCE(v_org.support_email, ''),
+      'community.name', COALESCE(v_community.name, ''),
+      'community.legal_name', COALESCE(v_community.legal_name, ''),
+      'community.nip', COALESCE(v_community.nip, ''),
+      'community.board_email', COALESCE(v_community.board_email, ''),
+      'building.name', COALESCE(v_loc.name, ''),
+      'building.address', COALESCE(v_loc.address, ''),
+      'unit.number', COALESCE(v_order.unit_number, ''),
+      'resident.full_name', COALESCE(v_profile.full_name, ''),
+      'resident.email', COALESCE(v_profile.email, v_profile.contact_email, ''),
+      'resident.phone', COALESCE(v_profile.phone, ''),
+      'order.id', v_order.id::text,
+      'order.notes', COALESCE(v_order.notes, ''),
+      'order.quantity', v_order.quantity::text,
+      'order.created_at', to_char(v_order.created_at AT TIME ZONE 'Europe/Warsaw', 'YYYY-MM-DD HH24:MI'),
+      'order.contact_name', COALESCE(v_order.contact_name, ''),
+      'order.contact_phone', COALESCE(v_order.contact_phone, ''),
+      'order.contact_email', COALESCE(v_order.contact_email, ''),
+      'item.name', COALESCE(v_order.item_name, ''),
+      'item.description', COALESCE(v_item.description, ''),
+      'item.price_label', private.resident_order_price_label(v_order.item_price_amount, v_order.item_price_kind)
+    )
+  );
+END;
+$function$;
 CREATE OR REPLACE FUNCTION public.initiate_equipment_handover(p_org_id uuid, p_worker_id uuid, p_kind text, p_asset_id uuid DEFAULT NULL::uuid, p_key_name text DEFAULT NULL::text, p_key_type text DEFAULT 'other'::text, p_condition_notes text DEFAULT NULL::text, p_photo_urls text[] DEFAULT '{}'::text[])
  RETURNS equipment_protocols
  LANGUAGE sql
@@ -12658,80 +10054,6 @@ CREATE OR REPLACE FUNCTION public.initiate_equipment_return(p_kind text, p_asset
  SET search_path TO 'private', 'public'
 AS $function$
   SELECT * FROM private.initiate_equipment_return(p_kind, p_asset_id, p_staff_equipment_id, p_condition_notes, p_photo_urls);
-$function$;
-CREATE OR REPLACE FUNCTION public.insert_public_qr_issue(p_token text, p_description text, p_reporter_name text, p_reporter_phone text, p_photos_before text[] DEFAULT NULL::text[])
- RETURNS uuid
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_location public.cleaning_locations%ROWTYPE;
-  v_issue_id uuid;
-  v_description text := trim(COALESCE(p_description, ''));
-  v_name text := trim(COALESCE(p_reporter_name, ''));
-  v_phone text := trim(COALESCE(p_reporter_phone, ''));
-BEGIN
-  IF length(v_description) < 1 OR length(v_description) > 500 THEN
-    RAISE EXCEPTION 'Nieprawidłowy opis zgłoszenia';
-  END IF;
-  IF length(v_name) < 1 OR length(v_name) > 120 THEN
-    RAISE EXCEPTION 'Nieprawidłowe imię zgłaszającego';
-  END IF;
-  IF length(v_phone) < 1 OR length(v_phone) > 40 THEN
-    RAISE EXCEPTION 'Nieprawidłowy numer telefonu';
-  END IF;
-
-  SELECT cl.*
-  INTO v_location
-  FROM public.lookup_location_by_public_qr_token(p_token) loc
-  JOIN public.cleaning_locations cl ON cl.id = loc.id
-  LIMIT 1;
-
-  IF v_location.id IS NULL THEN
-    RAISE EXCEPTION 'Nieprawidłowy lub nieaktywny token QR';
-  END IF;
-
-  IF COALESCE(v_location.allow_anonymous_qr_reports, true) = false THEN
-    IF auth.uid() IS NULL THEN
-      RAISE EXCEPTION 'To zgłoszenie wymaga zalogowania';
-    END IF;
-    IF NOT public.is_org_member(v_location.org_id)
-       AND NOT public.has_location_access(v_location.id) THEN
-      RAISE EXCEPTION 'Brak uprawnień do zgłoszenia usterki w tym budynku';
-    END IF;
-  END IF;
-
-  INSERT INTO public.property_issues (
-    location_id,
-    org_id,
-    description,
-    reporter_name,
-    reporter_phone,
-    reporter_type,
-    priority,
-    status,
-    photos_before,
-    source,
-    reporter_id
-  )
-  VALUES (
-    v_location.id,
-    v_location.org_id,
-    v_description,
-    v_name,
-    v_phone,
-    'tenant',
-    'medium',
-    'pending_admin_approval',
-    CASE WHEN p_photos_before IS NOT NULL AND cardinality(p_photos_before) > 0 THEN p_photos_before ELSE NULL END,
-    'public_qr',
-    auth.uid()
-  )
-  RETURNING id INTO v_issue_id;
-
-  RETURN v_issue_id;
-END;
 $function$;
 CREATE OR REPLACE FUNCTION public.invite_estate_community(p_estate_id uuid, p_community_id uuid)
  RETURNS uuid
@@ -12828,229 +10150,6 @@ CREATE OR REPLACE FUNCTION public.invite_service_mandate(p_acting_org_id uuid, p
  SECURITY DEFINER
  SET search_path TO 'public', 'private'
 AS $function$ BEGIN RETURN private.invite_service_mandate(p_acting_org_id, p_community_legal_entity_id, p_location_master_id, p_partner_org_id, p_partner_legal_entity_id, p_module, p_role, p_valid_from, p_valid_until, p_notes); END; $function$;
-CREATE OR REPLACE FUNCTION public.is_active_org_member(p_org_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.memberships m
-    WHERE m.org_id = p_org_id
-      AND m.user_id = (SELECT auth.uid())
-      AND COALESCE(m.is_active, true) = true
-  );
-$function$;
-CREATE OR REPLACE FUNCTION public.is_admin_safe(target_org_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT EXISTS (
-    SELECT 1 FROM public.memberships
-    WHERE org_id = target_org_id
-    AND user_id = auth.uid()
-    AND role ILIKE ANY (ARRAY['owner', 'admin', 'manager', 'coordinator']) -- ILIKE = ignoruj wielkość liter
-  );
-$function$;
-CREATE OR REPLACE FUNCTION public.is_any_fleet_admin()
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT
-    (SELECT auth.uid()) IS NOT NULL
-    AND (
-      public.is_platform_admin()
-      OR EXISTS (
-        SELECT 1
-        FROM public.profiles p
-        WHERE p.id = (SELECT auth.uid())
-          AND p.fleet_role = 'admin'::public.fleet_role
-      )
-      OR EXISTS (
-        SELECT 1
-        FROM public.memberships m
-        WHERE m.user_id = (SELECT auth.uid())
-          AND COALESCE(m.is_active, true) = true
-          AND m.role ILIKE ANY (
-            ARRAY[
-              'owner',
-              'admin',
-              'administrator',
-              'manager',
-              'coordinator',
-              'koordynator',
-              'wlasciciel'
-            ]
-          )
-      )
-    );
-$function$;
-CREATE OR REPLACE FUNCTION public.is_cleaning_org_manager(p_org_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE
- SET search_path TO 'public'
-AS $function$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.memberships m
-    WHERE m.org_id = p_org_id
-      AND m.user_id = auth.uid()
-      AND m.role = ANY (ARRAY['owner'::text, 'coordinator'::text])
-      AND COALESCE(m.is_active, true)
-  );
-$function$;
-CREATE OR REPLACE FUNCTION public.is_fleet_org_admin(p_org_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT
-    (SELECT auth.uid()) IS NOT NULL
-    AND p_org_id IS NOT NULL
-    AND (
-      public.is_platform_admin()
-      OR public.is_org_management(p_org_id)
-      OR (
-        EXISTS (
-          SELECT 1
-          FROM public.profiles p
-          WHERE p.id = (SELECT auth.uid())
-            AND p.fleet_role = 'admin'::public.fleet_role
-        )
-        AND EXISTS (
-          SELECT 1
-          FROM public.memberships m
-          WHERE m.user_id = (SELECT auth.uid())
-            AND m.org_id = p_org_id
-            AND COALESCE(m.is_active, true) = true
-        )
-      )
-    );
-$function$;
-CREATE OR REPLACE FUNCTION public.is_inspection_campaign_assignee(p_campaign_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.inspection_campaign_assignees a
-    WHERE a.campaign_id = p_campaign_id
-      AND a.technician_id = auth.uid()
-  );
-$function$;
-CREATE OR REPLACE FUNCTION public.is_management_role(target_org_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.memberships m
-    WHERE m.org_id = target_org_id
-      AND m.user_id = (SELECT auth.uid())
-      AND COALESCE(m.is_active, true) = true
-      AND m.role IN ('owner', 'admin', 'coordinator')
-  );
-$function$;
-CREATE OR REPLACE FUNCTION public.is_manager()
- RETURNS boolean
- LANGUAGE sql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT EXISTS (
-    SELECT 1 FROM memberships 
-    WHERE user_id = auth.uid() 
-    AND role IN ('owner', 'admin', 'coordinator')
-  );
-$function$;
-CREATE OR REPLACE FUNCTION public.is_manager_safe()
- RETURNS boolean
- LANGUAGE sql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT EXISTS (
-    SELECT 1 FROM memberships 
-    WHERE user_id = auth.uid() 
-    AND role IN ('owner', 'admin', 'coordinator')
-  );
-$function$;
-CREATE OR REPLACE FUNCTION public.is_org_admin_team(target_org_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT EXISTS (
-    SELECT 1 FROM public.memberships m
-    WHERE m.org_id = target_org_id
-      AND m.user_id = (SELECT auth.uid())
-      AND COALESCE(m.is_active, true) = true
-      AND lower(btrim(COALESCE(m.role, ''))) IN (
-        'owner', 'admin', 'administrator', 'manager',
-        'coordinator', 'koordynator',
-        'wlasciciel', 'właściciel',
-        'assistant', 'accountant'
-      )
-  );
-$function$;
-CREATE OR REPLACE FUNCTION public.is_org_billing_owner(p_org_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.organizations o
-    WHERE o.id = p_org_id
-      AND o.owner_id = (SELECT auth.uid())
-  )
-  OR EXISTS (
-    SELECT 1
-    FROM public.memberships m
-    WHERE m.org_id = p_org_id
-      AND m.user_id = (SELECT auth.uid())
-      AND COALESCE(m.is_active, true) = true
-      AND m.role ILIKE ANY (ARRAY['owner', 'wlasciciel'])
-  );
-$function$;
-CREATE OR REPLACE FUNCTION public.is_org_management(target_org_id uuid)
- RETURNS boolean
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.memberships m
-    WHERE m.org_id = target_org_id
-      AND m.user_id = (SELECT auth.uid())
-      AND COALESCE(m.is_active, true) = true
-      AND m.role ILIKE ANY (
-        ARRAY[
-          'owner',
-          'admin',
-          'administrator',
-          'manager',
-          'coordinator',
-          'koordynator',
-          'wlasciciel'
-        ]
-      )
-  );
-$function$;
 CREATE OR REPLACE FUNCTION public.is_org_manager(target_org_id uuid)
  RETURNS boolean
  LANGUAGE sql
@@ -13091,6 +10190,47 @@ BEGIN
     );
 END;
 $function$;
+CREATE OR REPLACE FUNCTION public.get_community_estate(p_community_id uuid)
+ RETURNS TABLE(estate_id uuid, estate_name text, estate_status text, created_by_org_id uuid, member_id uuid, member_status estate_member_status, invited_by_org_id uuid, consented_at timestamp with time zone)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_org uuid;
+BEGIN
+  PERFORM private.estate_require_actor();
+
+  SELECT c.org_id INTO v_org
+  FROM public.communities c
+  WHERE c.id = p_community_id;
+
+  IF v_org IS NULL THEN
+    RAISE EXCEPTION 'Nie znaleziono wspólnoty.';
+  END IF;
+
+  IF NOT public.is_org_member(v_org) THEN
+    RAISE EXCEPTION 'Brak dostępu do tej wspólnoty.';
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    e.id,
+    e.name,
+    e.status,
+    e.created_by_org_id,
+    em.id,
+    em.status,
+    em.invited_by_org_id,
+    em.consented_at
+  FROM public.estate_members em
+  JOIN public.estates e ON e.id = em.estate_id
+  WHERE em.community_id = p_community_id
+    AND em.status IN ('invited', 'accepted')
+  ORDER BY CASE WHEN em.status = 'accepted' THEN 0 ELSE 1 END, em.created_at DESC
+  LIMIT 1;
+END;
+$function$;
 CREATE OR REPLACE FUNCTION public.is_platform_admin()
  RETURNS boolean
  LANGUAGE sql
@@ -13102,6 +10242,1210 @@ AS $function$
     WHERE id = auth.uid() AND platform_role = 'admin'
   );
 $function$;
+CREATE OR REPLACE FUNCTION private.accept_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
+ RETURNS service_mandates
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ DECLARE v_row public.service_mandates; v_primary_org uuid; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.service_mandates WHERE id = p_mandate_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'MANDATE_NOT_FOUND'; END IF; IF v_row.status <> 'invited' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; SELECT sm.org_id INTO v_primary_org FROM public.service_mandates sm WHERE sm.community_legal_entity_id = v_row.community_legal_entity_id AND sm.module = 'admin' AND sm.status = 'active' AND sm.role = 'primary_operator' AND (sm.location_master_id IS NULL OR sm.location_master_id IS NOT DISTINCT FROM v_row.location_master_id) LIMIT 1; IF v_row.org_id = p_acting_org_id THEN NULL; ELSIF v_row.role = 'co_operator' AND v_row.module = 'admin' AND v_primary_org IS NOT NULL AND v_primary_org = p_acting_org_id THEN NULL; ELSIF public.is_platform_admin() THEN NULL; ELSE RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; UPDATE public.service_mandates SET status = 'active', accepted_by_org_id = p_acting_org_id, accepted_at = now() WHERE id = p_mandate_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
+CREATE OR REPLACE FUNCTION private.accept_succession(p_acting_org_id uuid, p_succession_id uuid)
+ RETURNS succession_events
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ DECLARE v_row public.succession_events; v_from timestamptz; v_to timestamptz; v_next public.succession_status; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.succession_events WHERE id = p_succession_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'SUCCESSION_NOT_FOUND'; END IF; IF v_row.status <> 'proposed' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF p_acting_org_id = v_row.from_org_id THEN v_from := now(); v_to := v_row.accepted_by_to_org_at; ELSIF v_row.to_org_id IS NOT NULL AND p_acting_org_id = v_row.to_org_id THEN v_from := v_row.accepted_by_from_org_at; v_to := now(); ELSIF public.is_platform_admin() THEN v_from := COALESCE(v_row.accepted_by_from_org_at, now()); v_to := CASE WHEN v_row.to_org_id IS NULL THEN v_row.accepted_by_to_org_at ELSE COALESCE(v_row.accepted_by_to_org_at, now()) END; ELSE RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; IF v_row.to_org_id IS NULL THEN v_next := 'accepted'; ELSIF v_from IS NOT NULL AND v_to IS NOT NULL THEN v_next := 'accepted'; ELSE v_next := 'proposed'; END IF; UPDATE public.succession_events SET accepted_by_from_org_at = v_from, accepted_by_to_org_at = v_to, status = v_next WHERE id = p_succession_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
+CREATE OR REPLACE FUNCTION private.assert_can_access_admin_location(p_admin_location_id uuid)
+ RETURNS cleaning_locations
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_row public.cleaning_locations;
+  v_orgs uuid[];
+BEGIN
+  IF p_admin_location_id IS NULL THEN
+    RAISE EXCEPTION 'CLEANING_SCOPE_FORBIDDEN';
+  END IF;
+
+  SELECT * INTO v_row
+  FROM public.cleaning_locations
+  WHERE id = p_admin_location_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'CLEANING_SCOPE_FORBIDDEN';
+  END IF;
+
+  IF COALESCE(v_row.is_admin_active, false) IS NOT TRUE
+     OR COALESCE(v_row.status, 'active') IS DISTINCT FROM 'active' THEN
+    RAISE EXCEPTION 'CLEANING_SCOPE_FORBIDDEN';
+  END IF;
+
+  IF public.is_platform_admin() THEN
+    RETURN v_row;
+  END IF;
+
+  v_orgs := public.current_user_org_ids();
+  IF v_row.org_id IS NULL OR NOT (v_row.org_id = ANY (v_orgs)) THEN
+    RAISE EXCEPTION 'CLEANING_SCOPE_FORBIDDEN';
+  END IF;
+
+  RETURN v_row;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.can_read_legal_acceptance_object(p_name text)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'storage', 'pg_catalog'
+AS $function$
+DECLARE
+  v_folder text;
+  v_uid uuid := (SELECT auth.uid());
+BEGIN
+  IF p_name IS NULL OR v_uid IS NULL THEN
+    RETURN false;
+  END IF;
+
+  IF (SELECT public.is_platform_admin()) THEN
+    RETURN true;
+  END IF;
+
+  v_folder := (storage.foldername(p_name))[1];
+  RETURN v_folder IS NOT NULL AND v_folder = v_uid::text;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.cancel_succession(p_acting_org_id uuid, p_succession_id uuid)
+ RETURNS succession_events
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ DECLARE v_row public.succession_events; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.succession_events WHERE id = p_succession_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'SUCCESSION_NOT_FOUND'; END IF; IF v_row.status NOT IN ('proposed', 'accepted') THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF p_acting_org_id IS DISTINCT FROM v_row.from_org_id AND NOT public.is_platform_admin() THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; UPDATE public.succession_events SET status = 'cancelled' WHERE id = p_succession_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
+CREATE OR REPLACE FUNCTION private.complete_succession(p_acting_org_id uuid, p_succession_id uuid)
+ RETURNS succession_events
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE v_row public.succession_events; v_master uuid; v_access public.succession_grant_access; v_grant_org uuid; r public.succession_resource; v_target uuid;
+BEGIN
+  PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag();
+  IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF;
+  SELECT * INTO v_row FROM public.succession_events WHERE id = p_succession_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'SUCCESSION_NOT_FOUND'; END IF;
+  IF v_row.status <> 'accepted' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF;
+  IF p_acting_org_id IS DISTINCT FROM v_row.from_org_id AND p_acting_org_id IS DISTINCT FROM v_row.to_org_id AND NOT public.is_platform_admin() THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF;
+  v_grant_org := v_row.to_org_id;
+  v_access := CASE WHEN v_row.mode = 'transfer_custody' THEN 'write'::public.succession_grant_access ELSE 'read'::public.succession_grant_access END;
+  IF v_grant_org IS NOT NULL THEN
+    FOR v_master IN SELECT private.succession_location_masters(v_row.community_legal_entity_id, v_row.location_master_id) LOOP
+      FOREACH r IN ARRAY v_row.resource_scope LOOP
+        INSERT INTO public.succession_share_grants (succession_id, grantee_org_id, resource_type, location_master_id, access, expires_at) VALUES (v_row.id, v_grant_org, r, v_master, v_access, now() + interval '3 months');
+      END LOOP;
+      SELECT cl.id INTO v_target FROM public.cleaning_locations cl WHERE cl.org_id = v_grant_org AND cl.location_master_id = v_master LIMIT 1;
+      IF v_row.mode = 'clone_to_successor' AND v_target IS NOT NULL THEN
+        IF 'issues' = ANY (v_row.resource_scope) OR 'all' = ANY (v_row.resource_scope) THEN PERFORM private.clone_issues_to_successor(v_row.from_org_id, v_grant_org, v_master, v_target); END IF;
+        IF 'inspections' = ANY (v_row.resource_scope) OR 'all' = ANY (v_row.resource_scope) THEN PERFORM private.clone_inspections_to_successor(v_row.from_org_id, v_grant_org, v_master, v_target); END IF;
+      END IF;
+      IF v_row.mode = 'transfer_custody' THEN
+        IF 'issues' = ANY (v_row.resource_scope) OR 'all' = ANY (v_row.resource_scope) THEN UPDATE public.property_issues SET org_id = v_grant_org WHERE org_id = v_row.from_org_id AND location_master_id = v_master; END IF;
+        IF 'inspections' = ANY (v_row.resource_scope) OR 'all' = ANY (v_row.resource_scope) THEN UPDATE public.property_inspections SET org_id = v_grant_org WHERE org_id = v_row.from_org_id AND location_master_id = v_master; END IF;
+        IF 'unit_inspections' = ANY (v_row.resource_scope) OR 'all' = ANY (v_row.resource_scope) THEN UPDATE public.inspection_campaigns SET org_id = v_grant_org WHERE org_id = v_row.from_org_id AND location_master_id = v_master; END IF;
+        IF 'contracts' = ANY (v_row.resource_scope) OR 'all' = ANY (v_row.resource_scope) THEN UPDATE public.property_contracts SET org_id = v_grant_org WHERE org_id = v_row.from_org_id AND location_master_id = v_master; END IF;
+      END IF;
+    END LOOP;
+  END IF;
+  UPDATE public.service_mandates SET role = 'legacy_operator' WHERE org_id = v_row.from_org_id AND community_legal_entity_id = v_row.community_legal_entity_id AND module = 'admin' AND status = 'active' AND role = 'primary_operator' AND (v_row.location_master_id IS NULL OR location_master_id IS NOT DISTINCT FROM v_row.location_master_id);
+  IF v_row.to_org_id IS NOT NULL THEN
+    UPDATE public.service_mandates SET role = 'primary_operator', status = 'active', accepted_by_org_id = COALESCE(accepted_by_org_id, v_row.to_org_id), accepted_at = COALESCE(accepted_at, now()) WHERE org_id = v_row.to_org_id AND community_legal_entity_id = v_row.community_legal_entity_id AND module = 'admin' AND status IN ('invited', 'active') AND (v_row.location_master_id IS NULL OR location_master_id IS NOT DISTINCT FROM v_row.location_master_id);
+    IF NOT FOUND THEN INSERT INTO public.service_mandates (community_legal_entity_id, location_master_id, org_id, partner_legal_entity_id, module, role, status, appointed_by_org_id, accepted_by_org_id, accepted_at) VALUES (v_row.community_legal_entity_id, v_row.location_master_id, v_row.to_org_id, v_row.to_legal_entity_id, 'admin', 'primary_operator', 'active', v_row.from_org_id, v_row.to_org_id, now()); END IF;
+  ELSE
+    INSERT INTO public.service_mandates (community_legal_entity_id, location_master_id, org_id, partner_legal_entity_id, module, role, status, appointed_by_org_id, accepted_by_org_id, accepted_at) VALUES (v_row.community_legal_entity_id, v_row.location_master_id, NULL, v_row.to_legal_entity_id, 'admin', 'external_designee', 'active', v_row.from_org_id, v_row.from_org_id, now());
+  END IF;
+  UPDATE public.succession_events SET status = 'completed', completed_at = now() WHERE id = p_succession_id RETURNING * INTO v_row;
+  RETURN v_row;
+END; $function$;
+CREATE OR REPLACE FUNCTION private.decline_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
+ RETURNS service_mandates
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ DECLARE v_row public.service_mandates; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.service_mandates WHERE id = p_mandate_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'MANDATE_NOT_FOUND'; END IF; IF v_row.status <> 'invited' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF v_row.org_id IS DISTINCT FROM p_acting_org_id AND v_row.appointed_by_org_id IS DISTINCT FROM p_acting_org_id AND NOT public.is_platform_admin() THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; UPDATE public.service_mandates SET status = 'declined' WHERE id = p_mandate_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
+CREATE OR REPLACE FUNCTION private.list_home_preview_locations()
+ RETURNS TABLE(access_id uuid, location_id uuid, org_id uuid, name text, address text, unit_number text, community_name text, community_id uuid, estate_id uuid, estate_name text, issue_qr_token text, access_type text)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF NOT public.is_platform_admin() THEN
+    RAISE EXCEPTION 'HOME_PREVIEW_FORBIDDEN'
+      USING ERRCODE = '42501',
+            HINT = 'Only the system administrator can preview Home across communities.';
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    cl.id AS access_id,
+    cl.id AS location_id,
+    cl.org_id,
+    cl.name,
+    cl.address,
+    NULL::text AS unit_number,
+    COALESCE(NULLIF(btrim(c.legal_name), ''), NULLIF(btrim(c.name), '')) AS community_name,
+    cl.community_id,
+    est.estate_id,
+    est.estate_name,
+    cl.issue_qr_token,
+    'preview'::text AS access_type
+  FROM public.cleaning_locations cl
+  LEFT JOIN public.communities c ON c.id = cl.community_id
+  LEFT JOIN LATERAL (
+    SELECT e.id AS estate_id, e.name AS estate_name
+    FROM public.estate_members em
+    INNER JOIN public.estates e ON e.id = em.estate_id
+    WHERE em.community_id = cl.community_id
+      AND em.status = 'accepted'
+      AND e.status = 'active'
+    ORDER BY e.name
+    LIMIT 1
+  ) est ON true
+  WHERE cl.community_id IS NOT NULL
+    AND COALESCE(cl.status, 'active') IS DISTINCT FROM 'archived'
+  ORDER BY community_name NULLS LAST, cl.address, cl.name;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.pause_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
+ RETURNS service_mandates
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ DECLARE v_row public.service_mandates; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.service_mandates WHERE id = p_mandate_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'MANDATE_NOT_FOUND'; END IF; IF v_row.status <> 'active' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF v_row.org_id IS DISTINCT FROM p_acting_org_id AND v_row.appointed_by_org_id IS DISTINCT FROM p_acting_org_id AND NOT public.is_platform_admin() THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; UPDATE public.service_mandates SET status = 'paused' WHERE id = p_mandate_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
+CREATE OR REPLACE FUNCTION private.reject_succession(p_acting_org_id uuid, p_succession_id uuid)
+ RETURNS succession_events
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ DECLARE v_row public.succession_events; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.succession_events WHERE id = p_succession_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'SUCCESSION_NOT_FOUND'; END IF; IF v_row.status <> 'proposed' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF p_acting_org_id IS DISTINCT FROM v_row.from_org_id AND p_acting_org_id IS DISTINCT FROM v_row.to_org_id AND NOT public.is_platform_admin() THEN RAISE EXCEPTION 'SUCCESSION_FORBIDDEN'; END IF; UPDATE public.succession_events SET status = 'rejected' WHERE id = p_succession_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
+CREATE OR REPLACE FUNCTION private.resolve_admin_location_for_scope(p_location_master_id uuid)
+ RETURNS TABLE(admin_location_id uuid, admin_org_id uuid, community_id uuid)
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_orgs uuid[];
+BEGIN
+  IF p_location_master_id IS NULL THEN
+    RETURN;
+  END IF;
+
+  v_orgs := public.current_user_org_ids();
+
+  RETURN QUERY
+  SELECT cl.id, cl.org_id, cl.community_id
+  FROM public.cleaning_locations cl
+  WHERE cl.location_master_id = p_location_master_id
+    AND COALESCE(cl.is_admin_active, false) = true
+    AND COALESCE(cl.status, 'active') = 'active'
+    AND cl.org_id = ANY (v_orgs)
+  ORDER BY cl.created_at
+  LIMIT 1;
+
+  IF FOUND THEN
+    RETURN;
+  END IF;
+
+  IF public.is_platform_admin() THEN
+    RETURN QUERY
+    SELECT cl.id, cl.org_id, cl.community_id
+    FROM public.cleaning_locations cl
+    WHERE cl.location_master_id = p_location_master_id
+      AND COALESCE(cl.is_admin_active, false) = true
+      AND COALESCE(cl.status, 'active') = 'active'
+    ORDER BY cl.created_at
+    LIMIT 1;
+  END IF;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.resume_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
+ RETURNS service_mandates
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ DECLARE v_row public.service_mandates; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.service_mandates WHERE id = p_mandate_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'MANDATE_NOT_FOUND'; END IF; IF v_row.status <> 'paused' THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF v_row.org_id IS DISTINCT FROM p_acting_org_id AND v_row.appointed_by_org_id IS DISTINCT FROM p_acting_org_id AND NOT public.is_platform_admin() THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; UPDATE public.service_mandates SET status = 'active' WHERE id = p_mandate_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
+CREATE OR REPLACE FUNCTION private.revoke_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
+ RETURNS service_mandates
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ DECLARE v_row public.service_mandates; BEGIN PERFORM private.mandate_require_actor(); PERFORM private.mandate_set_rpc_flag(); IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; SELECT * INTO v_row FROM public.service_mandates WHERE id = p_mandate_id FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'MANDATE_NOT_FOUND'; END IF; IF v_row.status NOT IN ('active', 'paused') THEN RAISE EXCEPTION 'ILLEGAL_STATUS_TRANSITION'; END IF; IF v_row.appointed_by_org_id IS DISTINCT FROM p_acting_org_id AND NOT public.is_platform_admin() AND NOT private.has_active_admin_mandate(p_acting_org_id, v_row.community_legal_entity_id, v_row.location_master_id) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; UPDATE public.service_mandates SET status = 'superseded', revoked_by_org_id = p_acting_org_id, revoked_at = now() WHERE id = p_mandate_id RETURNING * INTO v_row; RETURN v_row; END; $function$;
+CREATE OR REPLACE FUNCTION private.user_can_set_cleaning_scope_contract(p_org_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  SELECT public.is_platform_admin() OR public.is_org_management(p_org_id);
+$function$;
+CREATE OR REPLACE FUNCTION private.user_can_view_partner_cleaning_scope(p_location_master_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_admin record;
+  v_partner record;
+BEGIN
+  SELECT * INTO v_admin
+  FROM private.resolve_admin_location_for_scope(p_location_master_id);
+
+  IF v_admin.admin_location_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  SELECT * INTO v_partner
+  FROM private.resolve_partner_cleaning_location(
+    p_location_master_id,
+    v_admin.admin_org_id,
+    v_admin.community_id
+  );
+
+  RETURN v_partner.cleaning_location_id IS NOT NULL;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.vendor_email_require_management(p_org_id uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF p_org_id IS NULL THEN
+    RAISE EXCEPTION 'Brak organizacji.';
+  END IF;
+  IF private.vendor_email_is_service_role() THEN
+    RETURN p_org_id;
+  END IF;
+  IF (SELECT auth.uid()) IS NULL THEN
+    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
+  END IF;
+  IF NOT (
+    (SELECT public.is_platform_admin())
+    OR (SELECT public.is_org_management(p_org_id))
+    OR (SELECT public.is_management_role(p_org_id))
+  ) THEN
+    RAISE EXCEPTION 'ISSUE_DELEGATE_FORBIDDEN';
+  END IF;
+  RETURN p_org_id;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION private.vendor_email_queue_for_issue(p_issue_id uuid, p_vendor_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_issue public.property_issues%ROWTYPE;
+  v_vendor public.vendor_partners%ROWTYPE;
+  v_channel public.vendor_email_channels%ROWTYPE;
+  v_dispatch public.issue_email_dispatches%ROWTYPE;
+  v_token text;
+  v_to text;
+  v_tries integer := 0;
+BEGIN
+  SELECT * INTO v_issue
+  FROM public.property_issues
+  WHERE id = p_issue_id
+  FOR UPDATE;
+
+  IF v_issue.id IS NULL THEN
+    RAISE EXCEPTION 'Nie znaleziono zgłoszenia.';
+  END IF;
+
+  PERFORM private.vendor_email_require_management(v_issue.org_id);
+
+  SELECT * INTO v_vendor FROM public.vendor_partners WHERE id = p_vendor_id;
+  IF v_vendor.id IS NULL THEN
+    RAISE EXCEPTION 'Nie znaleziono partnera.';
+  END IF;
+  IF v_vendor.org_id IS DISTINCT FROM v_issue.org_id THEN
+    RAISE EXCEPTION 'Partner nie należy do organizacji zgłoszenia.';
+  END IF;
+  IF COALESCE(v_vendor.dispatch_channel, 'in_app') IS DISTINCT FROM 'email' THEN
+    RAISE EXCEPTION 'Partner nie obsługuje kanału e-mail.';
+  END IF;
+
+  SELECT * INTO v_channel
+  FROM public.vendor_email_channels
+  WHERE vendor_id = p_vendor_id;
+
+  IF v_channel.vendor_id IS NULL OR v_channel.is_enabled IS NOT TRUE THEN
+    RAISE EXCEPTION 'Kanał e-mail partnera jest wyłączony albo nieustawiony.';
+  END IF;
+
+  v_to := COALESCE(
+    NULLIF(btrim(COALESCE(v_channel.outbound_to_email, '')), ''),
+    NULLIF(btrim(COALESCE(v_vendor.contact_email, '')), '')
+  );
+  IF v_to IS NULL OR position('@' IN v_to) < 2 THEN
+    RAISE EXCEPTION 'Partner nie ma adresu e-mail.';
+  END IF;
+
+  SELECT * INTO v_dispatch
+  FROM public.issue_email_dispatches
+  WHERE issue_id = p_issue_id
+  FOR UPDATE;
+
+  IF v_dispatch.id IS NULL THEN
+    LOOP
+      v_tries := v_tries + 1;
+      v_token := private.vendor_email_new_token();
+      BEGIN
+        INSERT INTO public.issue_email_dispatches (
+          org_id, issue_id, vendor_id, correlation_token, status, queued_at
+        )
+        VALUES (
+          v_issue.org_id, p_issue_id, p_vendor_id, v_token, 'queued', now()
+        )
+        RETURNING * INTO v_dispatch;
+        EXIT;
+      EXCEPTION
+        WHEN unique_violation THEN
+          IF v_tries >= 8 THEN
+            RAISE EXCEPTION 'Nie udało się wygenerować tokenu korelacji.';
+          END IF;
+      END;
+    END LOOP;
+  ELSE
+    UPDATE public.issue_email_dispatches
+    SET
+      vendor_id = p_vendor_id,
+      status = 'queued',
+      dispatch_error = NULL,
+      queued_at = now(),
+      sent_at = NULL
+    WHERE id = v_dispatch.id
+    RETURNING * INTO v_dispatch;
+    v_token := v_dispatch.correlation_token;
+  END IF;
+
+  UPDATE public.property_issues
+  SET
+    email_dispatch_status = 'queued',
+    email_correlation_token = v_token,
+    delegated_vendor_id = p_vendor_id,
+    status = 'delegated'
+  WHERE id = p_issue_id;
+
+  PERFORM private.vendor_email_append_lifecycle(
+    v_issue.org_id,
+    p_issue_id,
+    'email_queued',
+    jsonb_build_object(
+      'dispatch_id', v_dispatch.id,
+      'correlation_token', v_token,
+      'vendor_id', p_vendor_id
+    )
+  );
+
+  RETURN private.vendor_email_build_payload(p_issue_id);
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.accept_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
+ RETURNS service_mandates
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ BEGIN RETURN private.accept_service_mandate(p_acting_org_id, p_mandate_id); END; $function$;
+CREATE OR REPLACE FUNCTION public.accept_succession(p_acting_org_id uuid, p_succession_id uuid)
+ RETURNS succession_events
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ BEGIN RETURN private.accept_succession(p_acting_org_id, p_succession_id); END; $function$;
+CREATE OR REPLACE FUNCTION public.activate_org_subscription_plan(p_org_id uuid, p_app_id uuid, p_plan_id uuid, p_billing_interval text)
+ RETURNS org_subscriptions
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_interval text;
+  v_app public.applications%ROWTYPE;
+  v_plan public.pricing_plans%ROWTYPE;
+  v_existing public.org_subscriptions%ROWTYPE;
+  v_current_plan public.pricing_plans%ROWTYPE;
+  v_has_row boolean;
+  v_existing_active boolean;
+  v_expires timestamptz;
+  v_row public.org_subscriptions%ROWTYPE;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Wymagane logowanie'
+      USING ERRCODE = '42501';
+  END IF;
+
+  v_interval := lower(trim(COALESCE(p_billing_interval, '')));
+  IF v_interval NOT IN ('monthly', 'yearly') THEN
+    RAISE EXCEPTION 'Nieprawidłowy okres rozliczenia'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF NOT (public.is_platform_admin() OR public.is_management_role(p_org_id)) THEN
+    RAISE EXCEPTION 'Brak uprawnień do zarządzania planem organizacji'
+      USING ERRCODE = '42501';
+  END IF;
+
+  SELECT * INTO v_app
+  FROM public.applications
+  WHERE id = p_app_id
+  LIMIT 1;
+
+  IF NOT FOUND OR COALESCE(v_app.is_active, true) = false THEN
+    RAISE EXCEPTION 'Aplikacja jest niedostępna'
+      USING ERRCODE = 'P0002';
+  END IF;
+
+  IF COALESCE(v_app.is_free, false) THEN
+    RAISE EXCEPTION 'Moduł bezpłatny nie wymaga planu'
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  SELECT * INTO v_plan
+  FROM public.pricing_plans
+  WHERE id = p_plan_id
+    AND app_id = p_app_id
+    AND is_active = true
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Wybrany plan jest niedostępny'
+      USING ERRCODE = 'P0002';
+  END IF;
+
+  SELECT * INTO v_existing
+  FROM public.org_subscriptions
+  WHERE org_id = p_org_id
+    AND app_id = p_app_id
+  FOR UPDATE;
+
+  v_has_row := FOUND;
+  v_existing_active := v_has_row
+    AND lower(trim(COALESCE(v_existing.status, ''))) = 'active'
+    AND (v_existing.expires_at IS NULL OR v_existing.expires_at > now());
+
+  IF v_existing_active AND v_existing.plan_id IS NOT NULL THEN
+    IF v_existing.plan_id = p_plan_id THEN
+      RAISE EXCEPTION 'Ten plan jest już aktywny'
+        USING ERRCODE = 'P0001';
+    END IF;
+
+    SELECT * INTO v_current_plan
+    FROM public.pricing_plans
+    WHERE id = v_existing.plan_id
+    LIMIT 1;
+
+    IF FOUND AND COALESCE(v_plan.price_monthly, 0) <= COALESCE(v_current_plan.price_monthly, 0) THEN
+      RAISE EXCEPTION 'Możesz aktywować tylko droższy plan niż aktualny'
+        USING ERRCODE = 'P0001';
+    END IF;
+  END IF;
+
+  IF v_interval = 'yearly' THEN
+    v_expires := now() + interval '1 year';
+  ELSE
+    v_expires := now() + interval '30 days';
+  END IF;
+
+  IF v_has_row THEN
+    UPDATE public.org_subscriptions
+    SET
+      status = 'active',
+      plan_id = p_plan_id,
+      billing_interval = v_interval,
+      expires_at = v_expires,
+      cancelled_at = NULL
+    WHERE id = v_existing.id
+    RETURNING * INTO v_row;
+  ELSE
+    INSERT INTO public.org_subscriptions (
+      org_id,
+      app_id,
+      status,
+      plan_id,
+      billing_interval,
+      expires_at,
+      cancelled_at
+    )
+    VALUES (
+      p_org_id,
+      p_app_id,
+      'active',
+      p_plan_id,
+      v_interval,
+      v_expires,
+      NULL
+    )
+    RETURNING * INTO v_row;
+  END IF;
+
+  RETURN v_row;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.assign_unmatched_vendor_email(p_event_id uuid, p_issue_id uuid, p_event_type text, p_vendor_external_ref text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_event public.vendor_email_inbound_events%ROWTYPE;
+  v_issue public.property_issues%ROWTYPE;
+  v_dispatch public.issue_email_dispatches%ROWTYPE;
+  v_type text := lower(btrim(COALESCE(p_event_type, '')));
+  v_ref text := NULLIF(btrim(COALESCE(p_vendor_external_ref, '')), '');
+  v_extracted jsonb;
+BEGIN
+  IF p_event_id IS NULL OR p_issue_id IS NULL THEN RAISE EXCEPTION 'Brak identyfikatora wiadomości lub zgłoszenia.'; END IF;
+  IF v_type NOT IN ('accepted', 'assigned_technician', 'completed', 'rejected') THEN RAISE EXCEPTION 'Nieobsługiwany typ zdarzenia.'; END IF;
+  SELECT * INTO v_event FROM public.vendor_email_inbound_events WHERE id = p_event_id FOR UPDATE;
+  IF v_event.id IS NULL THEN RAISE EXCEPTION 'Nie znaleziono wiadomości.'; END IF;
+  IF v_event.status NOT IN ('unmatched', 'received') THEN RAISE EXCEPTION 'Wiadomość została już obsłużona.'; END IF;
+  SELECT * INTO v_issue FROM public.property_issues WHERE id = p_issue_id;
+  IF v_issue.id IS NULL THEN RAISE EXCEPTION 'Nie znaleziono zgłoszenia.'; END IF;
+  PERFORM private.vendor_email_require_management(v_issue.org_id);
+  IF v_event.org_id IS NOT NULL AND v_event.org_id IS DISTINCT FROM v_issue.org_id THEN
+    RAISE EXCEPTION 'Wiadomość należy do innej organizacji.';
+  END IF;
+  SELECT * INTO v_dispatch FROM public.issue_email_dispatches WHERE issue_id = p_issue_id ORDER BY queued_at DESC LIMIT 1;
+  IF v_dispatch.id IS NULL THEN RAISE EXCEPTION 'To zgłoszenie nie ma wątku e-mail.'; END IF;
+  v_extracted := COALESCE(v_event.extracted, '{}'::jsonb);
+  IF v_ref IS NOT NULL THEN v_extracted := v_extracted || jsonb_build_object('vendor_ticket', v_ref); END IF;
+  PERFORM private.vendor_email_apply_matched(v_dispatch, v_type, v_extracted);
+  UPDATE public.vendor_email_inbound_events SET
+    org_id = v_dispatch.org_id, vendor_id = v_dispatch.vendor_id, issue_id = v_dispatch.issue_id,
+    dispatch_id = v_dispatch.id, matched_event_type = v_type, extracted = v_extracted,
+    match_method = 'manual', status = 'applied', error_detail = NULL
+  WHERE id = v_event.id;
+  RETURN jsonb_build_object('ok', true, 'issue_id', v_dispatch.issue_id, 'event_type', v_type);
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.can_read_legal_acceptance_object(p_name text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'private', 'public', 'pg_catalog'
+AS $function$
+  SELECT private.can_read_legal_acceptance_object(p_name);
+$function$;
+CREATE OR REPLACE FUNCTION public.cancel_org_subscription(p_org_id uuid, p_app_id uuid)
+ RETURNS org_subscriptions
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_existing public.org_subscriptions%ROWTYPE;
+  v_row public.org_subscriptions%ROWTYPE;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Wymagane logowanie'
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF NOT (public.is_platform_admin() OR public.is_management_role(p_org_id)) THEN
+    RAISE EXCEPTION 'Brak uprawnień do zarządzania planem organizacji'
+      USING ERRCODE = '42501';
+  END IF;
+
+  SELECT * INTO v_existing
+  FROM public.org_subscriptions
+  WHERE org_id = p_org_id
+    AND app_id = p_app_id
+  FOR UPDATE;
+
+  IF NOT FOUND
+     OR lower(trim(COALESCE(v_existing.status, ''))) <> 'active'
+     OR (v_existing.expires_at IS NOT NULL AND v_existing.expires_at <= now()) THEN
+    RAISE EXCEPTION 'Brak aktywnej subskrypcji do rezygnacji'
+      USING ERRCODE = 'P0002';
+  END IF;
+
+  UPDATE public.org_subscriptions
+  SET
+    status = 'cancelled',
+    cancelled_at = now()
+  WHERE id = v_existing.id
+  RETURNING * INTO v_row;
+
+  RETURN v_row;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.cancel_succession(p_acting_org_id uuid, p_succession_id uuid)
+ RETURNS succession_events
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ BEGIN RETURN private.cancel_succession(p_acting_org_id, p_succession_id); END; $function$;
+CREATE OR REPLACE FUNCTION public.complete_succession(p_acting_org_id uuid, p_succession_id uuid)
+ RETURNS succession_events
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ BEGIN RETURN private.complete_succession(p_acting_org_id, p_succession_id); END; $function$;
+CREATE OR REPLACE FUNCTION public.count_org_verification_alerts(p_org_id uuid)
+ RETURNS integer
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_count integer;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
+  END IF;
+
+  IF p_org_id IS NULL
+     OR (
+       NOT public.is_org_management(p_org_id)
+       AND NOT public.is_platform_admin()
+     )
+  THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_UNVERIFIED_FORBIDDEN';
+  END IF;
+
+  SELECT count(*)::integer
+  INTO v_count
+  FROM public.legal_entities le
+  INNER JOIN public.org_legal_entity_enrollments e
+    ON e.legal_entity_id = le.id
+   AND e.org_id = p_org_id
+   AND e.status = 'active'
+  WHERE le.verification_status = 'pending_manual'::public.legal_entity_verification_status;
+
+  RETURN COALESCE(v_count, 0);
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.count_platform_verification_alerts()
+ RETURNS integer
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_count integer;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
+  END IF;
+
+  IF NOT public.is_platform_admin() THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_VERIFY_PLATFORM_ONLY';
+  END IF;
+
+  SELECT count(*)::integer
+  INTO v_count
+  FROM public.legal_entities
+  WHERE verification_status = 'pending_manual'::public.legal_entity_verification_status;
+
+  RETURN COALESCE(v_count, 0);
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.decline_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
+ RETURNS service_mandates
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$ BEGIN RETURN private.decline_service_mandate(p_acting_org_id, p_mandate_id); END; $function$;
+CREATE OR REPLACE FUNCTION public.delegate_property_issue(p_issue_id uuid, p_vendor_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_issue public.property_issues%ROWTYPE;
+  v_vendor public.vendor_partners%ROWTYPE;
+  v_channel text;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL AND NOT private.vendor_email_is_service_role() THEN
+    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
+  END IF;
+  IF p_vendor_id IS NULL THEN
+    RAISE EXCEPTION 'ISSUE_TRANSFER_FIELDS_REQUIRED';
+  END IF;
+
+  SELECT * INTO v_issue FROM public.property_issues WHERE id = p_issue_id;
+  IF v_issue.id IS NULL THEN
+    RAISE EXCEPTION 'ISSUE_NOT_FOUND';
+  END IF;
+
+  PERFORM private.vendor_email_require_management(v_issue.org_id);
+
+  SELECT * INTO v_vendor FROM public.vendor_partners WHERE id = p_vendor_id;
+  IF v_vendor.id IS NULL THEN
+    RAISE EXCEPTION 'Nie znaleziono partnera.';
+  END IF;
+
+  v_channel := COALESCE(v_vendor.dispatch_channel, 'in_app');
+
+  IF v_channel = 'email' THEN
+    RETURN private.vendor_email_queue_for_issue(p_issue_id, p_vendor_id)
+      || jsonb_build_object('queued', true);
+  END IF;
+
+  UPDATE public.property_issues
+  SET
+    status = 'delegated',
+    delegated_vendor_id = p_vendor_id
+  WHERE id = p_issue_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ISSUE_NOT_FOUND';
+  END IF;
+
+  RETURN jsonb_build_object(
+    'queued', false,
+    'issueId', p_issue_id,
+    'dispatchId', NULL
+  );
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.enforce_membership_user_limit()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  current_count integer;
+  plan_limit integer;
+BEGIN
+  IF (SELECT public.is_platform_admin()) THEN
+    RETURN NEW;
+  END IF;
+
+  PERFORM 1
+  FROM public.org_subscriptions
+  WHERE org_id = NEW.org_id
+  FOR UPDATE;
+
+  SELECT MIN(pp.max_users + COALESCE(os.extra_users, 0))
+    INTO plan_limit
+  FROM public.org_subscriptions os
+  JOIN public.pricing_plans pp ON pp.id = os.plan_id
+  WHERE os.org_id = NEW.org_id
+    AND os.status = 'active'
+    AND (os.expires_at IS NULL OR os.expires_at > now())
+    AND pp.max_users IS NOT NULL;
+
+  IF plan_limit IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT COUNT(*)::integer
+    INTO current_count
+  FROM public.memberships
+  WHERE org_id = NEW.org_id;
+
+  IF TG_OP = 'INSERT' AND current_count >= plan_limit THEN
+    RAISE EXCEPTION 'Limit użytkowników planu (%) został osiągnięty dla tej organizacji', plan_limit
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.ensure_my_billing_organization(p_name text, p_nip text DEFAULT NULL::text, p_address text DEFAULT NULL::text, p_city text DEFAULT NULL::text, p_postal_code text DEFAULT NULL::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_uid uuid;
+  v_org_id uuid;
+  v_name text;
+  v_nip text;
+  v_slug text;
+  v_base_slug text;
+  v_attempt integer := 0;
+BEGIN
+  v_uid := auth.uid();
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Wymagane logowanie'
+      USING ERRCODE = '42501';
+  END IF;
+
+  v_name := trim(COALESCE(p_name, ''));
+  IF v_name = '' THEN
+    RAISE EXCEPTION 'Nazwa firmy jest wymagana'
+      USING ERRCODE = '22023';
+  END IF;
+
+  v_nip := regexp_replace(trim(COALESCE(p_nip, '')), '\s+', '', 'g');
+  IF v_nip = '' THEN
+    v_nip := NULL;
+  ELSIF v_nip !~ '^[0-9]{10}$' THEN
+    RAISE EXCEPTION 'NIP musi składać się z 10 cyfr'
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT m.org_id
+    INTO v_org_id
+  FROM public.memberships m
+  WHERE m.user_id = v_uid
+    AND COALESCE(m.is_active, true) = true
+  ORDER BY
+    CASE
+      WHEN lower(trim(m.role)) IN ('owner', 'wlasciciel', 'admin', 'coordinator') THEN 0
+      ELSE 1
+    END,
+    m.created_at NULLS LAST
+  LIMIT 1;
+
+  IF v_org_id IS NOT NULL THEN
+    IF public.is_platform_admin() OR public.is_management_role(v_org_id) OR public.is_org_management(v_org_id) THEN
+      UPDATE public.organizations
+      SET
+        name = CASE WHEN NULLIF(trim(COALESCE(name, '')), '') IS NULL THEN v_name ELSE name END,
+        nip = COALESCE(v_nip, nip),
+        address = COALESCE(NULLIF(trim(COALESCE(p_address, '')), ''), address),
+        city = COALESCE(NULLIF(trim(COALESCE(p_city, '')), ''), city),
+        postal_code = COALESCE(NULLIF(trim(COALESCE(p_postal_code, '')), ''), postal_code)
+      WHERE id = v_org_id;
+    END IF;
+    RETURN v_org_id;
+  END IF;
+
+  v_slug := lower(v_name);
+  v_slug := translate(v_slug, 'ąćęłńóśźżĄĆĘŁŃÓŚŹŻ', 'acelnoszzacelnoszz');
+  v_slug := regexp_replace(v_slug, '[^a-z0-9]', '', 'g');
+  v_slug := left(v_slug, 40);
+  IF length(v_slug) < 2 THEN
+    v_slug := 'firma' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 8);
+  END IF;
+  v_base_slug := v_slug;
+
+  LOOP
+    BEGIN
+      INSERT INTO public.organizations (name, slug, nip, address, city, postal_code, owner_id)
+      VALUES (
+        v_name,
+        v_slug,
+        v_nip,
+        NULLIF(trim(COALESCE(p_address, '')), ''),
+        NULLIF(trim(COALESCE(p_city, '')), ''),
+        NULLIF(trim(COALESCE(p_postal_code, '')), ''),
+        v_uid
+      )
+      RETURNING id INTO v_org_id;
+      EXIT;
+    EXCEPTION
+      WHEN unique_violation THEN
+        v_attempt := v_attempt + 1;
+        IF v_attempt > 8 THEN
+          RAISE EXCEPTION 'Nie udało się utworzyć unikalnego identyfikatora firmy'
+            USING ERRCODE = '23505';
+        END IF;
+        v_slug := left(v_base_slug, 32) || v_attempt::text;
+    END;
+  END LOOP;
+
+  INSERT INTO public.memberships (user_id, org_id, role)
+  VALUES (v_uid, v_org_id, 'owner');
+
+  RETURN v_org_id;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.ensure_org_inbound_mailboxes(p_org_id uuid)
+ RETURNS SETOF org_inbound_mailboxes
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_slug text;
+  v_mod text;
+  v_alias text;
+BEGIN
+  IF p_org_id IS NULL THEN
+    RAISE EXCEPTION 'Brak organizacji.';
+  END IF;
+
+  IF NOT (SELECT public.is_platform_admin())
+     AND NOT (SELECT public.is_org_management(p_org_id)) THEN
+    RAISE EXCEPTION 'Brak uprawnień do konfiguracji skrzynek.';
+  END IF;
+
+  SELECT lower(regexp_replace(COALESCE(o.slug, ''), '[^a-z0-9]+', '', 'g'))
+    INTO v_slug
+  FROM public.organizations o
+  WHERE o.id = p_org_id;
+
+  IF v_slug IS NULL THEN
+    RAISE EXCEPTION 'Nie znaleziono organizacji.';
+  END IF;
+
+  IF v_slug = '' OR length(v_slug) < 2 THEN
+    v_slug := substr(replace(p_org_id::text, '-', ''), 1, 12);
+  END IF;
+
+  FOREACH v_mod IN ARRAY ARRAY['serwis', 'administracja'] LOOP
+    v_alias := 'usterki+' || v_mod || '-' || v_slug;
+    IF length(v_alias) > 64 THEN
+      v_alias := left(v_alias, 64);
+    END IF;
+    BEGIN
+      INSERT INTO public.org_inbound_mailboxes (org_id, module, alias_local_part)
+      VALUES (p_org_id, v_mod, v_alias)
+      ON CONFLICT (org_id, module) DO NOTHING;
+    EXCEPTION
+      WHEN unique_violation THEN
+        INSERT INTO public.org_inbound_mailboxes (org_id, module, alias_local_part)
+        VALUES (
+          p_org_id,
+          v_mod,
+          left(
+            'usterki+' || v_mod || '-' || v_slug || substr(replace(p_org_id::text, '-', ''), 1, 6),
+            64
+          )
+        )
+        ON CONFLICT (org_id, module) DO NOTHING;
+    END;
+  END LOOP;
+
+  RETURN QUERY
+  SELECT *
+  FROM public.org_inbound_mailboxes
+  WHERE org_id = p_org_id
+    AND module IN ('serwis', 'administracja')
+  ORDER BY module;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.get_issue_email_payload(p_issue_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_issue public.property_issues%ROWTYPE;
+BEGIN
+  SELECT * INTO v_issue FROM public.property_issues WHERE id = p_issue_id;
+  IF v_issue.id IS NULL THEN
+    RAISE EXCEPTION 'Nie znaleziono zgłoszenia.';
+  END IF;
+  PERFORM private.vendor_email_require_management(v_issue.org_id);
+  RETURN private.vendor_email_build_payload(p_issue_id);
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.get_org_ai_quota(p_org_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_limit integer;
+  v_used integer;
+  v_month date := private.inbound_month_start();
+BEGIN
+  IF p_org_id IS NULL THEN RAISE EXCEPTION 'Brak organizacji.'; END IF;
+  IF NOT (SELECT public.is_platform_admin()) AND NOT (SELECT public.is_org_member(p_org_id)) THEN
+    RAISE EXCEPTION 'Brak dostępu do limitu AI.';
+  END IF;
+  v_limit := private.inbound_ai_monthly_limit(p_org_id);
+  SELECT COALESCE(u.parse_count, 0) INTO v_used
+  FROM public.org_ai_usage_monthly u
+  WHERE u.org_id = p_org_id AND u.year_month = v_month;
+  v_used := COALESCE(v_used, 0);
+  RETURN jsonb_build_object(
+    'org_id', p_org_id, 'year_month', v_month,
+    'ai_parses_limit', v_limit, 'ai_parses_used', v_used,
+    'ai_parses_remaining', GREATEST(v_limit - v_used, 0),
+    'has_ai_auto', private.inbound_has_ai_auto(p_org_id)
+  );
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.get_partner_cleaning_work_scope(p_location_master_id uuid)
+ RETURNS TABLE(cleaning_org_id uuid, cleaning_org_name text, partner_legal_entity_id uuid, cleaning_location_id uuid, has_active_mandate boolean, has_active_cooperation boolean, section_id uuid, section_name text, section_is_active boolean, section_sort_order integer, checklist_id uuid, checklist_name text, frequency text, frequency_config jsonb, baseline_date date, requires_photo boolean, is_active boolean)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'private'
+AS $function$
+DECLARE
+  v_admin record;
+  v_partner record;
+  v_org_name text;
+  v_le uuid;
+BEGIN
+  PERFORM private.cleaning_scope_require_actor();
+
+  IF p_location_master_id IS NULL THEN
+    RAISE EXCEPTION 'CLEANING_SCOPE_FORBIDDEN';
+  END IF;
+
+  SELECT * INTO v_admin
+  FROM private.resolve_admin_location_for_scope(p_location_master_id);
+
+  IF v_admin.admin_location_id IS NULL THEN
+    RAISE EXCEPTION 'CLEANING_SCOPE_FORBIDDEN';
+  END IF;
+
+  SELECT * INTO v_partner
+  FROM private.resolve_partner_cleaning_location(
+    p_location_master_id,
+    v_admin.admin_org_id,
+    v_admin.community_id
+  );
+
+  IF v_partner.cleaning_location_id IS NULL THEN
+    RAISE EXCEPTION 'CLEANING_SCOPE_NO_PARTNER';
+  END IF;
+
+  SELECT COALESCE(o.name, v_partner.cleaning_org_id::text)
+  INTO v_org_name
+  FROM public.organizations o
+  WHERE o.id = v_partner.cleaning_org_id;
+
+  SELECT e.legal_entity_id
+  INTO v_le
+  FROM public.org_legal_entity_enrollments e
+  WHERE e.org_id = v_partner.cleaning_org_id
+  ORDER BY COALESCE(e.is_cleaning, false) DESC, e.created_at
+  LIMIT 1;
+
+  RETURN QUERY
+  SELECT
+    v_partner.cleaning_org_id,
+    COALESCE(v_org_name, v_partner.cleaning_org_id::text),
+    v_le,
+    v_partner.cleaning_location_id,
+    v_partner.has_active_mandate,
+    v_partner.has_active_cooperation,
+    items.section_id,
+    items.section_name,
+    COALESCE(items.section_is_active, false),
+    COALESCE(items.section_sort_order, 0),
+    items.checklist_id,
+    items.checklist_name,
+    items.frequency,
+    items.frequency_config,
+    items.baseline_date,
+    COALESCE(items.requires_photo, false),
+    COALESCE(items.is_active, false)
+  FROM (SELECT 1) AS header
+  LEFT JOIN (
+    SELECT
+      ps.id AS section_id,
+      ps.name AS section_name,
+      COALESCE(ps.is_active, true) AS section_is_active,
+      COALESCE(ps.sort_order, 0) AS section_sort_order,
+      chk.id AS checklist_id,
+      chk.name AS checklist_name,
+      chk.frequency,
+      chk.frequency_config,
+      chk.baseline_date,
+      COALESCE(chk.requires_photo, false) AS requires_photo,
+      COALESCE(chk.is_active, true) AS is_active
+    FROM public.property_sections ps
+    LEFT JOIN public.property_checklists chk
+      ON chk.section_id = ps.id
+     AND chk.location_id = v_partner.cleaning_location_id
+    WHERE ps.location_id = v_partner.cleaning_location_id
+
+    UNION ALL
+
+    SELECT
+      NULL::uuid,
+      NULL::text,
+      false,
+      0,
+      chk.id,
+      chk.name,
+      chk.frequency,
+      chk.frequency_config,
+      chk.baseline_date,
+      COALESCE(chk.requires_photo, false),
+      COALESCE(chk.is_active, true)
+    FROM public.property_checklists chk
+    WHERE chk.location_id = v_partner.cleaning_location_id
+      AND chk.section_id IS NULL
+  ) AS items ON true
+  ORDER BY
+    COALESCE(items.section_sort_order, 0),
+    COALESCE(items.section_name, ''),
+    COALESCE(items.checklist_name, '');
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.is_any_fleet_admin()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT
+    (SELECT auth.uid()) IS NOT NULL
+    AND (
+      public.is_platform_admin()
+      OR EXISTS (
+        SELECT 1
+        FROM public.profiles p
+        WHERE p.id = (SELECT auth.uid())
+          AND p.fleet_role = 'admin'::public.fleet_role
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM public.memberships m
+        WHERE m.user_id = (SELECT auth.uid())
+          AND COALESCE(m.is_active, true) = true
+          AND m.role ILIKE ANY (
+            ARRAY[
+              'owner',
+              'admin',
+              'administrator',
+              'manager',
+              'coordinator',
+              'koordynator',
+              'wlasciciel'
+            ]
+          )
+      )
+    );
+$function$;
+CREATE OR REPLACE FUNCTION public.is_fleet_org_admin(p_org_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT
+    (SELECT auth.uid()) IS NOT NULL
+    AND p_org_id IS NOT NULL
+    AND (
+      public.is_platform_admin()
+      OR public.is_org_management(p_org_id)
+      OR (
+        EXISTS (
+          SELECT 1
+          FROM public.profiles p
+          WHERE p.id = (SELECT auth.uid())
+            AND p.fleet_role = 'admin'::public.fleet_role
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM public.memberships m
+          WHERE m.user_id = (SELECT auth.uid())
+            AND m.org_id = p_org_id
+            AND COALESCE(m.is_active, true) = true
+        )
+      )
+    );
+$function$;
 CREATE OR REPLACE FUNCTION public.is_service_staff_role(p_role text)
  RETURNS boolean
  LANGUAGE sql
@@ -13110,6 +11454,37 @@ AS $function$
   SELECT lower(btrim(COALESCE(p_role, ''))) = ANY (
     ARRAY['technik', 'koordynator', 'wlasciciel', 'właściciel', 'owner', 'coordinator']
   );
+$function$;
+CREATE OR REPLACE FUNCTION public.enforce_org_duty_eligible()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_role text;
+  v_active boolean;
+BEGIN
+  SELECT m.role, COALESCE(m.is_active, true)
+  INTO v_role, v_active
+  FROM public.memberships m
+  WHERE m.org_id = NEW.org_id
+    AND m.user_id = NEW.user_id
+  ORDER BY public.is_service_staff_role(m.role) DESC
+  LIMIT 1;
+
+  IF v_role IS NULL THEN
+    RAISE EXCEPTION 'Duty eligible user must be a member of the organization'
+      USING ERRCODE = '23514';
+  END IF;
+  IF v_active IS NOT TRUE THEN
+    RAISE EXCEPTION 'Duty eligible user must have an active membership'
+      USING ERRCODE = '23514';
+  END IF;
+  IF NOT public.is_service_staff_role(v_role) THEN
+    RAISE EXCEPTION 'Duty eligible user must have a Serwis staff role'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
 $function$;
 CREATE OR REPLACE FUNCTION public.is_serwis_dispatcher_or_owner(target_org_id uuid)
  RETURNS boolean
@@ -13130,6 +11505,30 @@ AS $function$
         'manager',
         'coordinator',
         'koordynator'
+      )
+  );
+$function$;
+CREATE OR REPLACE FUNCTION public.can_manage_inspection_org(p_org_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT public.is_serwis_dispatcher_or_owner(p_org_id);
+$function$;
+CREATE OR REPLACE FUNCTION public.can_staff_access_inspection_campaign(p_campaign_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.inspection_campaigns c
+    WHERE c.id = p_campaign_id
+      AND (
+        public.is_serwis_dispatcher_or_owner(c.org_id)
+        OR public.is_inspection_campaign_assignee(c.id)
       )
   );
 $function$;
@@ -13162,6 +11561,123 @@ AS $function$
       AND role IN ('technik', 'technician')
   );
 $function$;
+CREATE OR REPLACE FUNCTION public.can_handover_resident_orders(p_org_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT
+    public.can_manage_resident_orders(p_org_id)
+    OR public.is_serwis_technician_role(p_org_id);
+$function$;
+CREATE OR REPLACE FUNCTION public.can_access_resident_order_photo(p_name text, p_write boolean)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_org uuid;
+  v_order uuid;
+  v_status text;
+BEGIN
+  BEGIN
+    v_org := NULLIF(split_part(p_name, '/', 1), '')::uuid;
+    v_order := NULLIF(split_part(p_name, '/', 2), '')::uuid;
+  EXCEPTION WHEN invalid_text_representation THEN
+    RETURN false;
+  END;
+
+  IF v_org IS NULL OR v_order IS NULL THEN
+    RETURN false;
+  END IF;
+
+  SELECT o.status INTO v_status
+  FROM public.resident_orders o
+  WHERE o.id = v_order
+    AND o.org_id = v_org;
+
+  IF v_status IS NULL THEN
+    RETURN false;
+  END IF;
+
+  IF p_write THEN
+    RETURN
+      public.can_handover_resident_orders(v_org)
+      AND v_status = 'stock_delivery';
+  END IF;
+
+  RETURN
+    public.can_manage_resident_orders(v_org)
+    OR public.can_handover_resident_orders(v_org)
+    OR EXISTS (
+      SELECT 1
+      FROM public.resident_orders o
+      WHERE o.id = v_order
+        AND o.resident_user_id = (SELECT auth.uid())
+    );
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.complete_resident_order_handover(p_order_id uuid, p_photo_urls text[] DEFAULT '{}'::text[])
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_actor uuid;
+  v_order public.resident_orders%ROWTYPE;
+BEGIN
+  v_actor := private.resident_order_require_actor();
+
+  SELECT * INTO v_order FROM public.resident_orders WHERE id = p_order_id FOR UPDATE;
+  IF v_order.id IS NULL THEN
+    RAISE EXCEPTION 'Nie znaleziono zamówienia.';
+  END IF;
+
+  IF NOT public.can_handover_resident_orders(v_order.org_id) THEN
+    RAISE EXCEPTION 'Brak uprawnień do potwierdzenia przekazania.';
+  END IF;
+
+  IF v_order.status IS DISTINCT FROM 'stock_delivery' THEN
+    RAISE EXCEPTION 'To zamówienie nie czeka na przekazanie.';
+  END IF;
+
+  UPDATE public.resident_orders
+  SET
+    status = 'delivered',
+    handed_over_at = now(),
+    handed_over_by = v_actor,
+    handover_photo_urls = COALESCE(p_photo_urls, '{}'::text[])
+  WHERE id = p_order_id;
+
+  PERFORM private.resident_order_append_event(
+    p_order_id,
+    v_actor,
+    'handover_completed',
+    jsonb_build_object('photo_urls', to_jsonb(COALESCE(p_photo_urls, '{}'::text[])))
+  );
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.current_org_has_serwis_access()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.memberships m
+    WHERE m.user_id = auth.uid()
+      AND COALESCE(m.is_active, true) = true
+      AND (
+        public.is_serwis_technician_role(m.org_id)
+        OR public.is_serwis_dispatcher_or_owner(m.org_id)
+        OR public.is_management_role(m.org_id)
+      )
+  );
+$function$;
 CREATE OR REPLACE FUNCTION public.is_vendor_partner_actor(p_vendor_id uuid)
  RETURNS boolean
  LANGUAGE sql
@@ -13178,6 +11694,180 @@ AS $function$
       WHERE vp.id = p_vendor_id
         AND COALESCE(m.is_active, true) = true
     );
+$function$;
+CREATE OR REPLACE FUNCTION public.enforce_property_issue_lifecycle()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_org uuid;
+  v_claimed boolean;
+  v_started boolean;
+  v_broadcast_on boolean;
+  v_vendor_changed boolean;
+  v_mgmt boolean;
+  v_tech boolean;
+  v_transfer_vendor boolean;
+  v_authorizing boolean;
+  v_declining_transfer boolean;
+  v_routing_changed boolean;
+BEGIN
+  v_org := COALESCE(NEW.org_id, OLD.org_id);
+  v_claimed := OLD.assigned_staff_id IS NOT NULL;
+  v_started := OLD.started_at IS NOT NULL OR OLD.status = 'in_progress';
+  v_broadcast_on := NEW.is_public_broadcast IS TRUE AND OLD.is_public_broadcast IS NOT TRUE;
+  v_vendor_changed := NEW.delegated_vendor_id IS DISTINCT FROM OLD.delegated_vendor_id;
+  v_mgmt := v_org IS NOT NULL AND public.is_management_role(v_org);
+  v_tech := v_org IS NOT NULL AND public.is_serwis_technician_role(v_org);
+  v_transfer_vendor := public.is_vendor_partner_actor(
+    COALESCE(OLD.transfer_to_vendor_id, NEW.transfer_to_vendor_id)
+  );
+  v_authorizing :=
+    NEW.transfer_authorized_at IS NOT NULL
+    AND OLD.transfer_authorized_at IS NULL;
+  v_declining_transfer :=
+    OLD.is_transfer_requested IS TRUE
+    AND NEW.is_transfer_requested IS NOT TRUE
+    AND NEW.transfer_authorized_at IS NULL
+    AND NEW.delegated_vendor_id IS NOT DISTINCT FROM OLD.delegated_vendor_id;
+
+  IF v_authorizing THEN
+    IF NOT v_transfer_vendor THEN
+      RAISE EXCEPTION 'ISSUE_TRANSFER_AUTH_FORBIDDEN'
+        USING HINT = 'Only the target contractor can authorize a B2B transfer.';
+    END IF;
+    IF NEW.transfer_to_vendor_id IS NULL THEN
+      RAISE EXCEPTION 'ISSUE_TRANSFER_FIELDS_REQUIRED';
+    END IF;
+    NEW.transfer_authorized_by := COALESCE(NEW.transfer_authorized_by, auth.uid());
+    NEW.delegated_vendor_id := NEW.transfer_to_vendor_id;
+    NEW.assigned_staff_id := NULL;
+    NEW.claimed_at := NULL;
+    NEW.is_transfer_requested := false;
+    NEW.status := 'delegated';
+    NEW.is_public_broadcast := false;
+    v_vendor_changed := NEW.delegated_vendor_id IS DISTINCT FROM OLD.delegated_vendor_id;
+  END IF;
+
+  IF v_declining_transfer AND NOT (v_transfer_vendor OR v_mgmt) THEN
+    RAISE EXCEPTION 'ISSUE_TRANSFER_DECLINE_FORBIDDEN';
+  END IF;
+
+  IF OLD.assigned_staff_id IS NULL AND NEW.assigned_staff_id IS NOT NULL THEN
+    NEW.claimed_at := COALESCE(NEW.claimed_at, now());
+  END IF;
+
+  IF NEW.assigned_staff_id IS NULL AND OLD.assigned_staff_id IS NOT NULL THEN
+    IF NEW.status = 'cancelled' THEN
+      NULL;
+    ELSIF v_vendor_changed
+      AND NEW.delegated_vendor_id IS NOT NULL
+      AND NEW.transfer_authorized_at IS NOT NULL
+      AND NEW.transfer_to_vendor_id IS NOT DISTINCT FROM NEW.delegated_vendor_id THEN
+      NULL;
+    ELSE
+      RAISE EXCEPTION 'ISSUE_UNCLAIM_LOCKED'
+        USING HINT = 'Clearing assigned_staff_id is only allowed on cancel or authorized B2B transfer.';
+    END IF;
+  END IF;
+
+  IF NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected' THEN
+    IF NOT v_mgmt THEN
+      RAISE EXCEPTION 'ISSUE_REJECT_FORBIDDEN';
+    END IF;
+    IF v_claimed OR OLD.delegated_vendor_id IS NOT NULL THEN
+      RAISE EXCEPTION 'ISSUE_REJECT_LOCKED'
+        USING HINT = 'Reject is only for unassigned tickets. Cancel before start, or request cancel after start.';
+    END IF;
+  END IF;
+
+  IF NEW.status = 'cancelled' AND OLD.status IS DISTINCT FROM 'cancelled' THEN
+    IF NOT v_mgmt THEN
+      RAISE EXCEPTION 'ISSUE_CANCEL_FORBIDDEN';
+    END IF;
+    IF v_started THEN
+      RAISE EXCEPTION 'ISSUE_CANCEL_AFTER_START'
+        USING HINT = 'After work started, set cancel_requested_* instead of status=cancelled.';
+    END IF;
+    IF NEW.cancel_reason IS NULL OR length(btrim(NEW.cancel_reason)) < 3 THEN
+      RAISE EXCEPTION 'ISSUE_CANCEL_REASON_REQUIRED';
+    END IF;
+    NEW.cancelled_at := COALESCE(NEW.cancelled_at, now());
+    NEW.cancelled_by := COALESCE(NEW.cancelled_by, auth.uid());
+    NEW.is_public_broadcast := false;
+  END IF;
+
+  IF NEW.cancel_requested_at IS NOT NULL AND OLD.cancel_requested_at IS NULL THEN
+    IF NOT v_mgmt THEN
+      RAISE EXCEPTION 'ISSUE_CANCEL_REQUEST_FORBIDDEN';
+    END IF;
+    IF NEW.cancel_request_reason IS NULL OR length(btrim(NEW.cancel_request_reason)) < 3 THEN
+      RAISE EXCEPTION 'ISSUE_CANCEL_REASON_REQUIRED';
+    END IF;
+    NEW.cancel_requested_by := COALESCE(NEW.cancel_requested_by, auth.uid());
+  END IF;
+
+  IF v_broadcast_on THEN
+    IF NOT v_mgmt THEN
+      RAISE EXCEPTION 'ISSUE_BROADCAST_FORBIDDEN';
+    END IF;
+    IF v_claimed OR OLD.delegated_vendor_id IS NOT NULL THEN
+      RAISE EXCEPTION 'ISSUE_BROADCAST_LOCKED'
+        USING HINT = 'Marketplace broadcast after claim/delegate requires an authorized transfer.';
+    END IF;
+  END IF;
+
+  IF v_vendor_changed AND NEW.delegated_vendor_id IS NOT NULL AND NOT v_authorizing THEN
+    IF v_claimed OR OLD.delegated_vendor_id IS NOT NULL THEN
+      IF NEW.transfer_authorized_at IS NULL
+         OR NEW.transfer_to_vendor_id IS DISTINCT FROM NEW.delegated_vendor_id THEN
+        RAISE EXCEPTION 'ISSUE_TRANSFER_NEEDS_AUTH'
+          USING HINT = 'Contractor must authorize transfer_to_vendor_id before delegated_vendor_id changes.';
+      END IF;
+      NEW.assigned_staff_id := NULL;
+      NEW.claimed_at := NULL;
+      NEW.is_transfer_requested := false;
+    ELSIF NOT v_mgmt THEN
+      RAISE EXCEPTION 'ISSUE_DELEGATE_FORBIDDEN';
+    END IF;
+  END IF;
+
+  IF NEW.is_transfer_requested IS TRUE AND OLD.is_transfer_requested IS NOT TRUE THEN
+    IF NOT v_mgmt THEN
+      RAISE EXCEPTION 'ISSUE_TRANSFER_REQUEST_FORBIDDEN';
+    END IF;
+    IF NOT v_claimed AND OLD.delegated_vendor_id IS NULL THEN
+      RAISE EXCEPTION 'ISSUE_TRANSFER_NOT_NEEDED'
+        USING HINT = 'Unassigned tickets can be delegated directly.';
+    END IF;
+    IF NEW.transfer_to_vendor_id IS NULL
+       OR NEW.transfer_reason IS NULL
+       OR length(btrim(NEW.transfer_reason)) < 3 THEN
+      RAISE EXCEPTION 'ISSUE_TRANSFER_FIELDS_REQUIRED';
+    END IF;
+  END IF;
+
+  v_routing_changed :=
+    NEW.is_public_broadcast IS DISTINCT FROM OLD.is_public_broadcast
+    OR NEW.delegated_vendor_id IS DISTINCT FROM OLD.delegated_vendor_id
+    OR NEW.is_transfer_requested IS DISTINCT FROM OLD.is_transfer_requested
+    OR NEW.transfer_to_vendor_id IS DISTINCT FROM OLD.transfer_to_vendor_id
+    OR NEW.transfer_reason IS DISTINCT FROM OLD.transfer_reason
+    OR NEW.transfer_authorized_at IS DISTINCT FROM OLD.transfer_authorized_at
+    OR NEW.cancel_reason IS DISTINCT FROM OLD.cancel_reason
+    OR NEW.cancelled_at IS DISTINCT FROM OLD.cancelled_at
+    OR NEW.cancel_requested_at IS DISTINCT FROM OLD.cancel_requested_at
+    OR (NEW.status IN ('rejected', 'cancelled') AND NEW.status IS DISTINCT FROM OLD.status);
+
+  IF v_tech AND NOT v_mgmt AND v_routing_changed THEN
+    RAISE EXCEPTION 'ISSUE_ROUTING_FORBIDDEN'
+      USING HINT = 'Technicians cannot reject, cancel, broadcast, or reassign to another company.';
+  END IF;
+
+  RETURN NEW;
+END;
 $function$;
 CREATE OR REPLACE FUNCTION public.issue_is_cleaning_origin(p_source issue_source_enum, p_reporter_type text)
  RETURNS boolean
@@ -13369,46 +12059,6 @@ BEGIN
   );
 END;
 $function$;
-CREATE OR REPLACE FUNCTION public.list_estate_members(p_estate_id uuid)
- RETURNS TABLE(member_id uuid, community_id uuid, org_id uuid, status estate_member_status, community_name text, nip text, invited_by_org_id uuid, consented_at timestamp with time zone, is_own boolean)
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_org uuid;
-BEGIN
-  PERFORM private.estate_require_actor();
-
-  IF NOT public.user_can_see_estate(p_estate_id) THEN
-    RAISE EXCEPTION 'Brak dostępu do tego osiedla.';
-  END IF;
-
-  SELECT public.get_my_org_id_safe() INTO v_org;
-
-  RETURN QUERY
-  SELECT
-    em.id,
-    em.community_id,
-    em.org_id,
-    em.status,
-    COALESCE(NULLIF(btrim(c.legal_name), ''), NULLIF(btrim(c.name), ''), 'Wspólnota'),
-    c.nip,
-    em.invited_by_org_id,
-    em.consented_at,
-    (em.org_id = v_org)
-  FROM public.estate_members em
-  JOIN public.communities c ON c.id = em.community_id
-  WHERE em.estate_id = p_estate_id
-  ORDER BY
-    CASE em.status
-      WHEN 'accepted' THEN 0
-      WHEN 'invited' THEN 1
-      ELSE 2
-    END,
-    5;
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.list_home_preview_locations()
  RETURNS TABLE(access_id uuid, location_id uuid, org_id uuid, name text, address text, unit_number text, community_name text, community_id uuid, estate_id uuid, estate_name text, issue_qr_token text, access_type text)
  LANGUAGE sql
@@ -13431,43 +12081,6 @@ CREATE OR REPLACE FUNCTION public.list_location_module_presence(p_location_maste
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$ DECLARE v_orgs uuid[]; BEGIN IF (SELECT auth.uid()) IS NULL THEN RAISE EXCEPTION 'MANDATE_AUTH_REQUIRED'; END IF; IF p_location_master_id IS NULL THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; v_orgs := public.current_user_org_ids(); IF NOT public.is_platform_admin() AND NOT EXISTS (SELECT 1 FROM public.cleaning_locations cl WHERE cl.location_master_id = p_location_master_id AND cl.org_id = ANY (v_orgs)) THEN RAISE EXCEPTION 'MANDATE_FORBIDDEN'; END IF; RETURN QUERY SELECT cl.org_id, COALESCE(o.name, cl.org_id::text), (SELECT e.legal_entity_id FROM public.org_legal_entity_enrollments e WHERE e.org_id = cl.org_id ORDER BY e.created_at LIMIT 1), COALESCE(cl.is_cleaning_active, false), COALESCE(cl.is_maintenance_active, false), COALESCE(cl.is_admin_active, false) FROM public.cleaning_locations cl LEFT JOIN public.organizations o ON o.id = cl.org_id WHERE cl.location_master_id = p_location_master_id AND cl.status = 'active'; END; $function$;
-CREATE OR REPLACE FUNCTION public.list_my_unit_inspections()
- RETURNS TABLE(campaign_id uuid, record_id uuid, title text, location_id uuid, unit_number text, status unit_inspection_status, resident_is_home boolean, start_date date, end_date date, days jsonb)
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT
-    c.id,
-    r.id,
-    c.title,
-    c.location_id,
-    r.unit_number,
-    r.status,
-    r.resident_is_home,
-    c.start_date,
-    c.end_date,
-    COALESCE(
-      (
-        SELECT jsonb_agg(
-          jsonb_build_object(
-            'visit_date', d.visit_date,
-            'start_time', d.start_time,
-            'end_time', d.end_time,
-            'kind', d.kind
-          )
-          ORDER BY d.visit_date
-        )
-        FROM public.inspection_campaign_days d
-        WHERE d.campaign_id = c.id
-      ),
-      '[]'::jsonb
-    )
-  FROM public.unit_inspection_records r
-  JOIN public.inspection_campaigns c ON c.id = r.campaign_id
-  WHERE public.resident_matches_unit_inspection_record(r.id)
-    AND CURRENT_DATE BETWEEN c.start_date AND c.end_date;
-$function$;
 CREATE OR REPLACE FUNCTION public.list_org_verification_alerts(p_org_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -13598,46 +12211,6 @@ BEGIN
     ),
     '[]'::jsonb
   );
-END;
-$function$;
-CREATE OR REPLACE FUNCTION public.list_provider_directory(p_acting_org_id uuid, p_module text)
- RETURNS TABLE(org_id uuid, org_name text, city text, nip text, legal_entity_id uuid)
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-BEGIN
-  IF (SELECT auth.uid()) IS NULL THEN
-    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
-  END IF;
-
-  IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN
-    RAISE EXCEPTION 'PROVIDER_DIRECTORY_FORBIDDEN';
-  END IF;
-
-  IF p_module IS NULL OR p_module NOT IN ('maintenance', 'cleaning') THEN
-    RAISE EXCEPTION 'PROVIDER_DIRECTORY_MODULE_INVALID';
-  END IF;
-
-  IF NOT public.is_platform_admin()
-     AND NOT public.org_has_current_module_subscription(p_acting_org_id, 'admin') THEN
-    RAISE EXCEPTION 'PROVIDER_DIRECTORY_ADMIN_REQUIRED';
-  END IF;
-
-  RETURN QUERY
-  SELECT
-    o.id,
-    o.name,
-    o.city,
-    le.nip_normalized,
-    o.legal_entity_id
-  FROM public.organizations o
-  INNER JOIN public.legal_entities le ON le.id = o.legal_entity_id
-  WHERE o.listed_in_provider_directory = true
-    AND o.legal_entity_id IS NOT NULL
-    AND o.id <> p_acting_org_id
-    AND public.org_has_current_module_subscription(o.id, p_module)
-  ORDER BY o.name;
 END;
 $function$;
 CREATE OR REPLACE FUNCTION public.log_property_issue_lifecycle()
@@ -13863,6 +12436,80 @@ BEGIN
       OR (cl.qr_code_token IS NOT NULL AND cl.qr_code_token = v_token)
     )
   LIMIT 1;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.insert_public_qr_issue(p_token text, p_description text, p_reporter_name text, p_reporter_phone text, p_photos_before text[] DEFAULT NULL::text[])
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_location public.cleaning_locations%ROWTYPE;
+  v_issue_id uuid;
+  v_description text := trim(COALESCE(p_description, ''));
+  v_name text := trim(COALESCE(p_reporter_name, ''));
+  v_phone text := trim(COALESCE(p_reporter_phone, ''));
+BEGIN
+  IF length(v_description) < 1 OR length(v_description) > 500 THEN
+    RAISE EXCEPTION 'Nieprawidłowy opis zgłoszenia';
+  END IF;
+  IF length(v_name) < 1 OR length(v_name) > 120 THEN
+    RAISE EXCEPTION 'Nieprawidłowe imię zgłaszającego';
+  END IF;
+  IF length(v_phone) < 1 OR length(v_phone) > 40 THEN
+    RAISE EXCEPTION 'Nieprawidłowy numer telefonu';
+  END IF;
+
+  SELECT cl.*
+  INTO v_location
+  FROM public.lookup_location_by_public_qr_token(p_token) loc
+  JOIN public.cleaning_locations cl ON cl.id = loc.id
+  LIMIT 1;
+
+  IF v_location.id IS NULL THEN
+    RAISE EXCEPTION 'Nieprawidłowy lub nieaktywny token QR';
+  END IF;
+
+  IF COALESCE(v_location.allow_anonymous_qr_reports, true) = false THEN
+    IF auth.uid() IS NULL THEN
+      RAISE EXCEPTION 'To zgłoszenie wymaga zalogowania';
+    END IF;
+    IF NOT public.is_org_member(v_location.org_id)
+       AND NOT public.has_location_access(v_location.id) THEN
+      RAISE EXCEPTION 'Brak uprawnień do zgłoszenia usterki w tym budynku';
+    END IF;
+  END IF;
+
+  INSERT INTO public.property_issues (
+    location_id,
+    org_id,
+    description,
+    reporter_name,
+    reporter_phone,
+    reporter_type,
+    priority,
+    status,
+    photos_before,
+    source,
+    reporter_id
+  )
+  VALUES (
+    v_location.id,
+    v_location.org_id,
+    v_description,
+    v_name,
+    v_phone,
+    'tenant',
+    'medium',
+    'pending_admin_approval',
+    CASE WHEN p_photos_before IS NOT NULL AND cardinality(p_photos_before) > 0 THEN p_photos_before ELSE NULL END,
+    'public_qr',
+    auth.uid()
+  )
+  RETURNING id INTO v_issue_id;
+
+  RETURN v_issue_id;
 END;
 $function$;
 CREATE OR REPLACE FUNCTION public.mark_duty_alert_pushed(p_alert_id uuid)
@@ -14126,29 +12773,6 @@ BEGIN
   PERFORM private.resident_order_append_event(p_order_id, v_actor, 'ordered_offline', '{}'::jsonb);
 END;
 $function$;
-CREATE OR REPLACE FUNCTION public.mark_unit_inspection_home(p_record_id uuid, p_is_home boolean)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-BEGIN
-  IF auth.uid() IS NULL THEN
-    RAISE EXCEPTION 'Wymagane logowanie.' USING ERRCODE = '42501';
-  END IF;
-
-  IF NOT public.resident_matches_unit_inspection_record(p_record_id) THEN
-    RAISE EXCEPTION 'Brak dostępu do tego lokalu.' USING ERRCODE = '42501';
-  END IF;
-
-  UPDATE public.unit_inspection_records
-  SET resident_is_home = p_is_home,
-      resident_home_at = CASE WHEN p_is_home THEN now() ELSE NULL END,
-      resident_home_by = auth.uid(),
-      updated_at = now()
-  WHERE id = p_record_id;
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.materials_used_total(p_materials jsonb)
  RETURNS numeric
  LANGUAGE sql
@@ -14200,37 +12824,6 @@ AS $function$
   SELECT COALESCE((SELECT jsonb_agg(item) FROM old_imm), '[]'::jsonb)
       || COALESCE((SELECT jsonb_agg(item) FROM new_without_imm), '[]'::jsonb);
 $function$;
-CREATE OR REPLACE FUNCTION public.nip_checksum_ok(digits text)
- RETURNS boolean
- LANGUAGE plpgsql
- IMMUTABLE PARALLEL SAFE
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  s integer;
-  c integer;
-BEGIN
-  IF digits IS NULL OR digits !~ '^[0-9]{10}$' THEN
-    RETURN false;
-  END IF;
-
-  s :=
-    6 * substr(digits, 1, 1)::integer
-    + 5 * substr(digits, 2, 1)::integer
-    + 7 * substr(digits, 3, 1)::integer
-    + 2 * substr(digits, 4, 1)::integer
-    + 3 * substr(digits, 5, 1)::integer
-    + 4 * substr(digits, 6, 1)::integer
-    + 5 * substr(digits, 7, 1)::integer
-    + 6 * substr(digits, 8, 1)::integer
-    + 7 * substr(digits, 9, 1)::integer;
-  c := s % 11;
-  IF c = 10 THEN
-    RETURN false;
-  END IF;
-  RETURN c = substr(digits, 10, 1)::integer;
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.normalize_pl_postal(p_raw text)
  RETURNS text
  LANGUAGE sql
@@ -14263,6 +12856,117 @@ BEGIN
     v := rpad(v, 2, 'X');
   END IF;
   RETURN v;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.ensure_org_serwis_billing_settings(p_org_id uuid)
+ RETURNS org_serwis_billing_settings
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_row public.org_serwis_billing_settings;
+  v_slug text;
+  v_base text;
+  v_code text;
+  v_i integer := 0;
+  v_suffix text;
+BEGIN
+  SELECT * INTO v_row
+  FROM public.org_serwis_billing_settings
+  WHERE org_id = p_org_id;
+
+  IF FOUND THEN
+    RETURN v_row;
+  END IF;
+
+  SELECT slug INTO v_slug
+  FROM public.organizations
+  WHERE id = p_org_id;
+
+  IF v_slug IS NULL THEN
+    RAISE EXCEPTION 'ISSUE_PROTOCOL_ORG_REQUIRED';
+  END IF;
+
+  v_base := public.normalize_protocol_org_code(v_slug);
+  v_code := v_base;
+
+  WHILE EXISTS (
+    SELECT 1
+    FROM public.org_serwis_billing_settings s
+    WHERE s.protocol_org_code = v_code
+  )
+  LOOP
+    v_i := v_i + 1;
+    IF v_i > 99 THEN
+      RAISE EXCEPTION 'PROTOCOL_ORG_CODE_TAKEN';
+    END IF;
+    v_suffix := v_i::text;
+    v_code := left(v_base, GREATEST(2, 12 - length(v_suffix))) || v_suffix;
+  END LOOP;
+
+  INSERT INTO public.org_serwis_billing_settings (
+    org_id,
+    protocol_org_code
+  )
+  VALUES (p_org_id, v_code)
+  ON CONFLICT (org_id) DO UPDATE
+    SET protocol_org_code = public.org_serwis_billing_settings.protocol_org_code
+  RETURNING * INTO v_row;
+
+  RETURN v_row;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.assign_next_protocol_number(p_org_id uuid, p_at timestamp with time zone)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_year integer;
+  v_code text;
+  v_next integer;
+  v_settings public.org_serwis_billing_settings;
+BEGIN
+  IF p_org_id IS NULL THEN
+    RAISE EXCEPTION 'ISSUE_PROTOCOL_ORG_REQUIRED';
+  END IF;
+
+  v_settings := public.ensure_org_serwis_billing_settings(p_org_id);
+  v_code := v_settings.protocol_org_code;
+  v_year := EXTRACT(YEAR FROM timezone('Europe/Warsaw', COALESCE(p_at, now())))::integer;
+
+  INSERT INTO public.org_serwis_protocol_counters (org_id, year, last_number)
+  VALUES (p_org_id, v_year, 1)
+  ON CONFLICT (org_id, year) DO UPDATE
+    SET last_number = public.org_serwis_protocol_counters.last_number + 1
+  RETURNING last_number INTO v_next;
+
+  RETURN lpad(v_next::text, 4, '0') || '/' || v_year::text || '/' || v_code;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.get_org_serwis_billing_settings(p_org_id uuid)
+ RETURNS org_serwis_billing_settings
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
+  END IF;
+  IF p_org_id IS NULL THEN
+    RAISE EXCEPTION 'ISSUE_PROTOCOL_ORG_REQUIRED';
+  END IF;
+  IF NOT (
+    public.is_serwis_dispatcher_or_owner(p_org_id)
+    OR public.is_serwis_technician_role(p_org_id)
+  ) THEN
+    RAISE EXCEPTION 'ISSUE_BILLING_FORBIDDEN';
+  END IF;
+
+  RETURN public.ensure_org_serwis_billing_settings(p_org_id);
 END;
 $function$;
 CREATE OR REPLACE FUNCTION public.normalize_unit_number(p_value text)
@@ -14360,6 +13064,46 @@ AS $function$
       )
   );
 $function$;
+CREATE OR REPLACE FUNCTION public.list_provider_directory(p_acting_org_id uuid, p_module text)
+ RETURNS TABLE(org_id uuid, org_name text, city text, nip text, legal_entity_id uuid)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
+  END IF;
+
+  IF p_acting_org_id IS NULL OR NOT public.is_org_management(p_acting_org_id) THEN
+    RAISE EXCEPTION 'PROVIDER_DIRECTORY_FORBIDDEN';
+  END IF;
+
+  IF p_module IS NULL OR p_module NOT IN ('maintenance', 'cleaning') THEN
+    RAISE EXCEPTION 'PROVIDER_DIRECTORY_MODULE_INVALID';
+  END IF;
+
+  IF NOT public.is_platform_admin()
+     AND NOT public.org_has_current_module_subscription(p_acting_org_id, 'admin') THEN
+    RAISE EXCEPTION 'PROVIDER_DIRECTORY_ADMIN_REQUIRED';
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    o.id,
+    o.name,
+    o.city,
+    le.nip_normalized,
+    o.legal_entity_id
+  FROM public.organizations o
+  INNER JOIN public.legal_entities le ON le.id = o.legal_entity_id
+  WHERE o.listed_in_provider_directory = true
+    AND o.legal_entity_id IS NOT NULL
+    AND o.id <> p_acting_org_id
+    AND public.org_has_current_module_subscription(o.id, p_module)
+  ORDER BY o.name;
+END;
+$function$;
 CREATE OR REPLACE FUNCTION public.org_serves_issue_location(p_org_id uuid, p_location_id uuid)
  RETURNS boolean
  LANGUAGE sql
@@ -14395,6 +13139,124 @@ AS $function$
           )
       )
     );
+$function$;
+CREATE OR REPLACE FUNCTION public.actor_can_see_open_marketplace(p_is_broadcast boolean, p_scope issue_marketplace_scope, p_location_id uuid, p_claimed_by uuid, p_assigned uuid, p_status issue_status_enum)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT p_is_broadcast IS TRUE
+    AND p_scope IS NOT NULL
+    AND p_claimed_by IS NULL
+    AND p_assigned IS NULL
+    AND p_status = 'open'
+    AND public.current_org_has_serwis_access()
+    AND (
+      p_scope = 'all'
+      OR (
+        p_scope = 'serving'
+        AND public.org_serves_issue_location(
+          (SELECT public.get_my_org_id_safe()),
+          p_location_id
+        )
+      )
+    );
+$function$;
+CREATE OR REPLACE FUNCTION public.claim_marketplace_property_issue(p_issue_id uuid, p_assigned_staff_id uuid DEFAULT NULL::uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_org uuid;
+  v_issue public.property_issues%ROWTYPE;
+  v_updated integer;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
+  END IF;
+
+  v_org := public.get_my_org_id_safe();
+  IF v_org IS NULL THEN
+    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
+  END IF;
+
+  SELECT * INTO v_issue
+  FROM public.property_issues
+  WHERE id = p_issue_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ISSUE_NOT_FOUND';
+  END IF;
+
+  IF v_issue.claimed_by_org_id IS NOT NULL
+     AND v_issue.claimed_by_org_id IS DISTINCT FROM v_org THEN
+    RAISE EXCEPTION 'ISSUE_MARKETPLACE_ALREADY_CLAIMED';
+  END IF;
+
+  IF v_issue.assigned_staff_id IS NOT NULL
+     AND v_issue.claimed_by_org_id IS DISTINCT FROM v_org
+     AND v_issue.org_id IS DISTINCT FROM v_org THEN
+    RAISE EXCEPTION 'ISSUE_MARKETPLACE_ALREADY_CLAIMED';
+  END IF;
+
+  IF v_issue.claimed_by_org_id IS NULL THEN
+    IF v_issue.org_id IS DISTINCT FROM v_org THEN
+      IF NOT public.actor_can_see_open_marketplace(
+        v_issue.is_public_broadcast,
+        v_issue.marketplace_scope,
+        v_issue.location_id,
+        v_issue.claimed_by_org_id,
+        v_issue.assigned_staff_id,
+        v_issue.status
+      ) THEN
+        RAISE EXCEPTION 'ISSUE_MARKETPLACE_FORBIDDEN';
+      END IF;
+    ELSIF NOT public.current_org_has_serwis_access() THEN
+      RAISE EXCEPTION 'ISSUE_MARKETPLACE_FORBIDDEN';
+    END IF;
+  ELSIF NOT (
+    public.is_serwis_dispatcher_or_owner(v_org)
+    OR public.is_management_role(v_org)
+    OR (p_assigned_staff_id IS NOT DISTINCT FROM v_actor)
+  ) THEN
+    RAISE EXCEPTION 'ISSUE_MARKETPLACE_FORBIDDEN';
+  END IF;
+
+  IF p_assigned_staff_id IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1
+       FROM public.memberships m
+       WHERE m.org_id = v_org
+         AND m.user_id = p_assigned_staff_id
+         AND COALESCE(m.is_active, true) = true
+     ) THEN
+    RAISE EXCEPTION 'ISSUE_MARKETPLACE_FORBIDDEN';
+  END IF;
+
+  UPDATE public.property_issues
+  SET
+    claimed_by_org_id = v_org,
+    assigned_staff_id = COALESCE(p_assigned_staff_id, assigned_staff_id),
+    is_public_broadcast = false,
+    marketplace_scope = NULL,
+    status = CASE WHEN status = 'open' THEN status ELSE 'open' END
+  WHERE id = p_issue_id
+    AND (claimed_by_org_id IS NULL OR claimed_by_org_id = v_org)
+    AND (
+      assigned_staff_id IS NULL
+      OR assigned_staff_id IS NOT DISTINCT FROM COALESCE(p_assigned_staff_id, assigned_staff_id)
+    );
+
+  GET DIAGNOSTICS v_updated = ROW_COUNT;
+  IF v_updated = 0 THEN
+    RAISE EXCEPTION 'ISSUE_MARKETPLACE_ALREADY_CLAIMED';
+  END IF;
+END;
 $function$;
 CREATE OR REPLACE FUNCTION public.pause_service_mandate(p_acting_org_id uuid, p_mandate_id uuid)
  RETURNS service_mandates
@@ -14862,42 +13724,6 @@ BEGIN
   RETURN v_row;
 END;
 $function$;
-CREATE OR REPLACE FUNCTION public.regon_checksum_ok(digits text)
- RETURNS boolean
- LANGUAGE plpgsql
- IMMUTABLE PARALLEL SAFE
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  s integer;
-  c integer;
-  w integer[];
-  i integer;
-  body text;
-BEGIN
-  IF digits IS NULL OR digits !~ '^[0-9]{9}([0-9]{5})?$' THEN
-    RETURN false;
-  END IF;
-
-  IF length(digits) = 9 THEN
-    w := ARRAY[8, 9, 2, 3, 4, 5, 6, 7];
-    body := substr(digits, 1, 8);
-  ELSE
-    w := ARRAY[2, 4, 8, 5, 0, 9, 7, 3, 6, 1, 2, 4, 8];
-    body := substr(digits, 1, 13);
-  END IF;
-
-  s := 0;
-  FOR i IN 1..array_length(w, 1) LOOP
-    s := s + w[i] * substr(body, i, 1)::integer;
-  END LOOP;
-  c := s % 11;
-  IF c = 10 THEN
-    c := 0;
-  END IF;
-  RETURN c = substr(digits, length(digits), 1)::integer;
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.reject_cleaning_extra_job(p_job_id uuid, p_reason text DEFAULT NULL::text)
  RETURNS void
  LANGUAGE plpgsql
@@ -15212,6 +14038,117 @@ AS $function$
       AND public.normalize_unit_number(r.unit_number) IS NOT NULL
   );
 $function$;
+CREATE OR REPLACE FUNCTION public.guard_unit_inspection_record_update()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_org uuid;
+BEGIN
+  SELECT c.org_id INTO v_org
+  FROM public.inspection_campaigns c
+  WHERE c.id = OLD.campaign_id;
+
+  IF v_org IS NOT NULL AND public.is_serwis_dispatcher_or_owner(v_org) THEN
+    RETURN NEW;
+  END IF;
+
+  IF public.resident_matches_unit_inspection_record(OLD.id)
+     AND NEW.campaign_id IS NOT DISTINCT FROM OLD.campaign_id
+     AND NEW.unit_number IS NOT DISTINCT FROM OLD.unit_number
+     AND NEW.building_identifier IS NOT DISTINCT FROM OLD.building_identifier
+     AND NEW.status IS NOT DISTINCT FROM OLD.status
+     AND NEW.notes IS NOT DISTINCT FROM OLD.notes
+     AND NEW.inspection_date IS NOT DISTINCT FROM OLD.inspection_date
+     AND NEW.photo_url IS NOT DISTINCT FROM OLD.photo_url
+     AND NEW.signature_url IS NOT DISTINCT FROM OLD.signature_url
+  THEN
+    NEW.resident_home_by := auth.uid();
+    NEW.resident_home_at := CASE
+      WHEN NEW.resident_is_home THEN now()
+      ELSE NULL
+    END;
+    NEW.updated_at := now();
+    RETURN NEW;
+  END IF;
+
+  IF public.is_inspection_campaign_assignee(OLD.campaign_id) THEN
+    NEW.campaign_id := OLD.campaign_id;
+    NEW.unit_number := OLD.unit_number;
+    NEW.building_identifier := OLD.building_identifier;
+    NEW.resident_is_home := OLD.resident_is_home;
+    NEW.resident_home_at := OLD.resident_home_at;
+    NEW.resident_home_by := OLD.resident_home_by;
+    NEW.updated_at := now();
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION 'Brak uprawnień do aktualizacji rekordu przeglądu.'
+    USING ERRCODE = '42501';
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.list_my_unit_inspections()
+ RETURNS TABLE(campaign_id uuid, record_id uuid, title text, location_id uuid, unit_number text, status unit_inspection_status, resident_is_home boolean, start_date date, end_date date, days jsonb)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT
+    c.id,
+    r.id,
+    c.title,
+    c.location_id,
+    r.unit_number,
+    r.status,
+    r.resident_is_home,
+    c.start_date,
+    c.end_date,
+    COALESCE(
+      (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'visit_date', d.visit_date,
+            'start_time', d.start_time,
+            'end_time', d.end_time,
+            'kind', d.kind
+          )
+          ORDER BY d.visit_date
+        )
+        FROM public.inspection_campaign_days d
+        WHERE d.campaign_id = c.id
+      ),
+      '[]'::jsonb
+    )
+  FROM public.unit_inspection_records r
+  JOIN public.inspection_campaigns c ON c.id = r.campaign_id
+  WHERE public.resident_matches_unit_inspection_record(r.id)
+    AND CURRENT_DATE BETWEEN c.start_date AND c.end_date;
+$function$;
+CREATE OR REPLACE FUNCTION public.mark_unit_inspection_home(p_record_id uuid, p_is_home boolean)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Wymagane logowanie.' USING ERRCODE = '42501';
+  END IF;
+
+  IF NOT public.resident_matches_unit_inspection_record(p_record_id) THEN
+    RAISE EXCEPTION 'Brak dostępu do tego lokalu.' USING ERRCODE = '42501';
+  END IF;
+
+  UPDATE public.unit_inspection_records
+  SET resident_is_home = p_is_home,
+      resident_home_at = CASE WHEN p_is_home THEN now() ELSE NULL END,
+      resident_home_by = auth.uid(),
+      updated_at = now()
+  WHERE id = p_record_id;
+END;
+$function$;
 CREATE OR REPLACE FUNCTION public.resolve_cleaning_released_property_issue(p_issue_id uuid)
  RETURNS void
  LANGUAGE plpgsql
@@ -15342,6 +14279,50 @@ BEGIN
 
   IF v_vendor IS NULL THEN RAISE EXCEPTION 'EMERGENCY_VENDOR_MISSING'; END IF;
   RETURN v_vendor;
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.create_emergency_issue(p_location_id uuid, p_category text, p_description text, p_photos_before text[] DEFAULT NULL::text[])
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_org uuid;
+  v_community uuid;
+  v_vendor uuid;
+  v_issue uuid;
+  v_desc text := btrim(COALESCE(p_description, ''));
+  v_cat text := btrim(COALESCE(p_category, ''));
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED'; END IF;
+  IF p_location_id IS NULL OR length(v_cat) = 0 OR length(v_desc) < 10 THEN
+    RAISE EXCEPTION 'EMERGENCY_ISSUE_INVALID';
+  END IF;
+
+  v_org := public.get_my_org_id_safe();
+  IF v_org IS NULL OR NOT public.can_manage_serwis_duty(v_org) THEN
+    RAISE EXCEPTION 'EMERGENCY_MANAGE_FORBIDDEN';
+  END IF;
+
+  SELECT cl.community_id INTO v_community
+  FROM public.cleaning_locations cl
+  WHERE cl.id = p_location_id AND cl.org_id = v_org;
+
+  IF v_community IS NULL THEN RAISE EXCEPTION 'EMERGENCY_LOCATION_FORBIDDEN'; END IF;
+
+  v_vendor := public.resolve_emergency_vendor(v_community, p_location_id, v_cat);
+
+  INSERT INTO public.property_issues (
+    org_id, location_id, category, description, priority, status, source,
+    reporter_type, reporter_id, photos_before,
+    immediate_fulfillment, emergency_mode, emergency_vendor_id, delegated_vendor_id
+  ) VALUES (
+    v_org, p_location_id, v_cat, v_desc, 'critical', 'delegated', 'admin_ui',
+    'admin', (SELECT auth.uid()), p_photos_before, true, true, v_vendor, v_vendor
+  )
+  RETURNING id INTO v_issue;
+
+  RETURN jsonb_build_object('issue_id', v_issue, 'vendor_id', v_vendor);
 END;
 $function$;
 CREATE OR REPLACE FUNCTION public.resolve_inbound_mailbox(p_to_address text)
@@ -16180,6 +15161,106 @@ BEGIN
   WHERE id = job.task_id;
 END;
 $function$;
+CREATE OR REPLACE FUNCTION public.approve_cleaning_extra_job(p_job_id uuid, p_pay_mode text DEFAULT NULL::text, p_employee_hourly_rate numeric DEFAULT NULL::numeric, p_client_hourly_rate numeric DEFAULT NULL::numeric, p_employee_fixed_amount numeric DEFAULT NULL::numeric, p_client_fixed_amount numeric DEFAULT NULL::numeric)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  job public.cleaning_extra_jobs%ROWTYPE;
+  v_pay_mode text;
+BEGIN
+  SELECT * INTO job FROM public.cleaning_extra_jobs WHERE id = p_job_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Extra job not found';
+  END IF;
+  IF NOT public.is_cleaning_org_manager(job.org_id) THEN
+    RAISE EXCEPTION 'Only coordinators and owners can approve extra jobs';
+  END IF;
+
+  v_pay_mode := COALESCE(p_pay_mode, job.pay_mode, 'hourly');
+  IF v_pay_mode NOT IN ('hourly', 'fixed') THEN
+    RAISE EXCEPTION 'Invalid pay mode';
+  END IF;
+  IF v_pay_mode = 'fixed' AND COALESCE(p_employee_fixed_amount, job.employee_fixed_amount) IS NULL THEN
+    RAISE EXCEPTION 'Fixed extra jobs require an employee amount';
+  END IF;
+
+  UPDATE public.cleaning_extra_jobs
+  SET
+    pay_mode = v_pay_mode,
+    employee_hourly_rate = COALESCE(p_employee_hourly_rate, employee_hourly_rate),
+    client_hourly_rate = COALESCE(p_client_hourly_rate, client_hourly_rate),
+    employee_fixed_amount = COALESCE(p_employee_fixed_amount, employee_fixed_amount),
+    client_fixed_amount = COALESCE(p_client_fixed_amount, client_fixed_amount),
+    approval_status = 'approved',
+    approved_by = auth.uid(),
+    approved_at = now(),
+    rejection_reason = NULL
+  WHERE id = p_job_id;
+
+  PERFORM public.snapshot_extra_job_totals(p_job_id);
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.complete_cleaning_extra_job(p_job_id uuid, p_work_report text, p_ended_at timestamp with time zone DEFAULT now())
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  job public.cleaning_extra_jobs%ROWTYPE;
+  v_report text := btrim(COALESCE(p_work_report, ''));
+  v_started timestamptz;
+  v_minutes integer;
+  v_photo_count integer;
+BEGIN
+  SELECT * INTO job FROM public.cleaning_extra_jobs WHERE id = p_job_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Extra job not found';
+  END IF;
+  IF job.assigned_staff_id IS DISTINCT FROM auth.uid()
+     AND NOT public.is_cleaning_org_manager(job.org_id) THEN
+    RAISE EXCEPTION 'Not allowed to complete this extra job';
+  END IF;
+  IF job.approval_status = 'rejected' THEN
+    RAISE EXCEPTION 'Rejected extra jobs cannot be completed';
+  END IF;
+  IF v_report = '' THEN
+    RAISE EXCEPTION 'Work report is required';
+  END IF;
+
+  SELECT COUNT(*) INTO v_photo_count
+  FROM public.cleaning_extra_job_photos
+  WHERE extra_job_id = p_job_id;
+
+  IF job.requires_photo AND v_photo_count < 1 THEN
+    RAISE EXCEPTION 'At least one photo is required';
+  END IF;
+
+  SELECT started_at INTO v_started FROM public.cleaning_tasks WHERE id = job.task_id;
+  IF v_started IS NULL THEN
+    RAISE EXCEPTION 'Extra job has not been started';
+  END IF;
+
+  v_minutes := GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (COALESCE(p_ended_at, now()) - v_started)) / 60)::integer);
+
+  UPDATE public.cleaning_extra_jobs
+  SET work_report = v_report, duration_minutes = v_minutes
+  WHERE id = p_job_id;
+
+  UPDATE public.cleaning_tasks
+  SET status = 'done', completed_at = COALESCE(p_ended_at, now()), actual_performer_id = COALESCE(job.assigned_staff_id, auth.uid())
+  WHERE id = job.task_id;
+
+  UPDATE public.cleaning_work_sessions
+  SET status = 'closed', close_reason = 'manual', ended_at = COALESCE(p_ended_at, now())
+  WHERE task_id = job.task_id AND status = 'open' AND session_kind = 'extra_paid';
+
+  PERFORM public.snapshot_extra_job_totals(p_job_id);
+END;
+$function$;
 CREATE OR REPLACE FUNCTION public.start_employee_extra_job(p_org_id uuid, p_location_id uuid, p_title text DEFAULT 'Praca ekstra'::text)
  RETURNS uuid
  LANGUAGE plpgsql
@@ -16286,6 +15367,166 @@ AS $function$
     2
   );
 $function$;
+CREATE OR REPLACE FUNCTION public.adjust_property_issue_billing(p_issue_id uuid, p_labor_hours numeric, p_labor_cost numeric, p_materials jsonb, p_surcharge_kind text, p_surcharge_amount numeric, p_invoice_amount numeric)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_issue public.property_issues%ROWTYPE;
+  v_hours numeric;
+  v_kind text;
+  v_surcharge numeric;
+  v_materials jsonb;
+  v_material_total numeric;
+  v_labor numeric;
+  v_invoice numeric;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'ISSUE_AUTH_REQUIRED';
+  END IF;
+
+  SELECT * INTO v_issue
+  FROM public.property_issues
+  WHERE id = p_issue_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ISSUE_NOT_FOUND';
+  END IF;
+
+  IF NOT public.is_serwis_dispatcher_or_owner(v_issue.org_id) THEN
+    RAISE EXCEPTION 'ISSUE_BILLING_FORBIDDEN';
+  END IF;
+
+  IF v_issue.status IS DISTINCT FROM 'resolved' THEN
+    RAISE EXCEPTION 'ISSUE_NOT_FOUND';
+  END IF;
+
+  IF v_issue.is_invoiced IS TRUE THEN
+    RAISE EXCEPTION 'ISSUE_BILLING_LOCKED';
+  END IF;
+
+  IF p_surcharge_kind IS NOT NULL AND p_surcharge_kind NOT IN ('on_call', 'urgent') THEN
+    RAISE EXCEPTION 'ISSUE_BILLING_INVALID_SURCHARGE';
+  END IF;
+
+  v_hours := public.ceil_started_hours(p_labor_hours);
+  v_kind := p_surcharge_kind;
+  v_surcharge := ROUND(COALESCE(p_surcharge_amount, 0), 2);
+  IF v_surcharge < 0 OR COALESCE(p_labor_cost, 0) < 0 OR COALESCE(p_invoice_amount, 0) < 0 THEN
+    RAISE EXCEPTION 'ISSUE_BILLING_INVALID_AMOUNT';
+  END IF;
+
+  v_materials := CASE WHEN jsonb_typeof(p_materials) = 'array' THEN p_materials ELSE '[]'::jsonb END;
+  v_material_total := public.materials_used_total(v_materials);
+  v_labor := ROUND(COALESCE(p_labor_cost, 0), 2);
+  v_invoice := COALESCE(
+    CASE WHEN p_invoice_amount IS NULL THEN NULL ELSE ROUND(p_invoice_amount, 2) END,
+    public.suggested_invoice_amount(v_material_total, v_labor, v_surcharge)
+  );
+
+  UPDATE public.property_issues
+  SET
+    labor_hours = v_hours,
+    labor_cost = v_labor,
+    materials_used = v_materials,
+    total_material_cost = v_material_total,
+    surcharge_kind = v_kind,
+    surcharge_amount = v_surcharge
+  WHERE id = p_issue_id;
+
+  INSERT INTO public.property_issue_billing (
+    issue_id,
+    org_id,
+    invoice_amount,
+    original,
+    captured_at,
+    captured_by,
+    adjusted_at,
+    adjusted_by
+  )
+  VALUES (
+    p_issue_id,
+    v_issue.org_id,
+    v_invoice,
+    jsonb_build_object(
+      'labor_hours', v_issue.labor_hours,
+      'labor_cost', v_issue.labor_cost,
+      'hourly_rate_applied', v_issue.hourly_rate_applied,
+      'materials_used', COALESCE(v_issue.materials_used, '[]'::jsonb),
+      'total_material_cost', COALESCE(v_issue.total_material_cost, 0),
+      'surcharge_amount', v_issue.surcharge_amount,
+      'surcharge_kind', v_issue.surcharge_kind,
+      'invoice_amount', v_invoice
+    ),
+    now(),
+    auth.uid(),
+    now(),
+    auth.uid()
+  )
+  ON CONFLICT (issue_id) DO UPDATE
+    SET invoice_amount = EXCLUDED.invoice_amount,
+        adjusted_at = now(),
+        adjusted_by = auth.uid();
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.capture_property_issue_billing()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_invoice numeric;
+BEGIN
+  IF NEW.status IS DISTINCT FROM 'resolved' THEN
+    RETURN NEW;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.property_issue_billing b WHERE b.issue_id = NEW.id
+  ) THEN
+    RETURN NEW;
+  END IF;
+
+  v_invoice := public.suggested_invoice_amount(
+    NEW.total_material_cost,
+    NEW.labor_cost,
+    NEW.surcharge_amount
+  );
+
+  INSERT INTO public.property_issue_billing (
+    issue_id,
+    org_id,
+    invoice_amount,
+    original,
+    captured_at,
+    captured_by
+  )
+  VALUES (
+    NEW.id,
+    NEW.org_id,
+    v_invoice,
+    jsonb_build_object(
+      'labor_hours', NEW.labor_hours,
+      'labor_cost', NEW.labor_cost,
+      'hourly_rate_applied', NEW.hourly_rate_applied,
+      'materials_used', COALESCE(NEW.materials_used, '[]'::jsonb),
+      'total_material_cost', COALESCE(NEW.total_material_cost, 0),
+      'surcharge_amount', NEW.surcharge_amount,
+      'surcharge_kind', NEW.surcharge_kind,
+      'invoice_amount', v_invoice
+    ),
+    now(),
+    auth.uid()
+  )
+  ON CONFLICT (issue_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$function$;
 CREATE OR REPLACE FUNCTION public.suggested_labor_hours_from_range(p_started_at timestamp with time zone, p_ended_at timestamp with time zone)
  RETURNS numeric
  LANGUAGE sql
@@ -16299,6 +15540,96 @@ AS $function$
       EXTRACT(EPOCH FROM (p_ended_at - p_started_at)) / 3600.0
     )
   END;
+$function$;
+CREATE OR REPLACE FUNCTION public.enforce_property_issue_billing()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_settings public.org_serwis_billing_settings;
+  v_mgmt boolean;
+  v_tech boolean;
+  v_resolving boolean;
+  v_financial_changed boolean;
+BEGIN
+  v_mgmt := NEW.org_id IS NOT NULL AND public.is_serwis_dispatcher_or_owner(NEW.org_id);
+  v_tech := NEW.org_id IS NOT NULL AND public.is_serwis_technician_role(NEW.org_id);
+  v_resolving := NEW.status = 'resolved' AND OLD.status IS DISTINCT FROM 'resolved';
+
+  v_financial_changed :=
+    NEW.labor_hours IS DISTINCT FROM OLD.labor_hours
+    OR NEW.labor_cost IS DISTINCT FROM OLD.labor_cost
+    OR NEW.materials_used IS DISTINCT FROM OLD.materials_used
+    OR NEW.total_material_cost IS DISTINCT FROM OLD.total_material_cost
+    OR NEW.surcharge_kind IS DISTINCT FROM OLD.surcharge_kind
+    OR NEW.surcharge_amount IS DISTINCT FROM OLD.surcharge_amount
+    OR NEW.hourly_rate_applied IS DISTINCT FROM OLD.hourly_rate_applied;
+
+  IF OLD.is_invoiced IS TRUE AND v_financial_changed THEN
+    RAISE EXCEPTION 'ISSUE_BILLING_LOCKED'
+      USING HINT = 'Financial fields cannot change after the issue is invoiced.';
+  END IF;
+
+  IF OLD.protocol_number IS NOT NULL THEN
+    NEW.protocol_number := OLD.protocol_number;
+  ELSIF NEW.status = 'resolved' AND NEW.protocol_number IS NULL AND NEW.org_id IS NOT NULL THEN
+    NEW.protocol_number := public.assign_next_protocol_number(
+      NEW.org_id,
+      COALESCE(NEW.resolved_at, now())
+    );
+  ELSIF NEW.status IS DISTINCT FROM 'resolved' THEN
+    NEW.protocol_number := NULL;
+  END IF;
+
+  IF NEW.surcharge_kind IS NULL THEN
+    IF NOT v_mgmt THEN
+      NEW.surcharge_amount := COALESCE(NEW.surcharge_amount, 0);
+    END IF;
+  END IF;
+
+  IF v_resolving THEN
+    v_settings := public.ensure_org_serwis_billing_settings(NEW.org_id);
+    NEW.hourly_rate_applied := COALESCE(NEW.hourly_rate_applied, v_settings.default_hourly_rate);
+
+    IF NEW.labor_hours IS NULL THEN
+      NEW.labor_hours := public.suggested_labor_hours_from_range(
+        NEW.started_at,
+        COALESCE(NEW.resolved_at, now())
+      );
+    ELSE
+      NEW.labor_hours := public.ceil_started_hours(NEW.labor_hours);
+    END IF;
+
+    IF NEW.surcharge_kind = 'on_call' THEN
+      NEW.surcharge_amount := COALESCE(NEW.surcharge_amount, v_settings.on_call_surcharge);
+    ELSIF NEW.surcharge_kind = 'urgent' THEN
+      NEW.surcharge_amount := COALESCE(NEW.surcharge_amount, v_settings.urgent_surcharge);
+    ELSE
+      NEW.surcharge_amount := COALESCE(NEW.surcharge_amount, 0);
+    END IF;
+
+    IF NEW.labor_cost IS NULL OR NEW.labor_cost = 0 THEN
+      NEW.labor_cost := ROUND(
+        COALESCE(NEW.labor_hours, 0) * COALESCE(NEW.hourly_rate_applied, 0),
+        2
+      );
+    END IF;
+
+    NEW.total_material_cost := public.materials_used_total(NEW.materials_used);
+    NEW.resolved_at := COALESCE(NEW.resolved_at, now());
+  ELSIF NEW.labor_hours IS NOT NULL AND NEW.labor_hours IS DISTINCT FROM OLD.labor_hours THEN
+    NEW.labor_hours := public.ceil_started_hours(NEW.labor_hours);
+  END IF;
+
+  IF NOT v_mgmt AND v_tech AND NEW.protocol_number IS DISTINCT FROM OLD.protocol_number
+     AND OLD.protocol_number IS NOT NULL THEN
+    RAISE EXCEPTION 'ISSUE_PROTOCOL_LOCKED';
+  END IF;
+
+  RETURN NEW;
+END;
 $function$;
 CREATE OR REPLACE FUNCTION public.swap_vehicle_tire_sets(p_vehicle_id uuid, p_mounted_set_id uuid, p_dismounted_set_id uuid, p_dismounted_to tire_set_location, p_swapped_on date, p_mileage integer DEFAULT NULL::integer, p_notes text DEFAULT NULL::text, p_dismounted_warehouse_number text DEFAULT NULL::text, p_dismounted_receipt_photo_path text DEFAULT NULL::text)
  RETURNS uuid
@@ -16537,6 +15868,397 @@ BEGIN
   END IF;
 END;
 $function$;
+CREATE OR REPLACE FUNCTION public.enroll_legal_entity_for_org(p_org_id uuid, p_legal_entity_id uuid, p_is_cleaning boolean DEFAULT false, p_is_maintenance boolean DEFAULT false, p_is_admin boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_row public.legal_entities%ROWTYPE;
+  v_enroll public.org_legal_entity_enrollments%ROWTYPE;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
+  END IF;
+
+  IF p_org_id IS NULL
+     OR (
+       NOT public.is_org_management(p_org_id)
+       AND NOT public.is_platform_admin()
+     )
+  THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_ENROLL_FORBIDDEN';
+  END IF;
+
+  SELECT * INTO v_row
+  FROM public.legal_entities
+  WHERE id = p_legal_entity_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_NOT_FOUND';
+  END IF;
+
+  INSERT INTO public.org_legal_entity_enrollments (
+    org_id,
+    legal_entity_id,
+    is_cleaning,
+    is_maintenance,
+    is_admin,
+    status
+  )
+  VALUES (
+    p_org_id,
+    p_legal_entity_id,
+    COALESCE(p_is_cleaning, false),
+    COALESCE(p_is_maintenance, false),
+    COALESCE(p_is_admin, false),
+    'active'
+  )
+  ON CONFLICT (org_id, legal_entity_id) DO UPDATE
+    SET
+      is_cleaning = public.org_legal_entity_enrollments.is_cleaning OR EXCLUDED.is_cleaning,
+      is_maintenance = public.org_legal_entity_enrollments.is_maintenance OR EXCLUDED.is_maintenance,
+      is_admin = public.org_legal_entity_enrollments.is_admin OR EXCLUDED.is_admin,
+      status = 'active'
+  RETURNING * INTO v_enroll;
+
+  PERFORM public.sync_legal_entity_legacy_overlay(v_row, p_org_id);
+
+  RETURN jsonb_build_object(
+    'status', 'enrolled',
+    'enrollmentId', v_enroll.id,
+    'alreadyEnrolledInThisOrg', true,
+    'entity', public.legal_entity_public_json(v_row)
+  );
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.attach_legal_entity_to_building(p_org_id uuid, p_cleaning_location_id uuid, p_legal_entity_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_loc public.cleaning_locations%ROWTYPE;
+  v_master public.locations%ROWTYPE;
+  v_owner public.legal_entities%ROWTYPE;
+  v_community_id uuid;
+  v_community_status text;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
+  END IF;
+
+  IF p_org_id IS NULL OR NOT public.is_org_management(p_org_id) THEN
+    RAISE EXCEPTION 'BUILDING_ENROLL_FORBIDDEN';
+  END IF;
+
+  IF p_legal_entity_id IS NULL THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_REQUIRED_FOR_ATTACH';
+  END IF;
+
+  SELECT * INTO v_loc
+  FROM public.cleaning_locations
+  WHERE id = p_cleaning_location_id
+    AND org_id = p_org_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'BUILDING_NOT_FOUND';
+  END IF;
+
+  SELECT c.id, c.status INTO v_community_id, v_community_status
+  FROM public.communities c
+  WHERE c.legal_entity_id = p_legal_entity_id
+    AND c.org_id = p_org_id
+  LIMIT 1;
+
+  IF v_community_status = 'inactive' THEN
+    RAISE EXCEPTION 'COMMUNITY_INACTIVE';
+  END IF;
+
+  PERFORM public.enroll_legal_entity_for_org(p_org_id, p_legal_entity_id, false, false, false);
+
+  IF v_loc.location_master_id IS NULL THEN
+    RAISE EXCEPTION 'BUILDING_MASTER_MISSING';
+  END IF;
+
+  SELECT * INTO v_master
+  FROM public.locations
+  WHERE id = v_loc.location_master_id;
+
+  IF v_master.legal_entity_id IS NOT NULL
+     AND v_master.legal_entity_id IS DISTINCT FROM p_legal_entity_id THEN
+    SELECT * INTO v_owner FROM public.legal_entities WHERE id = v_master.legal_entity_id;
+    RAISE EXCEPTION 'ADDRESS_OWNED_BY_OTHER_ENTITY'
+      USING DETAIL = jsonb_build_object(
+        'ownerNip', v_owner.nip_normalized,
+        'ownerName', v_owner.short_name
+      )::text;
+  END IF;
+
+  IF v_master.legal_entity_id IS NULL THEN
+    UPDATE public.locations
+    SET legal_entity_id = p_legal_entity_id
+    WHERE id = v_master.id
+    RETURNING * INTO v_master;
+  END IF;
+
+  SELECT c.id INTO v_community_id
+  FROM public.communities c
+  WHERE c.legal_entity_id = p_legal_entity_id
+    AND c.org_id = p_org_id
+  LIMIT 1;
+
+  UPDATE public.cleaning_locations
+  SET community_id = COALESCE(community_id, v_community_id)
+  WHERE id = v_loc.id
+  RETURNING * INTO v_loc;
+
+  RETURN jsonb_build_object(
+    'status', 'attached',
+    'cleaningLocationId', v_loc.id,
+    'locationMasterId', v_master.id,
+    'legalEntityId', v_master.legal_entity_id
+  );
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.create_legal_entity_from_gus(p_org_id uuid, p_kind legal_entity_kind, p_gus jsonb, p_email text, p_phone text, p_short_name text, p_is_cleaning boolean DEFAULT false, p_is_maintenance boolean DEFAULT false, p_is_admin boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_nip text;
+  v_regon text;
+  v_krs text;
+  v_legal_name text;
+  v_short text;
+  v_city text;
+  v_postal text;
+  v_street text;
+  v_building text;
+  v_apt text;
+  v_voiv text;
+  v_county text;
+  v_commune text;
+  v_seat text;
+  v_email text;
+  v_phone text;
+  v_row public.legal_entities%ROWTYPE;
+  v_existing uuid;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
+  END IF;
+  IF p_org_id IS NULL OR NOT public.is_org_management(p_org_id) THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_CREATE_FORBIDDEN';
+  END IF;
+  IF p_gus IS NULL OR jsonb_typeof(p_gus) <> 'object' THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_GUS_PAYLOAD_REQUIRED';
+  END IF;
+
+  v_nip := regexp_replace(COALESCE(p_gus ->> 'nip', ''), '[^0-9]', '', 'g');
+  v_regon := regexp_replace(COALESCE(p_gus ->> 'regon', ''), '[^0-9]', '', 'g');
+  v_krs := NULLIF(regexp_replace(COALESCE(p_gus ->> 'krs', ''), '[^0-9]', '', 'g'), '');
+  v_legal_name := NULLIF(btrim(COALESCE(p_gus ->> 'legalName', '')), '');
+  v_short := NULLIF(btrim(COALESCE(p_short_name, '')), '');
+  v_city := NULLIF(btrim(COALESCE(p_gus ->> 'city', '')), '');
+  v_postal := public.normalize_pl_postal(p_gus ->> 'postalCode');
+  v_street := NULLIF(btrim(COALESCE(p_gus ->> 'street', '')), '');
+  v_building := NULLIF(btrim(COALESCE(p_gus ->> 'buildingNumber', '')), '');
+  v_apt := NULLIF(btrim(COALESCE(p_gus ->> 'apartmentNumber', '')), '');
+  v_voiv := COALESCE(NULLIF(btrim(COALESCE(p_gus ->> 'voivodeship', '')), ''), 'nieustalone');
+  v_county := NULLIF(btrim(COALESCE(p_gus ->> 'county', '')), '');
+  v_commune := NULLIF(btrim(COALESCE(p_gus ->> 'commune', '')), '');
+  v_email := NULLIF(btrim(COALESCE(p_email, '')), '');
+  v_phone := NULLIF(btrim(COALESCE(p_phone, '')), '');
+  IF v_short IS NULL THEN v_short := left(COALESCE(v_legal_name, ''), 80); END IF;
+  IF v_building IS NULL THEN v_building := 'b.n.'; END IF;
+  v_seat := NULLIF(btrim(COALESCE(p_gus ->> 'seatFullAddress', '')), '');
+  IF v_seat IS NULL THEN
+    v_seat := concat_ws(', ',
+      NULLIF(concat_ws(' ', v_street, v_building, v_apt), ''),
+      NULLIF(concat_ws(' ', v_postal, v_city), ''));
+  END IF;
+
+  IF NOT public.nip_checksum_ok(v_nip)
+     OR v_legal_name IS NULL OR v_city IS NULL OR v_postal IS NULL THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
+  END IF;
+
+  IF v_email IS NOT NULL
+     AND v_email !~* '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
+  END IF;
+
+  IF v_phone IS NOT NULL
+     AND char_length(regexp_replace(v_phone, '[^0-9+]', '', 'g')) < 9 THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
+  END IF;
+
+  SELECT id INTO v_existing FROM public.legal_entities WHERE nip_normalized = v_nip;
+  IF v_existing IS NOT NULL THEN
+    RETURN public.enroll_legal_entity_for_org(
+      p_org_id, v_existing, p_is_cleaning, p_is_maintenance, p_is_admin
+    ) || jsonb_build_object('status', 'exists_in_domio');
+  END IF;
+
+  INSERT INTO public.legal_entities (
+    kind, status, nip, regon, krs, short_name, legal_name,
+    voivodeship, county, commune, city, postal_code, street,
+    building_number, apartment_number, seat_full_address, email, phone,
+    gus_legal_form_code, gus_legal_form_name, gus_fetched_at, gus_payload,
+    created_without_gus, created_by_org_id, updated_by
+  ) VALUES (
+    p_kind, 'active', v_nip, v_regon, v_krs, v_short, v_legal_name,
+    v_voiv, v_county, v_commune, v_city, v_postal, v_street,
+    v_building, v_apt, v_seat, v_email, v_phone,
+    NULLIF(btrim(COALESCE(p_gus ->> 'legalFormCode', '')), ''),
+    NULLIF(btrim(COALESCE(p_gus ->> 'legalFormName', '')), ''),
+    now(), p_gus, false, p_org_id, auth.uid()
+  ) RETURNING * INTO v_row;
+
+  PERFORM public.enroll_legal_entity_for_org(p_org_id, v_row.id, p_is_cleaning, p_is_maintenance, p_is_admin);
+  PERFORM public.sync_legal_entity_legacy_overlay(v_row, p_org_id);
+
+  RETURN jsonb_build_object(
+    'status', 'created',
+    'alreadyEnrolledInThisOrg', true,
+    'entity', public.legal_entity_public_json(v_row)
+  );
+END;
+$function$;
+CREATE OR REPLACE FUNCTION public.create_legal_entity_unverified(p_org_id uuid, p_kind legal_entity_kind, p_nip text, p_short_name text, p_legal_name text, p_email text, p_phone text, p_city text, p_postal_code text, p_reason text, p_street text DEFAULT NULL::text, p_building_number text DEFAULT NULL::text, p_voivodeship text DEFAULT NULL::text, p_is_cleaning boolean DEFAULT false, p_is_maintenance boolean DEFAULT false, p_is_admin boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_nip text;
+  v_short text;
+  v_legal text;
+  v_city text;
+  v_postal text;
+  v_street text;
+  v_building text;
+  v_voiv text;
+  v_seat text;
+  v_email text;
+  v_phone text;
+  v_existing uuid;
+  v_row public.legal_entities%ROWTYPE;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
+  END IF;
+
+  IF p_org_id IS NULL
+     OR (
+       NOT public.is_org_management(p_org_id)
+       AND NOT public.is_platform_admin()
+     )
+  THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_UNVERIFIED_FORBIDDEN';
+  END IF;
+
+  IF p_reason IS NULL OR p_reason NOT IN ('gus_unavailable', 'gus_not_configured') THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_INVALID_VERIFICATION_REASON';
+  END IF;
+
+  v_nip := regexp_replace(COALESCE(p_nip, ''), '[^0-9]', '', 'g');
+  v_short := NULLIF(btrim(COALESCE(p_short_name, '')), '');
+  v_legal := NULLIF(btrim(COALESCE(p_legal_name, '')), '');
+  v_city := NULLIF(btrim(COALESCE(p_city, '')), '');
+  v_postal := public.normalize_pl_postal(p_postal_code);
+  v_street := NULLIF(btrim(COALESCE(p_street, '')), '');
+  v_building := NULLIF(btrim(COALESCE(p_building_number, '')), '');
+  v_voiv := NULLIF(btrim(COALESCE(p_voivodeship, '')), '');
+  v_email := NULLIF(btrim(COALESCE(p_email, '')), '');
+  v_phone := NULLIF(btrim(COALESCE(p_phone, '')), '');
+
+  IF v_short IS NULL THEN
+    v_short := left(COALESCE(v_legal, ''), 80);
+  END IF;
+  IF v_legal IS NULL THEN
+    v_legal := v_short;
+  END IF;
+  IF v_voiv IS NULL THEN
+    v_voiv := 'nieustalone';
+  END IF;
+  IF v_building IS NULL THEN
+    v_building := 'b.n.';
+  END IF;
+
+  v_seat := concat_ws(
+    ', ',
+    NULLIF(concat_ws(' ', v_street, v_building), ''),
+    NULLIF(concat_ws(' ', v_postal, v_city), '')
+  );
+
+  IF NOT public.nip_checksum_ok(v_nip)
+     OR v_short IS NULL
+     OR v_legal IS NULL
+     OR v_city IS NULL
+     OR v_postal IS NULL
+  THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
+  END IF;
+
+  IF v_email IS NOT NULL
+     AND v_email !~* '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
+  END IF;
+
+  IF v_phone IS NOT NULL
+     AND char_length(regexp_replace(v_phone, '[^0-9+]', '', 'g')) < 9 THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
+  END IF;
+
+  SELECT id INTO v_existing
+  FROM public.legal_entities
+  WHERE nip_normalized = v_nip;
+
+  IF v_existing IS NOT NULL THEN
+    RETURN public.enroll_legal_entity_for_org(
+      p_org_id,
+      v_existing,
+      p_is_cleaning,
+      p_is_maintenance,
+      p_is_admin
+    ) || jsonb_build_object('status', 'exists_in_domio');
+  END IF;
+
+  PERFORM public.legal_entity_mark_rpc_writer();
+
+  INSERT INTO public.legal_entities (
+    kind, status, nip, regon, krs, short_name, legal_name,
+    voivodeship, county, commune, city, postal_code, street,
+    building_number, apartment_number, seat_full_address, email, phone,
+    created_without_gus, gus_fetched_at, verification_status,
+    verification_reason, verification_requested_at, created_by_org_id, updated_by
+  )
+  VALUES (
+    p_kind, 'active', v_nip, NULL, NULL, v_short, v_legal,
+    v_voiv, NULL, NULL, v_city, v_postal, v_street,
+    v_building, NULL, v_seat, v_email, v_phone,
+    false, NULL, 'pending_manual', p_reason, now(), p_org_id, auth.uid()
+  )
+  RETURNING * INTO v_row;
+
+  PERFORM public.enroll_legal_entity_for_org(
+    p_org_id, v_row.id, p_is_cleaning, p_is_maintenance, p_is_admin
+  );
+
+  RETURN jsonb_build_object(
+    'status', 'created_unverified',
+    'alreadyEnrolledInThisOrg', true,
+    'entity', public.legal_entity_public_json(v_row)
+  );
+END;
+$function$;
 CREATE OR REPLACE FUNCTION public.sync_org_inbound_mailbox_aliases(p_org_id uuid)
  RETURNS SETOF org_inbound_mailboxes
  LANGUAGE plpgsql
@@ -16675,6 +16397,103 @@ AS $function$
       AND i.id IS DISTINCT FROM p_except_issue_id
       AND i.status IN ('open', 'in_progress', 'waiting_for_parts')
   );
+$function$;
+CREATE OR REPLACE FUNCTION public.enforce_dispatcher_forced_and_gps_audit()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_org uuid;
+  v_mgmt boolean;
+  v_self boolean;
+  v_taking boolean;
+  v_starting boolean;
+  v_forced_cols_changed boolean;
+  v_auto_clear boolean;
+BEGIN
+  v_org := COALESCE(NEW.org_id, OLD.org_id);
+  v_mgmt := v_org IS NOT NULL AND public.is_management_role(v_org);
+  v_self := auth.uid() IS NOT NULL
+    AND auth.uid() IS NOT DISTINCT FROM COALESCE(NEW.assigned_staff_id, OLD.assigned_staff_id);
+
+  NEW.internal_comments := public.merge_immutable_issue_comments(
+    OLD.internal_comments,
+    NEW.internal_comments
+  );
+
+  IF OLD.gps_start_override IS TRUE THEN
+    NEW.gps_start_override := true;
+    NEW.gps_start_override_at := OLD.gps_start_override_at;
+    NEW.gps_start_override_by := OLD.gps_start_override_by;
+    NEW.gps_start_override_distance_m := OLD.gps_start_override_distance_m;
+    NEW.gps_start_lat := OLD.gps_start_lat;
+    NEW.gps_start_lng := OLD.gps_start_lng;
+  ELSIF NEW.gps_start_override IS TRUE THEN
+    NEW.gps_start_override_at := COALESCE(NEW.gps_start_override_at, now());
+    NEW.gps_start_override_by := COALESCE(NEW.gps_start_override_by, auth.uid());
+  ELSE
+    NEW.gps_start_override_at := NULL;
+    NEW.gps_start_override_by := NULL;
+    NEW.gps_start_override_distance_m := NULL;
+    NEW.gps_start_lat := NULL;
+    NEW.gps_start_lng := NULL;
+  END IF;
+
+  IF NEW.status IN ('resolved', 'cancelled') THEN
+    NEW.dispatcher_forced_next := false;
+  END IF;
+
+  IF NEW.assigned_staff_id IS DISTINCT FROM OLD.assigned_staff_id
+     AND NOT (v_mgmt AND NEW.dispatcher_forced_next IS TRUE) THEN
+    NEW.dispatcher_forced_next := false;
+  END IF;
+
+  IF NEW.dispatcher_forced_next IS NOT TRUE THEN
+    NEW.dispatcher_forced_at := NULL;
+    NEW.dispatcher_forced_by := NULL;
+  ELSIF NEW.dispatcher_forced_next IS TRUE AND OLD.dispatcher_forced_next IS NOT TRUE THEN
+    IF NEW.assigned_staff_id IS NULL THEN
+      RAISE EXCEPTION 'ISSUE_FORCED_NEXT_NEEDS_ASSIGNEE';
+    END IF;
+    NEW.dispatcher_forced_at := COALESCE(NEW.dispatcher_forced_at, now());
+    NEW.dispatcher_forced_by := COALESCE(NEW.dispatcher_forced_by, auth.uid());
+  END IF;
+
+  v_forced_cols_changed :=
+    NEW.dispatcher_forced_next IS DISTINCT FROM OLD.dispatcher_forced_next
+    OR NEW.dispatcher_forced_at IS DISTINCT FROM OLD.dispatcher_forced_at
+    OR NEW.dispatcher_forced_by IS DISTINCT FROM OLD.dispatcher_forced_by;
+
+  v_auto_clear :=
+    OLD.dispatcher_forced_next IS TRUE
+    AND NEW.dispatcher_forced_next IS NOT TRUE
+    AND (
+      NEW.status IN ('resolved', 'cancelled')
+      OR NEW.assigned_staff_id IS DISTINCT FROM OLD.assigned_staff_id
+    );
+
+  IF v_forced_cols_changed AND NOT v_mgmt AND NOT v_auto_clear THEN
+    RAISE EXCEPTION 'ISSUE_FORCED_NEXT_FORBIDDEN';
+  END IF;
+
+  v_taking :=
+    v_self
+    AND OLD.assigned_staff_id IS DISTINCT FROM NEW.assigned_staff_id
+    AND NEW.assigned_staff_id = auth.uid();
+  v_starting :=
+    v_self
+    AND NEW.status = 'in_progress'
+    AND OLD.status IS DISTINCT FROM 'in_progress';
+
+  IF (v_taking OR v_starting)
+     AND public.technician_has_other_forced_issue(v_org, auth.uid(), NEW.id) THEN
+    RAISE EXCEPTION 'ISSUE_FORCED_NEXT_REQUIRED';
+  END IF;
+
+  RETURN NEW;
+END;
 $function$;
 CREATE OR REPLACE FUNCTION public.tg_cleaning_extra_jobs_guard()
  RETURNS trigger
@@ -16933,43 +16752,6 @@ BEGIN
   RETURN NULL;
 END;
 $function$;
-CREATE OR REPLACE FUNCTION public.tg_locations_legal_entity_guard()
- RETURNS trigger
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-BEGIN
-  IF TG_OP = 'UPDATE'
-     AND NEW.legal_entity_id IS NOT DISTINCT FROM OLD.legal_entity_id THEN
-    RETURN NEW;
-  END IF;
-
-  IF public.is_platform_admin() THEN
-    RETURN NEW;
-  END IF;
-
-  IF NEW.legal_entity_id IS NULL THEN
-    IF TG_OP = 'INSERT' THEN
-      RETURN NEW;
-    END IF;
-    RAISE EXCEPTION 'LOCATION_LEGAL_ENTITY_CLEAR_FORBIDDEN'
-      USING HINT = 'Only a platform admin may detach an address from a legal entity.';
-  END IF;
-
-  IF TG_OP = 'UPDATE' AND OLD.legal_entity_id IS NOT NULL THEN
-    RAISE EXCEPTION 'LOCATION_LEGAL_ENTITY_REASSIGN_FORBIDDEN'
-      USING HINT = 'An address already belongs to another contractor. Platform admin must reassign.';
-  END IF;
-
-  IF NOT public.user_can_assign_location_legal_entity(NEW.legal_entity_id) THEN
-    RAISE EXCEPTION 'LOCATION_LEGAL_ENTITY_ASSIGN_FORBIDDEN'
-      USING HINT = 'Enroll the contractor in your organisation before attaching buildings.';
-  END IF;
-
-  RETURN NEW;
-END;
-$function$;
 CREATE OR REPLACE FUNCTION public.tg_memberships_guard_owner_role()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -17197,18 +16979,6 @@ BEGIN
   NEW.updated_at = now();
   RETURN NEW;
 END;
-$function$;
-CREATE OR REPLACE FUNCTION public.trade_categories_are_valid(p_cats text[])
- RETURNS boolean
- LANGUAGE sql
- IMMUTABLE
-AS $function$
-  SELECT p_cats IS NOT NULL
-    AND NOT EXISTS (
-      SELECT 1
-      FROM unnest(p_cats) AS t(cat)
-      WHERE length(btrim(cat)) = 0
-    );
 $function$;
 CREATE OR REPLACE FUNCTION public.trg_auto_dispatch_duty_alert()
  RETURNS trigger
@@ -17585,6 +17355,43 @@ AS $function$
         AND public.is_org_management(e.org_id)
     );
 $function$;
+CREATE OR REPLACE FUNCTION public.tg_locations_legal_entity_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF TG_OP = 'UPDATE'
+     AND NEW.legal_entity_id IS NOT DISTINCT FROM OLD.legal_entity_id THEN
+    RETURN NEW;
+  END IF;
+
+  IF public.is_platform_admin() THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.legal_entity_id IS NULL THEN
+    IF TG_OP = 'INSERT' THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'LOCATION_LEGAL_ENTITY_CLEAR_FORBIDDEN'
+      USING HINT = 'Only a platform admin may detach an address from a legal entity.';
+  END IF;
+
+  IF TG_OP = 'UPDATE' AND OLD.legal_entity_id IS NOT NULL THEN
+    RAISE EXCEPTION 'LOCATION_LEGAL_ENTITY_REASSIGN_FORBIDDEN'
+      USING HINT = 'An address already belongs to another contractor. Platform admin must reassign.';
+  END IF;
+
+  IF NOT public.user_can_assign_location_legal_entity(NEW.legal_entity_id) THEN
+    RAISE EXCEPTION 'LOCATION_LEGAL_ENTITY_ASSIGN_FORBIDDEN'
+      USING HINT = 'Enroll the contractor in your organisation before attaching buildings.';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
 CREATE OR REPLACE FUNCTION public.user_can_read_community_contact_board(p_community_id uuid, p_org_id uuid)
  RETURNS boolean
  LANGUAGE sql
@@ -17646,6 +17453,46 @@ AS $function$
       OR public.has_estate_social_access(p_estate_id)
     );
 $function$;
+CREATE OR REPLACE FUNCTION public.list_estate_members(p_estate_id uuid)
+ RETURNS TABLE(member_id uuid, community_id uuid, org_id uuid, status estate_member_status, community_name text, nip text, invited_by_org_id uuid, consented_at timestamp with time zone, is_own boolean)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_org uuid;
+BEGIN
+  PERFORM private.estate_require_actor();
+
+  IF NOT public.user_can_see_estate(p_estate_id) THEN
+    RAISE EXCEPTION 'Brak dostępu do tego osiedla.';
+  END IF;
+
+  SELECT public.get_my_org_id_safe() INTO v_org;
+
+  RETURN QUERY
+  SELECT
+    em.id,
+    em.community_id,
+    em.org_id,
+    em.status,
+    COALESCE(NULLIF(btrim(c.legal_name), ''), NULLIF(btrim(c.name), ''), 'Wspólnota'),
+    c.nip,
+    em.invited_by_org_id,
+    em.consented_at,
+    (em.org_id = v_org)
+  FROM public.estate_members em
+  JOIN public.communities c ON c.id = em.community_id
+  WHERE em.estate_id = p_estate_id
+  ORDER BY
+    CASE em.status
+      WHEN 'accepted' THEN 0
+      WHEN 'invited' THEN 1
+      ELSE 2
+    END,
+    5;
+END;
+$function$;
 CREATE OR REPLACE FUNCTION public.user_can_verify_legal_entity(p_id uuid)
  RETURNS boolean
  LANGUAGE sql
@@ -17661,6 +17508,154 @@ AS $function$
         AND e.status = 'active'
         AND public.is_org_management(e.org_id)
     );
+$function$;
+CREATE OR REPLACE FUNCTION public.apply_legal_entity_gus_data(p_legal_entity_id uuid, p_gus jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_row public.legal_entities%ROWTYPE;
+  v_regon text;
+  v_krs text;
+  v_legal_name text;
+  v_city text;
+  v_postal text;
+  v_street text;
+  v_building text;
+  v_apt text;
+  v_voiv text;
+  v_county text;
+  v_commune text;
+  v_seat text;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_AUTH_REQUIRED';
+  END IF;
+
+  IF p_legal_entity_id IS NULL OR NOT public.user_can_verify_legal_entity(p_legal_entity_id) THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_UNVERIFIED_FORBIDDEN';
+  END IF;
+
+  IF p_gus IS NULL OR jsonb_typeof(p_gus) <> 'object' THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_GUS_PAYLOAD_REQUIRED';
+  END IF;
+
+  SELECT * INTO v_row
+  FROM public.legal_entities
+  WHERE id = p_legal_entity_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_NOT_FOUND';
+  END IF;
+
+  IF v_row.verification_status <> 'pending_manual'::public.legal_entity_verification_status THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_ALREADY_VERIFIED';
+  END IF;
+
+  IF NULLIF(btrim(COALESCE(p_gus ->> 'endedAt', '')), '') IS NOT NULL THEN
+    RAISE EXCEPTION 'GUS_INACTIVE';
+  END IF;
+
+  v_regon := NULLIF(regexp_replace(COALESCE(p_gus ->> 'regon', ''), '[^0-9]', '', 'g'), '');
+  v_krs := NULLIF(regexp_replace(COALESCE(p_gus ->> 'krs', ''), '[^0-9]', '', 'g'), '');
+  v_legal_name := NULLIF(btrim(COALESCE(p_gus ->> 'legalName', '')), '');
+  v_city := NULLIF(btrim(COALESCE(p_gus ->> 'city', '')), '');
+  v_postal := public.normalize_pl_postal(p_gus ->> 'postalCode');
+  v_street := NULLIF(btrim(COALESCE(p_gus ->> 'street', '')), '');
+  v_building := NULLIF(btrim(COALESCE(p_gus ->> 'buildingNumber', '')), '');
+  v_apt := NULLIF(btrim(COALESCE(p_gus ->> 'apartmentNumber', '')), '');
+  v_voiv := NULLIF(btrim(COALESCE(p_gus ->> 'voivodeship', '')), '');
+  v_county := NULLIF(btrim(COALESCE(p_gus ->> 'county', '')), '');
+  v_commune := NULLIF(btrim(COALESCE(p_gus ->> 'commune', '')), '');
+
+  IF v_voiv IS NULL THEN
+    v_voiv := v_row.voivodeship;
+  END IF;
+  IF v_building IS NULL THEN
+    v_building := COALESCE(v_row.building_number, 'b.n.');
+  END IF;
+  IF v_city IS NULL THEN
+    v_city := v_row.city;
+  END IF;
+  IF v_postal IS NULL THEN
+    v_postal := v_row.postal_code;
+  END IF;
+  IF v_legal_name IS NULL THEN
+    v_legal_name := v_row.legal_name;
+  END IF;
+
+  v_seat := NULLIF(btrim(COALESCE(p_gus ->> 'seatFullAddress', '')), '');
+  IF v_seat IS NULL THEN
+    v_seat := concat_ws(
+      ', ',
+      NULLIF(concat_ws(' ', v_street, v_building, v_apt), ''),
+      NULLIF(concat_ws(' ', v_postal, v_city), '')
+    );
+  END IF;
+
+  IF v_legal_name IS NULL OR v_city IS NULL OR v_postal IS NULL THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
+  END IF;
+
+  IF v_row.kind = 'housing_cooperative'::public.legal_entity_kind
+     AND (v_krs IS NULL OR v_krs !~ '^[0-9]{10}$')
+  THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_INCOMPLETE_DATA';
+  END IF;
+
+  PERFORM public.legal_entity_mark_rpc_writer();
+
+  UPDATE public.legal_entities
+  SET
+    regon = v_regon,
+    krs = v_krs,
+    legal_name = v_legal_name,
+    voivodeship = v_voiv,
+    county = v_county,
+    commune = v_commune,
+    city = v_city,
+    postal_code = v_postal,
+    street = COALESCE(v_street, street),
+    building_number = v_building,
+    apartment_number = COALESCE(v_apt, apartment_number),
+    seat_full_address = v_seat,
+    gus_legal_form_code = NULLIF(btrim(COALESCE(p_gus ->> 'legalFormCode', '')), ''),
+    gus_legal_form_name = NULLIF(btrim(COALESCE(p_gus ->> 'legalFormName', '')), ''),
+    gus_fetched_at = now(),
+    gus_payload = p_gus,
+    verification_status = 'gus_verified',
+    verification_reason = NULL,
+    verification_resolved_at = now(),
+    verification_resolved_by = auth.uid()
+  WHERE id = p_legal_entity_id
+  RETURNING * INTO v_row;
+
+  UPDATE public.communities
+  SET
+    nip = v_row.nip_normalized,
+    legal_name = v_row.legal_name,
+    regon = v_row.regon_normalized,
+    updated_at = now()
+  WHERE legal_entity_id = v_row.id;
+
+  UPDATE public.companies
+  SET
+    tax_id = v_row.nip_normalized,
+    address = v_row.seat_full_address,
+    updated_at = now()
+  WHERE legal_entity_id = v_row.id;
+
+  RETURN jsonb_build_object(
+    'status', 'gus_verified',
+    'entity', public.legal_entity_public_json(v_row)
+  );
+EXCEPTION
+  WHEN unique_violation THEN
+    RAISE EXCEPTION 'LEGAL_ENTITY_REGON_TAKEN';
+END;
 $function$;
 CREATE OR REPLACE FUNCTION public.user_has_location_access_docs(p_location_id uuid)
  RETURNS boolean
@@ -22159,7 +22154,7 @@ INSERT INTO auth.identities (
 )
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.profiles (id, full_name, email, platform_role, account_type, is_first_login, fleet_role)
+INSERT INTO public.profiles (id, full_name, email, platform_role, account_type, is_first_login, fleet_role, accepted_terms_at)
 VALUES (
   'f39c6c7c-b9db-4f1a-aada-1a6c301caba8',
   'Marcin Józefiak',
@@ -22167,7 +22162,8 @@ VALUES (
   'admin',
   'standard',
   false,
-  'admin'
+  'admin',
+  now()
 )
 ON CONFLICT (id) DO UPDATE SET
   email = EXCLUDED.email,
