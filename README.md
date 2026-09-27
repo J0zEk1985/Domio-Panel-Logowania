@@ -62,6 +62,8 @@ Aplikacja wymaga następujących struktur w bazie danych Supabase:
 
 2. **Tabela `profiles`** - musi mieć odpowiednie uprawnienia RLS, aby umożliwić zapis profilu użytkownika.
 
+Pełny baseline na VPS (struktura Cloud + admin): `supabase/schema_initial.sql`. Instrukcja importu, migracji (`BEGIN`/`COMMIT`) i Edge Functions: [supabase/README.md](supabase/README.md).
+
 ## Routing
 
 - `/` - przekierowuje do `/login`

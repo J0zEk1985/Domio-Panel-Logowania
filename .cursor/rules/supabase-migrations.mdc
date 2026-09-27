@@ -1,0 +1,19 @@
+---
+description: Wrap every new supabase db diff migration in a SQL transaction
+globs: supabase/migrations/*.sql
+alwaysApply: false
+---
+
+# Migracje SQL (VPS / self-hosted)
+
+Każda nowa migracja wygenerowana komendą `npx supabase db diff` (lub ręcznie dodana do `supabase/migrations/`) **musi** być otoczona transakcją:
+
+```sql
+BEGIN;
+
+-- zapytania ALTER / CREATE z db diff
+
+COMMIT;
+```
+
+Nie stosuj ponownie historycznych plików z `supabase/migrations/` na instancji VPS, która została zainicjowana plikiem `supabase/schema_initial.sql`. Ten plik jest zrzutem bieżącej struktury Cloud. Kolejne zmiany dodawaj wyłącznie jako nowe pliki migracji (po `schema_initial`) i importuj je na VPS przez `psql "$VPS_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/<plik>.sql`.
