@@ -5,6 +5,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+import { getCookieDomain } from './cookieConsent'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -29,13 +30,11 @@ if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
  * Identical configuration to Cleaning
  */
 const createCookieStorage = () => {
-  const isProduction = window.location.hostname.includes('domio.com.pl')
-  const useCookies = isProduction
+  const domain = getCookieDomain()
+  const useCookies = Boolean(domain)
 
-  // Cookie options as specified: domain: '.domio.com.pl', sameSite: 'lax'
-  // Identical to Cleaning configuration
   const cookieOptions = {
-    domain: '.domio.com.pl',
+    domain: domain ?? undefined,
     sameSite: 'Lax' as const,
     path: '/',
   }
@@ -54,8 +53,7 @@ const createCookieStorage = () => {
     const expires = new Date()
     expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000)
     
-    if (useCookies) {
-      // Production: Use shared domain for SSO with cookieOptions (identical to Cleaning)
+    if (useCookies && cookieOptions.domain) {
       const isSecure = window.location.protocol === 'https:'
       const secureFlag = isSecure ? ';Secure' : ''
       const cookieString = `${name}=${value};expires=${expires.toUTCString()};path=${cookieOptions.path};domain=${cookieOptions.domain};SameSite=${cookieOptions.sameSite}${secureFlag}`
@@ -67,8 +65,7 @@ const createCookieStorage = () => {
   }
 
   const removeCookie = (name: string): void => {
-    if (useCookies) {
-      // Production: Remove cookie with shared domain
+    if (useCookies && cookieOptions.domain) {
       const isSecure = window.location.protocol === 'https:'
       const secureFlag = isSecure ? ';Secure' : ''
       document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=${cookieOptions.path};domain=${cookieOptions.domain};SameSite=${cookieOptions.sameSite}${secureFlag}`
@@ -137,10 +134,10 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     flowType: 'pkce',
     // @ts-ignore - cookieOptions is not in TypeScript definitions but is supported by Supabase
     cookieOptions: {
-      domain: '.domio.com.pl',
+      domain: getCookieDomain() ?? undefined,
       path: '/',
       sameSite: 'lax',
-      secure: true,
+      secure: window.location.protocol === 'https:',
     },
     storage: createCookieStorage(),
   },

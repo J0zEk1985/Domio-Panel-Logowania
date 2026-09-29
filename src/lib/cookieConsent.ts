@@ -37,12 +37,16 @@ export const ACCEPTED_ALL_CATEGORIES: ConsentCategories = {
   marketing: true,
 }
 
-function cookieDomain(): string | null {
+export function getCookieDomain(): string | null {
   if (typeof window === 'undefined') return null
   const host = window.location.hostname
-  if (host.includes('udomio.com.pl')) return '.udomio.com.pl'
-  if (host.includes('domio.com.pl')) return '.domio.com.pl'
+  if (host.endsWith('udomio.com.pl')) return '.udomio.com.pl'
+  if (host.endsWith('domio.com.pl')) return '.domio.com.pl'
   return null
+}
+
+function cookieDomain(): string | null {
+  return getCookieDomain()
 }
 
 function readCookie(name: string): string | null {

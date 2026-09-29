@@ -3,6 +3,7 @@ import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { navigateToHref, resolveAuthLanding, resolvePostLoginTarget, shouldForcePasswordChange } from '../lib/postLoginRedirect'
 import { CookieConsentSettingsButton } from '../components/cookie-consent/CookieConsentRoot'
+import { getCookieDomain } from '../lib/cookieConsent'
 
 /**
  * Hard reset function - completely clears session, cookies, and localStorage
@@ -26,7 +27,10 @@ const performHardReset = async (): Promise<void> => {
     
     cookiesToRemove.forEach((cookieName) => {
       // Remove from parent domain
-      document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.domio.com.pl;`
+      const sharedDomain = getCookieDomain()
+      if (sharedDomain) {
+        document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${sharedDomain};`
+      }
       // Remove from current domain
       document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
     })
