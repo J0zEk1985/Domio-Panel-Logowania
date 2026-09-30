@@ -57,7 +57,7 @@ export function formatPlanLimitsSummary(
     parts.push(`Lokalizacje: ${row.max_locations}`)
   }
   if (row.max_storage_gb != null) parts.push(`Pamięć: ${row.max_storage_gb} GB`)
-  if (row.ai_monthly_parse_limit != null) {
+  if (row.ai_monthly_parse_limit != null && row.ai_monthly_parse_limit > 0) {
     parts.push(`Analizy AI: ${row.ai_monthly_parse_limit}/mies.`)
   }
   if (row.has_ai_features === true) parts.push('AI auto: Tak')

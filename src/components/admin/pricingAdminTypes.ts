@@ -47,7 +47,7 @@ export function emptyPlanForm() {
     maxUsers: '',
     maxLocations: '',
     maxStorageGb: '',
-    aiMonthlyParseLimit: '20',
+    aiMonthlyParseLimit: '',
     hasAiFeatures: false,
     extraUserPriceMonthly: '',
     extraUserPriceYearly: '',

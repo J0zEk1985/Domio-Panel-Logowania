@@ -44,12 +44,8 @@ export function planLimitLines(plan: Pick<
   if (plan.max_storage_gb != null) {
     lines.push(`${plan.max_storage_gb} GB pamięci`)
   }
-  if (plan.ai_monthly_parse_limit != null) {
-    lines.push(
-      plan.ai_monthly_parse_limit === 0
-        ? 'Bez analiz AI e-maili'
-        : `${plan.ai_monthly_parse_limit} analiz AI e-maili / mies.`,
-    )
+  if (plan.ai_monthly_parse_limit != null && plan.ai_monthly_parse_limit > 0) {
+    lines.push(`${plan.ai_monthly_parse_limit} analiz AI e-maili / mies.`)
   }
   if (plan.has_ai_features === true) {
     lines.push('Automatyczna analiza e-maili (forward)')
