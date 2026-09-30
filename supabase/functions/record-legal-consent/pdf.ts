@@ -35,6 +35,20 @@ const FONT_SIZE_TITLE = 16
 const FONT_SIZE_HEADING = 13
 const LINE_HEIGHT = 14
 
+/**
+ * fontkit subsetting crashes the Deno isolate (RangeError writeUInt16BE)
+ * on some legal-doc glyphs (white bullet, quotes). Map them before drawing.
+ */
+function sanitizePdfText(text: string): string {
+  return (text ?? '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d\u201e\u201f]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/[\u2022\u25e6\u2219\u00b7]/g, '-')
+    .replace(/[^\n\r\t\u0020-\u007e\u00c0-\u024f]/g, '?')
+}
+
 function wrapLine(font: PDFFont, text: string, fontSize: number, maxWidth: number): string[] {
   if (text === '') return ['']
   const words = text.split(/\s+/)
@@ -81,7 +95,7 @@ function wrapLine(font: PDFFont, text: string, fontSize: number, maxWidth: numbe
 }
 
 function wrapParagraphs(font: PDFFont, text: string, fontSize: number, maxWidth: number): string[] {
-  const source = (text ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const source = sanitizePdfText(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   const out: string[] = []
   for (const para of source.split('\n')) {
     out.push(...wrapLine(font, para, fontSize, maxWidth))
@@ -108,7 +122,7 @@ async function loadFontBytes(): Promise<Uint8Array> {
 export async function buildLegalAcceptancePdf(meta: LegalPdfMeta): Promise<Uint8Array> {
   const pdf = await PDFDocument.create()
   pdf.registerFontkit(fontkit)
-  const font = await pdf.embedFont(await loadFontBytes(), { subset: true })
+  const font = await pdf.embedFont(await loadFontBytes(), { subset: false })
   const maxWidth = PAGE_WIDTH - MARGIN * 2
   const ink = rgb(0.12, 0.12, 0.14)
 
