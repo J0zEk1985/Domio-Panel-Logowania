@@ -178,6 +178,10 @@ DROP POLICY IF EXISTS worker_tasks_master_policy ON public.cleaning_tasks;
 DROP POLICY IF EXISTS "Public apps are viewable by everyone" ON public.applications;
 DROP POLICY IF EXISTS "Public can read active applications" ON public.applications;
 DROP POLICY IF EXISTS "Platform admin full access applications" ON public.applications;
+DROP POLICY IF EXISTS applications_select_catalog ON public.applications;
+DROP POLICY IF EXISTS applications_insert_platform_admin ON public.applications;
+DROP POLICY IF EXISTS applications_update_platform_admin ON public.applications;
+DROP POLICY IF EXISTS applications_delete_platform_admin ON public.applications;
 
 CREATE POLICY applications_select_catalog
   ON public.applications
@@ -212,6 +216,8 @@ DROP POLICY IF EXISTS extra_jobs_insert_manager ON public.cleaning_extra_jobs;
 DROP POLICY IF EXISTS extra_jobs_insert_worker ON public.cleaning_extra_jobs;
 DROP POLICY IF EXISTS extra_jobs_update_manager ON public.cleaning_extra_jobs;
 DROP POLICY IF EXISTS extra_jobs_update_worker ON public.cleaning_extra_jobs;
+DROP POLICY IF EXISTS extra_jobs_insert ON public.cleaning_extra_jobs;
+DROP POLICY IF EXISTS extra_jobs_update ON public.cleaning_extra_jobs;
 
 CREATE POLICY extra_jobs_insert
   ON public.cleaning_extra_jobs
@@ -247,6 +253,10 @@ CREATE POLICY extra_jobs_update
 DROP POLICY IF EXISTS "Inventory_Manager_Access" ON public.cleaning_inventory;
 DROP POLICY IF EXISTS "Manager Inventory Access" ON public.cleaning_inventory;
 DROP POLICY IF EXISTS "Inventory_Staff_View" ON public.cleaning_inventory;
+DROP POLICY IF EXISTS cleaning_inventory_select ON public.cleaning_inventory;
+DROP POLICY IF EXISTS cleaning_inventory_insert_manager ON public.cleaning_inventory;
+DROP POLICY IF EXISTS cleaning_inventory_update_manager ON public.cleaning_inventory;
+DROP POLICY IF EXISTS cleaning_inventory_delete_manager ON public.cleaning_inventory;
 
 CREATE POLICY cleaning_inventory_select
   ON public.cleaning_inventory
@@ -279,6 +289,9 @@ CREATE POLICY cleaning_inventory_delete_manager
 -- locations: owner ALL was a subset of manager ALL; manager ALL overlapped member SELECT
 DROP POLICY IF EXISTS "Org isolation ALL for owners locations" ON public.locations;
 DROP POLICY IF EXISTS "Manager_Full_Access_Master_Locations" ON public.locations;
+DROP POLICY IF EXISTS locations_insert_management ON public.locations;
+DROP POLICY IF EXISTS locations_update_management ON public.locations;
+DROP POLICY IF EXISTS locations_delete_management ON public.locations;
 
 CREATE POLICY locations_insert_management
   ON public.locations
@@ -340,6 +353,7 @@ DROP POLICY IF EXISTS "Users see own adjustments" ON public.staff_financial_adju
 -- vehicles: assigned driver SELECT OR org member SELECT
 DROP POLICY IF EXISTS vehicles_select_assigned_driver ON public.vehicles;
 DROP POLICY IF EXISTS vehicles_select_org_member ON public.vehicles;
+DROP POLICY IF EXISTS vehicles_select ON public.vehicles;
 
 CREATE POLICY vehicles_select
   ON public.vehicles
@@ -352,6 +366,9 @@ CREATE POLICY vehicles_select
 
 -- Management ALL overlapped SELECT with vehicles_select (managers are org members).
 DROP POLICY IF EXISTS vehicles_write_management ON public.vehicles;
+DROP POLICY IF EXISTS vehicles_insert_management ON public.vehicles;
+DROP POLICY IF EXISTS vehicles_update_management ON public.vehicles;
+DROP POLICY IF EXISTS vehicles_delete_management ON public.vehicles;
 
 CREATE POLICY vehicles_insert_management
   ON public.vehicles
