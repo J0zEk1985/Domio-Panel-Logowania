@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import type { Application } from '../../types/database'
+import { filterProductApplications, sortApplicationsByCatalog } from '../../lib/moduleAccess'
 import type { PricingPlanRow, PromoCodeRow } from './pricingAdminTypes'
 import PricingPlansSection from './PricingPlansSection'
 import PromoCodesSection from './PromoCodesSection'
@@ -28,7 +29,11 @@ export default function PricingAdminTab() {
         console.error('[PricingAdminTab] applications:', appsRes.error)
         setLoadError('Nie udało się pobrać listy aplikacji.')
       } else {
-        setApplications((appsRes.data as Application[]) ?? [])
+        setApplications(
+          sortApplicationsByCatalog(
+            filterProductApplications((appsRes.data as Application[]) ?? []),
+          ),
+        )
       }
 
       if (plansRes.error) {

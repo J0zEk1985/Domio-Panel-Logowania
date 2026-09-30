@@ -45,6 +45,17 @@ export function getCookieDomain(): string | null {
   return null
 }
 
+/** Isolates test.* hosts from production SSO cookies (different Supabase JWT secrets). */
+export const AUTH_STORAGE_KEY_PROD = 'domio-auth-token'
+export const AUTH_STORAGE_KEY_TEST = 'domio-auth-token-test'
+
+export function getAuthStorageKey(): string {
+  if (typeof window === 'undefined') return AUTH_STORAGE_KEY_PROD
+  const host = window.location.hostname
+  if (host.startsWith('test.')) return AUTH_STORAGE_KEY_TEST
+  return AUTH_STORAGE_KEY_PROD
+}
+
 function cookieDomain(): string | null {
   return getCookieDomain()
 }

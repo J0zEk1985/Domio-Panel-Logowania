@@ -33,7 +33,11 @@ export default function PlatformContactAdminCard() {
 
       if (error) {
         console.error('[PlatformContactAdminCard] load:', error)
-        setLoadError('Nie udało się pobrać danych kontaktowych (sprawdź migrację i polityki RLS).')
+        const hint =
+          error.code === 'PGRST301' || /jwt|token|unauthorized/i.test(error.message)
+            ? ' Sesja logowania jest nieprawidłowa dla tej domeny (test i produkcja nie mogą dzielić tego samego ciasteczka SSO). Wyloguj się i zaloguj ponownie na tej stronie.'
+            : ' Sprawdź migrację page_content i polityki RLS.'
+        setLoadError(`Nie udało się pobrać danych kontaktowych.${hint}`)
         setForm(EMPTY_PLATFORM_CONTACT)
         setSaved(EMPTY_PLATFORM_CONTACT)
         return

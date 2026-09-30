@@ -249,6 +249,11 @@ export default function PricingPlansSection({ applications, plans, onRefresh }: 
                   </option>
                 ))}
               </select>
+              {applications.length === 0 && (
+                <span className="block text-xs text-destructive">
+                  Brak aplikacji produktowych w katalogu. Odśwież stronę po uzupełnieniu tabeli applications.
+                </span>
+              )}
             </label>
             <label className="block space-y-1.5 text-sm">
               <span className="text-muted-foreground">Nazwa planu</span>

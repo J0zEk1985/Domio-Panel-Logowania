@@ -132,6 +132,11 @@ export function filterAppsByOrgAccess(
   return apps.filter((app) => app.is_free || opts.subscribedAppIds.has(app.id));
 }
 
+/** Product modules only — login hub is not a billable / catalog application. */
+export function filterProductApplications<T extends AppModuleProbe>(apps: T[]): T[] {
+  return apps.filter((app) => !isHubApplication(app));
+}
+
 /**
  * Cleaning-only workers (simplified cleaner/staff) must not see Serwis/other modules
  * just because SSO session is shared with the same organisation.
@@ -140,7 +145,7 @@ export function filterHubApplications(
   apps: Application[],
   opts: { membershipRoles: Array<string | null | undefined>; fleetRole: string | null }
 ): Application[] {
-  const productApps = apps.filter((app) => !isHubApplication(app));
+  const productApps = filterProductApplications(apps);
   const hasFleet = opts.fleetRole === "admin" || opts.fleetRole === "driver";
   if (!isCleaningWorkerOnly(opts.membershipRoles)) {
     return productApps;

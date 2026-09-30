@@ -5,7 +5,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { getCookieDomain } from './cookieConsent'
+import { getAuthStorageKey, getCookieDomain } from './cookieConsent'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -119,15 +119,13 @@ const createCookieStorage = () => {
 /**
  * Supabase client configured identically to Cleaning
  * Uses cookieOptions with domain: '.domio.com.pl', sameSite: 'lax' to share session
- * Uses storageKey: 'domio-auth-token' - MUST be identical in both apps (Panel-Logowania and Cleaning)
- * 
- * This configuration enables the app to create session cookies that can be read
- * by Cleaning app on subdomain (cleaning.domio.com.pl) for SSO.
+ * Production apps share storageKey `domio-auth-token` for SSO.
+ * Hosts `test.*` use `domio-auth-token-test` so Cloud/test JWTs do not overwrite VPS sessions.
  */
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     // CRITICAL: storageKey must be identical to Cleaning for SSO to work
-    storageKey: 'domio-auth-token',
+    storageKey: getAuthStorageKey(),
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
