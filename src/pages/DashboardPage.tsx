@@ -78,7 +78,6 @@ export default function DashboardPage() {
     allProductApps,
     loading,
     error,
-    isPlatformAdmin,
     billingOrgId,
     canManageBilling,
     canManageOrgProfile,
@@ -144,9 +143,7 @@ export default function DashboardPage() {
       }
       return
     }
-    if (!isPlatformAdmin) {
-      setApps((prev) => prev.filter((row) => row.id !== next.app_id))
-    }
+    setApps((prev) => prev.filter((row) => row.id !== next.app_id))
   }
 
   return (
@@ -195,7 +192,8 @@ export default function DashboardPage() {
 
             {!loading && !error && apps.length === 0 && (
               <div className="text-center py-16 rounded-2xl border border-dashed border-border bg-muted/20">
-                <p className="text-muted-foreground text-lg">Brak dostępnych aplikacji</p>
+                <p className="text-muted-foreground text-lg">Nie masz wykupionych płatnych modułów</p>
+                <p className="text-muted-foreground text-sm mt-2">Plany do wykupienia znajdziesz poniżej.</p>
               </div>
             )}
 
@@ -265,8 +263,13 @@ export default function DashboardPage() {
                 Więcej modułów
               </h2>
               <div className="grid sm:grid-cols-2 gap-4">
-                {extraModules.map(({ mod }) => {
+                {extraModules.map(({ mod, app }) => {
                   const Icon = mod.icon
+                  const plans = app ? (plansByAppId.get(app.id) ?? []) : []
+                  const cheapest = plans[0]
+                  const priceHint = cheapest
+                    ? `Wykup plan, aby aktywować ten moduł · od ${planPriceLabel(cheapest, false)}`
+                    : 'Wykup plan, aby aktywować ten moduł'
                   return (
                     <div key={mod.slug} className="bento-card relative overflow-hidden">
                       <div className="flex items-start gap-4">
@@ -275,7 +278,8 @@ export default function DashboardPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <h3 className="font-display font-semibold mb-1">{mod.name}</h3>
-                          <p className="text-sm text-muted-foreground mb-3">{mod.shortDescription ?? mod.description}</p>
+                          <p className="text-sm text-muted-foreground mb-1">{mod.shortDescription ?? mod.description}</p>
+                          <p className="text-sm font-medium text-foreground mb-3">{priceHint}</p>
                           <div className="flex flex-wrap gap-2">
                             <Link
                               to={`/module/${mod.slug}#cennik`}

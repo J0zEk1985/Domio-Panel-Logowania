@@ -195,7 +195,6 @@ export function useDashboardApps() {
       setAllProductApps(productApps)
       setApps(
         filterAppsByOrgAccess(productApps, {
-          isPlatformAdmin: platformAdmin,
           subscribedAppIds,
         }),
       )

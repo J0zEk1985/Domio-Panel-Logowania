@@ -106,7 +106,6 @@ export function computeUserModuleAccess(opts: {
       fleetRole: opts.fleetRole,
     }),
     {
-      isPlatformAdmin: opts.isPlatformAdmin,
       subscribedAppIds: opts.subscribedAppIds,
     },
   )

@@ -118,18 +118,16 @@ export function isSubscriptionCurrent(status: string | null | undefined, expires
 }
 
 /**
- * Free apps are always listed. Paid apps require an active, unexpired org subscription.
- * Platform admins see every active application.
+ * Hub "Twoje moduły": free apps plus paid apps with an active org subscription.
+ * Platform admin is not a substitute for a purchased plan on the dashboard.
  */
 export function filterAppsByOrgAccess(
   apps: Application[],
   opts: {
-    isPlatformAdmin: boolean;
     subscribedAppIds: Set<string>;
   },
 ): Application[] {
-  if (opts.isPlatformAdmin) return apps;
-  return apps.filter((app) => app.is_free || opts.subscribedAppIds.has(app.id));
+  return apps.filter((app) => app.is_free === true || opts.subscribedAppIds.has(app.id));
 }
 
 /** Product modules only — login hub is not a billable / catalog application. */
