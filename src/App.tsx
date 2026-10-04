@@ -6,6 +6,7 @@ import { supabase } from './lib/supabase'
 import { buildChangePasswordPath, shouldForcePasswordChange } from './lib/postLoginRedirect'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
+import SignupConfirmedPage from './pages/SignupConfirmedPage'
 import DashboardPage from './pages/DashboardPage'
 import CompanySettingsPage from './pages/CompanySettingsPage'
 import TermsPage from './pages/TermsPage'
@@ -26,6 +27,7 @@ const PUBLIC_PATHS = new Set([
   '/',
   '/login',
   '/signup',
+  '/rejestracja-potwierdzona',
   '/forgot-password',
   '/reset-password',
   '/regulamin',
@@ -101,7 +103,11 @@ function App() {
         if (shouldForcePasswordChange(profile)) {
           const currentPath = window.location.pathname
           // Landing at `/` always stays visible; DashboardPage enforces password change when entering the panel.
-          if (currentPath !== '/change-password' && currentPath !== '/') {
+          if (
+            currentPath !== '/change-password' &&
+            currentPath !== '/' &&
+            currentPath !== '/rejestracja-potwierdzona'
+          ) {
             const returnTo = new URLSearchParams(window.location.search).get('returnTo')
             window.location.href = buildChangePasswordPath(returnTo)
           }
@@ -212,6 +218,7 @@ function App() {
         path="/signup"
         element={session ? <Navigate to="/dashboard" replace /> : <SignupPage />}
       />
+      <Route path="/rejestracja-potwierdzona" element={<SignupConfirmedPage />} />
       <Route
         path="/forgot-password"
         element={<ForgotPasswordPage />}
