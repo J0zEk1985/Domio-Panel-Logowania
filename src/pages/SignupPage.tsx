@@ -5,7 +5,11 @@ import { validatePassword } from '../lib/validation'
 import ValidationChecklist from '../components/ValidationChecklist'
 import PasswordInput from '../components/PasswordInput'
 import { DOC_LABELS, DOC_PATHS, type LegalDocType } from '../components/admin/legalAdminTypes'
-import { fetchClientIp, recordPlatformLegalConsent } from '../lib/legalConsentApi'
+import {
+  SIGNUP_ACCEPTED_DOCUMENT_IDS_KEY,
+  fetchClientIp,
+  recordPlatformLegalConsent,
+} from '../lib/legalConsentApi'
 
 type ActiveLegalDoc = {
   id: string
@@ -16,7 +20,6 @@ type ActiveLegalDoc = {
 }
 
 const DOC_ORDER: LegalDocType[] = ['terms', 'privacy', 'cookies', 'marketing']
-const PLATFORM_CONSENT_TYPES: LegalDocType[] = ['terms', 'privacy', 'marketing']
 
 function emptyAcceptedDocs(): Record<LegalDocType, boolean> {
   return { terms: false, privacy: false, marketing: false, cookies: false }
@@ -118,6 +121,14 @@ export default function SignupPage() {
         }
       }
 
+      const acceptedDocumentIds = activeLegalDocs
+        .filter((doc) => acceptedDocs[doc.document_type])
+        .map((doc) => doc.id)
+
+      if (acceptedDocumentIds.length === 0) {
+        throw new Error('Musisz zaakceptować wymagane dokumenty prawne.')
+      }
+
       const ipAddress = await fetchClientIp()
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -125,6 +136,9 @@ export default function SignupPage() {
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/rejestracja-potwierdzona`,
+          data: {
+            [SIGNUP_ACCEPTED_DOCUMENT_IDS_KEY]: acceptedDocumentIds,
+          },
         },
       })
 
@@ -134,20 +148,11 @@ export default function SignupPage() {
         throw new Error('Nie udało się utworzyć konta')
       }
 
-      // If no session, Auth requires email confirmation
+      // Email confirmation: choices stay in user metadata until the confirm page has a session.
       if (!authData.session) {
-        // Redirect to a success page instead of showing an error
         navigate(`/rejestracja-wyslana?email=${encodeURIComponent(email)}`)
         return
       }
-
-      // Session exists - record consents and redirect
-      const acceptedDocumentIds = activeLegalDocs
-        .filter(
-          (doc) =>
-            acceptedDocs[doc.document_type] && PLATFORM_CONSENT_TYPES.includes(doc.document_type),
-        )
-        .map((doc) => doc.id)
 
       const consent = await recordPlatformLegalConsent({
         acceptedDocumentIds,
@@ -156,7 +161,18 @@ export default function SignupPage() {
       })
 
       if (!consent.ok) {
-        console.error('[SignupPage] recordPlatformLegalConsent:', consent.error)
+        throw new Error(
+          consent.error
+            ? `Nie udało się zapisać akceptacji dokumentów. ${consent.error}`
+            : 'Nie udało się zapisać akceptacji dokumentów.',
+        )
+      }
+
+      const { error: clearError } = await supabase.auth.updateUser({
+        data: { [SIGNUP_ACCEPTED_DOCUMENT_IDS_KEY]: null },
+      })
+      if (clearError) {
+        console.error('[SignupPage] clear signup metadata:', clearError)
       }
 
       navigate('/dashboard')

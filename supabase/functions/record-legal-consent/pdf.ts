@@ -25,6 +25,7 @@ const DOC_TITLES: Record<string, string> = {
   terms: 'Regulamin',
   privacy: 'Polityka prywatności',
   marketing: 'Zgody marketingowe',
+  cookies: 'Polityka cookies',
 }
 
 const PAGE_WIDTH = 595.28

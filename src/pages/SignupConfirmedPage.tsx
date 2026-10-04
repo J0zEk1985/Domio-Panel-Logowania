@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import type { EmailOtpType } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { recordSignupLegalConsentFromMetadata } from '../lib/legalConsentApi'
 
 type ConfirmStatus = 'loading' | 'success' | 'error' | 'idle'
 
@@ -28,6 +29,7 @@ export default function SignupConfirmedPage() {
   const [searchParams] = useSearchParams()
   const [status, setStatus] = useState<ConfirmStatus>('loading')
   const [message, setMessage] = useState<string | null>(null)
+  const [consentSaveFailed, setConsentSaveFailed] = useState(false)
   const confirmedRef = useRef(false)
 
   useEffect(() => {
@@ -35,8 +37,21 @@ export default function SignupConfirmedPage() {
 
     let cancelled = false
 
-    const succeed = () => {
+    const succeed = async () => {
       if (cancelled || confirmedRef.current) return
+      const consent = await recordSignupLegalConsentFromMetadata()
+      if (cancelled || confirmedRef.current) return
+      if (!consent.ok) {
+        console.error('[SignupConfirmedPage] consent:', consent.error)
+        confirmedRef.current = true
+        setConsentSaveFailed(true)
+        setStatus('error')
+        setMessage(
+          'Konto jest aktywne, ale nie udało się zapisać akceptacji dokumentów. Zaloguj się i zaakceptuj aktualne dokumenty.',
+        )
+        window.history.replaceState({}, '', '/rejestracja-potwierdzona')
+        return
+      }
       confirmedRef.current = true
       setStatus('success')
       setMessage(null)
@@ -68,7 +83,7 @@ export default function SignupConfirmedPage() {
           fail(error.message)
           return
         }
-        succeed()
+        await succeed()
         return
       }
 
@@ -81,7 +96,7 @@ export default function SignupConfirmedPage() {
           return
         }
         if (data.session) {
-          succeed()
+          await succeed()
           return
         }
         fail('Brak sesji po potwierdzeniu rejestracji.')
@@ -101,7 +116,7 @@ export default function SignupConfirmedPage() {
   }, [searchParams])
 
   const title =
-    status === 'success'
+    status === 'success' || consentSaveFailed
       ? 'Rejestracja potwierdzona'
       : status === 'error'
         ? 'Nie udało się potwierdzić konta'
@@ -145,7 +160,7 @@ export default function SignupConfirmedPage() {
               >
                 Przejdź do panelu logowania
               </Link>
-              {status === 'error' && (
+              {status === 'error' && !consentSaveFailed && (
                 <p className="text-center text-sm text-gray-400">
                   Nie masz jeszcze konta?{' '}
                   <Link to="/signup" className="text-blue-400 hover:text-blue-300 font-medium">

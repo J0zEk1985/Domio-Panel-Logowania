@@ -1,12 +1,15 @@
 import { supabase } from './supabase'
 import type { LegalConsentSource, PendingRequiredLegalDocument } from '../types/database'
 
+export const SIGNUP_ACCEPTED_DOCUMENT_IDS_KEY = 'accepted_legal_document_ids'
+
 type RecordLegalConsentResult = {
   ok: boolean
   alreadyRecorded?: boolean
   batchId?: string | null
   dispatchId?: string | null
   emailQueued?: boolean
+  skipped?: boolean
   error?: string
 }
 
@@ -91,4 +94,41 @@ export async function recordPlatformLegalConsent(input: {
     dispatchId: payload?.dispatchId ? String(payload.dispatchId) : null,
     emailQueued: payload?.emailQueued === true,
   }
+}
+
+export function readSignupAcceptedDocumentIds(metadata: unknown): string[] {
+  const record = asRecord(metadata)
+  const raw = record?.[SIGNUP_ACCEPTED_DOCUMENT_IDS_KEY]
+  if (!Array.isArray(raw)) return []
+  return [...new Set(raw.map((item) => String(item ?? '').trim()).filter((id) => id.length > 0))]
+}
+
+/** Records checkbox choices stored at email signup, once a session exists. */
+export async function recordSignupLegalConsentFromMetadata(): Promise<RecordLegalConsentResult> {
+  const { data, error } = await supabase.auth.getUser()
+  if (error || !data.user) {
+    console.error('[legalConsentApi] getUser:', error)
+    return { ok: false, error: 'Brak sesji. Zaloguj się ponownie.' }
+  }
+
+  const acceptedDocumentIds = readSignupAcceptedDocumentIds(data.user.user_metadata)
+  if (acceptedDocumentIds.length === 0) {
+    return { ok: true, skipped: true }
+  }
+
+  const ipAddress = await fetchClientIp()
+  const result = await recordPlatformLegalConsent({
+    acceptedDocumentIds,
+    source: 'signup_email',
+    ipAddress,
+  })
+  if (!result.ok) return result
+
+  const { error: clearError } = await supabase.auth.updateUser({
+    data: { [SIGNUP_ACCEPTED_DOCUMENT_IDS_KEY]: null },
+  })
+  if (clearError) {
+    console.error('[legalConsentApi] clear signup metadata:', clearError)
+  }
+  return result
 }

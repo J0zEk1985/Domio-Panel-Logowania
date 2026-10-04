@@ -43,7 +43,7 @@ export interface Profile {
 }
 
 /** Cache on profiles is not legal proof. Source of truth: UserConsent. */
-export type LegalDocType = 'terms' | 'privacy' | 'marketing'
+export type LegalDocType = 'terms' | 'privacy' | 'marketing' | 'cookies'
 export type LegalConsentSource = 'signup_email' | 'signup_oauth' | 'reacceptance'
 export type LegalWelcomeDispatchStatus = 'pending' | 'processing' | 'sent' | 'failed'
 
