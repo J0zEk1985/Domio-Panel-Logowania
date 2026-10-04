@@ -7,6 +7,7 @@ import { buildChangePasswordPath, shouldForcePasswordChange } from './lib/postLo
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
 import SignupConfirmedPage from './pages/SignupConfirmedPage'
+import SignupSentPage from './pages/SignupSentPage'
 import DashboardPage from './pages/DashboardPage'
 import CompanySettingsPage from './pages/CompanySettingsPage'
 import TermsPage from './pages/TermsPage'
@@ -27,6 +28,7 @@ const PUBLIC_PATHS = new Set([
   '/',
   '/login',
   '/signup',
+  '/rejestracja-wyslana',
   '/rejestracja-potwierdzona',
   '/forgot-password',
   '/reset-password',
@@ -218,6 +220,7 @@ function App() {
         path="/signup"
         element={session ? <Navigate to="/dashboard" replace /> : <SignupPage />}
       />
+      <Route path="/rejestracja-wyslana" element={<SignupSentPage />} />
       <Route path="/rejestracja-potwierdzona" element={<SignupConfirmedPage />} />
       <Route
         path="/forgot-password"

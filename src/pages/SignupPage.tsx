@@ -136,10 +136,8 @@ export default function SignupPage() {
 
       // If no session, Auth requires email confirmation
       if (!authData.session) {
-        setError(
-          `Konto zostało utworzone. Sprawdź swoją skrzynkę e-mail (${email}) i kliknij w link potwierdzający, aby dokończyć rejestrację.`
-        )
-        setLoading(false)
+        // Redirect to a success page instead of showing an error
+        navigate(`/rejestracja-wyslana?email=${encodeURIComponent(email)}`)
         return
       }
 
