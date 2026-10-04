@@ -36,7 +36,7 @@ WHERE lower(name) IN ('obsługa floty', 'domio flota')
 UPDATE public.applications
 SET
   name = 'Domio Administracja',
-  domain_url = 'https://admin.domio.com.pl',
+  domain_url = 'https://adm.domio.com.pl',
   is_free = false,
   is_active = true
 WHERE lower(name) IN ('panel zarządzania', 'domio administracja')

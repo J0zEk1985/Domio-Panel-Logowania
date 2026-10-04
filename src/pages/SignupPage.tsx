@@ -131,10 +131,16 @@ export default function SignupPage() {
         throw new Error('Nie udało się utworzyć konta')
       }
 
+      // If no session, Auth requires email confirmation
       if (!authData.session) {
-        await supabase.auth.getSession()
+        setError(
+          `Konto zostało utworzone. Sprawdź swoją skrzynkę e-mail (${email}) i kliknij w link potwierdzający, aby dokończyć rejestrację.`
+        )
+        setLoading(false)
+        return
       }
 
+      // Session exists - record consents and redirect
       const acceptedDocumentIds = activeLegalDocs
         .filter(
           (doc) =>

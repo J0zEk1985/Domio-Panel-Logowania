@@ -1,8 +1,8 @@
-import { PDFDocument, rgb, type PDFFont } from 'https://esm.sh/pdf-lib@1.17.1'
-import fontkit from 'https://esm.sh/@pdf-lib/fontkit@1.0.0'
-import { OPEN_SANS_REGULAR_TTF } from './openSansRegular.ts'
+import { PDFDocument, rgb, type PDFFont, StandardFonts } from 'https://esm.sh/pdf-lib@1.17.1'
+// import fontkit from 'https://esm.sh/@pdf-lib/fontkit@1.0.0'
+// import { OPEN_SANS_REGULAR_TTF } from './openSansRegular.ts'
 
-/** Open Sans Regular (Apache License 2.0) — bundled for Polish glyphs. */
+/** Using Helvetica (standard PDF font) to avoid fontkit crashes in Deno isolate. */
 
 export type LegalPdfDocument = {
   id?: string
@@ -36,8 +36,8 @@ const FONT_SIZE_HEADING = 13
 const LINE_HEIGHT = 14
 
 /**
- * fontkit subsetting crashes the Deno isolate (RangeError writeUInt16BE)
- * on some legal-doc glyphs (white bullet, quotes). Map them before drawing.
+ * Helvetica supports Latin-1 (ISO-8859-1) and some extended Latin.
+ * Map Polish diacritics and other glyphs to safe equivalents.
  */
 function sanitizePdfText(text: string): string {
   return (text ?? '')
@@ -46,7 +46,17 @@ function sanitizePdfText(text: string): string {
     .replace(/[\u201c\u201d\u201e\u201f]/g, '"')
     .replace(/[\u2013\u2014]/g, '-')
     .replace(/[\u2022\u25e6\u2219\u00b7]/g, '-')
-    .replace(/[^\n\r\t\u0020-\u007e\u00c0-\u024f]/g, '?')
+    // Polish diacritics fallback (Helvetica may support some via WinAnsi encoding)
+    .replace(/ą/g, 'a').replace(/Ą/g, 'A')
+    .replace(/ć/g, 'c').replace(/Ć/g, 'C')
+    .replace(/ę/g, 'e').replace(/Ę/g, 'E')
+    .replace(/ł/g, 'l').replace(/Ł/g, 'L')
+    .replace(/ń/g, 'n').replace(/Ń/g, 'N')
+    .replace(/ó/g, 'o').replace(/Ó/g, 'O')
+    .replace(/ś/g, 's').replace(/Ś/g, 'S')
+    .replace(/ź/g, 'z').replace(/Ź/g, 'Z')
+    .replace(/ż/g, 'z').replace(/Ż/g, 'Z')
+    .replace(/[^\n\r\t\u0020-\u007e]/g, '?')
 }
 
 function wrapLine(font: PDFFont, text: string, fontSize: number, maxWidth: number): string[] {
@@ -115,14 +125,10 @@ function formatWarsaw(iso: string): string {
   }
 }
 
-async function loadFontBytes(): Promise<Uint8Array> {
-  return OPEN_SANS_REGULAR_TTF
-}
-
 export async function buildLegalAcceptancePdf(meta: LegalPdfMeta): Promise<Uint8Array> {
   const pdf = await PDFDocument.create()
-  pdf.registerFontkit(fontkit)
-  const font = await pdf.embedFont(await loadFontBytes(), { subset: false })
+  // Use Helvetica standard font to avoid fontkit crashes
+  const font = await pdf.embedFont(StandardFonts.Helvetica)
   const maxWidth = PAGE_WIDTH - MARGIN * 2
   const ink = rgb(0.12, 0.12, 0.14)
 

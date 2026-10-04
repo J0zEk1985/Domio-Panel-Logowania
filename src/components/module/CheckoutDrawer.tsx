@@ -111,7 +111,7 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
     setPromoError(null)
     setPromoBusy(true)
     try {
-      const next = await previewPromoCode(promoInput)
+      const next = await previewPromoCode(promoInput, interval)
       setPromo(next)
       toast.success(`Zastosowano kod ${next.code}.`)
     } catch (err) {
@@ -168,7 +168,7 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
       })
       if (promo?.code) {
         try {
-          await redeemPromoCode(promo.code)
+          await redeemPromoCode(promo.code, interval)
         } catch (promoErr) {
           console.error('[CheckoutDrawer] redeem after activate:', promoErr)
         }

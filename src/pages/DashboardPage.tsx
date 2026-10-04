@@ -32,7 +32,10 @@ import {
   isOrgSubscriptionActive,
   type OrgSubscriptionView,
 } from '../lib/orgBilling'
-import { planPriceLabel } from '../lib/pricingDisplay'
+import {
+  formatDatePl,
+  planPriceLabel,
+} from '../lib/pricingDisplay'
 
 function iconForApplication(app: Application): LucideIcon {
   const catalogIcon = catalogModuleForApplication(app)?.icon
@@ -123,10 +126,11 @@ export default function DashboardPage() {
     const plans = plansByAppId.get(app.id) ?? []
     if (!isOrgSubscriptionActive(sub)) return 'Brak aktywnego planu'
     const plan = currentPlanForApp(plans, sub)
-    if (!plan) return 'Subskrypcja aktywna'
+    if (!plan) return `Subskrypcja aktywna · Wygasa: ${formatDatePl(sub?.expires_at)}`
     const extra = sub?.extra_users ?? 0
     const extraLabel = extra > 0 ? ` · +${extra} użytk.` : ''
-    return `Plan ${plan.name} · ${planPriceLabel(plan, sub?.billing_interval === 'yearly')}${extraLabel}`
+    const expiryLabel = sub?.expires_at ? ` · Wygasa: ${formatDatePl(sub.expires_at)}` : ''
+    return `Plan ${plan.name} · ${planPriceLabel(plan, sub?.billing_interval === 'yearly')}${extraLabel}${expiryLabel}`
   }
 
   const applySubscriptionChange = (next: OrgSubscriptionView) => {

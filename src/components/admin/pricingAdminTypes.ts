@@ -35,6 +35,7 @@ export type PromoCodeRow = {
   used_count: number
   valid_until: string | null
   is_active: boolean
+  allowed_billing_intervals: string[] | null
 }
 
 export function emptyPlanForm() {
@@ -61,5 +62,7 @@ export function emptyPromoForm() {
     discountAmount: '',
     maxUses: '',
     validUntil: '',
+    allowMonthly: true,
+    allowYearly: true,
   }
 }

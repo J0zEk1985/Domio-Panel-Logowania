@@ -33,12 +33,15 @@ export default function PromoCodesSection({ promoCodes, onRefresh }: Props) {
     setSectionError(null)
     setEditingPromoId(row.id)
     setIsAddingPromo(true)
+    const intervals = row.allowed_billing_intervals ?? []
     setPromoForm({
       code: row.code,
       discountPercent: row.discount_percent != null ? String(row.discount_percent) : '',
       discountAmount: row.discount_amount != null ? String(row.discount_amount) : '',
       maxUses: row.max_uses != null ? String(row.max_uses) : '',
       validUntil: row.valid_until ? row.valid_until.slice(0, 10) : '',
+      allowMonthly: intervals.length === 0 || intervals.includes('monthly'),
+      allowYearly: intervals.length === 0 || intervals.includes('yearly'),
     })
   }
 
@@ -75,6 +78,18 @@ export default function PromoCodesSection({ promoCodes, onRefresh }: Props) {
 
     const validUntil = promoForm.validUntil.trim() || null
 
+    // Określenie allowed_billing_intervals
+    let allowedBillingIntervals: string[] | null = null
+    if (!promoForm.allowMonthly && !promoForm.allowYearly) {
+      setSectionError('Kod musi być dostępny dla przynajmniej jednego okresu rozliczenia.')
+      return
+    }
+    if (!promoForm.allowMonthly || !promoForm.allowYearly) {
+      allowedBillingIntervals = []
+      if (promoForm.allowMonthly) allowedBillingIntervals.push('monthly')
+      if (promoForm.allowYearly) allowedBillingIntervals.push('yearly')
+    }
+
     setPromoSaving(true)
     try {
       const base = {
@@ -83,6 +98,7 @@ export default function PromoCodesSection({ promoCodes, onRefresh }: Props) {
         discount_amount: discountAmount,
         max_uses: maxUses,
         valid_until: validUntil,
+        allowed_billing_intervals: allowedBillingIntervals,
       }
 
       if (editingPromoId) {
@@ -219,6 +235,32 @@ export default function PromoCodesSection({ promoCodes, onRefresh }: Props) {
               />
             </label>
           </div>
+          <div className="border-t border-border/60 pt-4">
+            <p className="text-sm font-medium text-muted-foreground mb-3">Ograniczenie okresu rozliczenia</p>
+            <div className="flex flex-wrap gap-4">
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="accent-primary h-4 w-4"
+                  checked={promoForm.allowMonthly}
+                  onChange={(e) => setPromoForm((f) => ({ ...f, allowMonthly: e.target.checked }))}
+                />
+                <span className="text-sm">Subskrypcja miesięczna</span>
+              </label>
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="accent-primary h-4 w-4"
+                  checked={promoForm.allowYearly}
+                  onChange={(e) => setPromoForm((f) => ({ ...f, allowYearly: e.target.checked }))}
+                />
+                <span className="text-sm">Subskrypcja roczna</span>
+              </label>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Pozostaw oba zaznaczone, aby kod był dostępny dla wszystkich okresów rozliczenia.
+            </p>
+          </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -252,56 +294,71 @@ export default function PromoCodesSection({ promoCodes, onRefresh }: Props) {
               <th className="p-4 font-medium">Limit użyć</th>
               <th className="p-4 font-medium">Wykorzystano</th>
               <th className="p-4 font-medium">Ważny do</th>
+              <th className="p-4 font-medium">Okres rozliczenia</th>
               <th className="p-4 font-medium">Status</th>
               <th className="p-4 font-medium text-right">Akcje</th>
             </tr>
           </thead>
           <tbody>
-            {promoCodes.map((row) => (
-              <tr key={row.id} className="border-b border-border/40 last:border-0">
-                <td className="p-4 font-mono font-medium">{row.code}</td>
-                <td className="p-4 text-muted-foreground">
-                  {row.discount_percent != null ? `${row.discount_percent}%` : '—'}
-                </td>
-                <td className="p-4 text-muted-foreground">{formatMoneyPln(row.discount_amount)}</td>
-                <td className="p-4 text-muted-foreground">{row.max_uses ?? '∞'}</td>
-                <td className="p-4 text-muted-foreground">{row.used_count}</td>
-                <td className="p-4 text-muted-foreground">{formatDatePl(row.valid_until ?? undefined)}</td>
-                <td className="p-4">
-                  <span
-                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                      row.is_active ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
-                    }`}
-                  >
-                    {row.is_active ? 'Aktywny' : 'Nieaktywny'}
-                  </span>
-                </td>
-                <td className="p-4 text-right whitespace-nowrap">
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 text-primary hover:underline mr-3"
-                    onClick={() => void togglePromoActive(row)}
-                    title={row.is_active ? 'Dezaktywuj' : 'Aktywuj'}
-                  >
-                    <Check className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 text-primary hover:underline mr-3"
-                    onClick={() => openEditPromo(row)}
-                  >
-                    <Edit className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 text-destructive hover:underline"
-                    onClick={() => void deletePromo(row.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {promoCodes.map((row) => {
+              const intervals = row.allowed_billing_intervals ?? []
+              const intervalLabel =
+                intervals.length === 0
+                  ? 'Wszystkie'
+                  : intervals.includes('monthly') && intervals.includes('yearly')
+                    ? 'Wszystkie'
+                    : intervals.includes('monthly')
+                      ? 'Tylko miesięczna'
+                      : intervals.includes('yearly')
+                        ? 'Tylko roczna'
+                        : '—'
+              return (
+                <tr key={row.id} className="border-b border-border/40 last:border-0">
+                  <td className="p-4 font-mono font-medium">{row.code}</td>
+                  <td className="p-4 text-muted-foreground">
+                    {row.discount_percent != null ? `${row.discount_percent}%` : '—'}
+                  </td>
+                  <td className="p-4 text-muted-foreground">{formatMoneyPln(row.discount_amount)}</td>
+                  <td className="p-4 text-muted-foreground">{row.max_uses ?? '∞'}</td>
+                  <td className="p-4 text-muted-foreground">{row.used_count}</td>
+                  <td className="p-4 text-muted-foreground">{formatDatePl(row.valid_until ?? undefined)}</td>
+                  <td className="p-4 text-muted-foreground text-sm">{intervalLabel}</td>
+                  <td className="p-4">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                        row.is_active ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {row.is_active ? 'Aktywny' : 'Nieaktywny'}
+                    </span>
+                  </td>
+                  <td className="p-4 text-right whitespace-nowrap">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 text-primary hover:underline mr-3"
+                      onClick={() => void togglePromoActive(row)}
+                      title={row.is_active ? 'Dezaktywuj' : 'Aktywuj'}
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 text-primary hover:underline mr-3"
+                      onClick={() => openEditPromo(row)}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 text-destructive hover:underline"
+                      onClick={() => void deletePromo(row.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
         {promoCodes.length === 0 && (
