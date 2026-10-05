@@ -72,7 +72,16 @@ export function addressFromGus(gus: BillingGusPreview): string {
     .map((part) => part?.trim())
     .filter((part): part is string => Boolean(part))
     .join(' ')
-  return line || gus.seatFullAddress || ''
+  if (line) return line
+  const full = gus.seatFullAddress?.trim() ?? ''
+  if (!full) return ''
+  const city = gus.city?.trim()
+  const postal = gus.postalCode?.trim()
+  return full
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part && part !== city && part !== postal)
+    .join(' ')
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
