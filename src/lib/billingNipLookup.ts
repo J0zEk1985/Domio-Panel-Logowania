@@ -68,20 +68,24 @@ export function billingNipErrorMessage(code: string): string {
 }
 
 export function addressFromGus(gus: BillingGusPreview): string {
-  const line = [gus.street, gus.buildingNumber, gus.apartmentNumber]
-    .map((part) => part?.trim())
-    .filter((part): part is string => Boolean(part))
-    .join(' ')
-  if (line) return line
+  const street = (gus.street ?? '').trim()
+  const hasStreetName = /[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]/.test(street) && !/^\d+$/.test(street)
+  if (hasStreetName) {
+    return [street, gus.buildingNumber, gus.apartmentNumber]
+      .map((part) => part?.trim())
+      .filter((part): part is string => Boolean(part))
+      .join(' ')
+  }
   const full = gus.seatFullAddress?.trim() ?? ''
   if (!full) return ''
   const city = gus.city?.trim()
   const postal = gus.postalCode?.trim()
-  return full
+  const line = full
     .split(',')
     .map((part) => part.trim())
-    .filter((part) => part && part !== city && part !== postal)
+    .filter((part) => part && part !== city && part !== postal && /[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]/.test(part))
     .join(' ')
+  return line
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

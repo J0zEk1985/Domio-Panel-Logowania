@@ -50,6 +50,8 @@ function escapeRegExp(value: string): string {
 function decodeXmlEntities(value: string): string {
   return value
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&#xD;/gi, '')
+    .replace(/&#10;/g, '\n')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
@@ -144,10 +146,34 @@ function envelope(action: string, body: string): string {
 </soap:Envelope>`
 }
 
+function soapEnvelopeFromHttpBody(raw: string): string {
+  const match = raw.match(/<(?:\w+:)?Envelope\b[\s\S]*<\/(?:\w+:)?Envelope>/i)
+  return match ? match[0] : raw
+}
+
+function resolveXopIncludes(httpBody: string, soapXml: string): string {
+  const includeRe = /<(?:[\w-]+:)?Include\b[^>]*href="cid:([^"]+)"[^>]*\/?>/gi
+  return soapXml.replace(includeRe, (_whole, cid: string) => {
+    const id = String(cid).replace(/^<|>$/g, '')
+    const escaped = escapeRegExp(id)
+    const partRe = new RegExp(
+      `Content-ID:\\s*<?${escaped}>?[\\s\\S]*?\\r?\\n\\r?\\n([\\s\\S]*?)(?:\\r?\\n--|$)`,
+      'i',
+    )
+    const part = httpBody.match(partRe)
+    return part?.[1]?.trim() ?? ''
+  })
+}
+
+function soapDocument(httpBody: string): string {
+  return resolveXopIncludes(httpBody, soapEnvelopeFromHttpBody(httpBody))
+}
+
 async function soapCall(action: string, body: string, sid?: string): Promise<string> {
   const url = endpoint()
   const headers: Record<string, string> = {
     'Content-Type': 'application/soap+xml; charset=utf-8',
+    Accept: 'application/soap+xml, text/xml, application/xml',
   }
   if (sid) headers.sid = sid
   const res = await fetch(url, {
@@ -159,7 +185,7 @@ async function soapCall(action: string, body: string, sid?: string): Promise<str
   if (!res.ok) {
     throw new Error(`GUS_HTTP_${res.status}`)
   }
-  return text
+  return soapDocument(text)
 }
 
 function formatPostal(raw: string | null): string | null {
@@ -187,53 +213,87 @@ function mapKind(legalName: string, formName: string | null): 'housing_community
   return 'company'
 }
 
+function looksLikePlaceName(value: string | null): boolean {
+  if (!value) return false
+  const v = value.trim()
+  if (!v) return false
+  if (/^\d+$/.test(v)) return false
+  return /[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]/.test(v)
+}
+
+function pickNamed(searchInner: string, reportInner: string, reportTags: string[], searchTags: string[]): string | null {
+  const fromReport = firstXmlValue(reportInner, reportTags)
+  if (looksLikePlaceName(fromReport)) return fromReport
+  const fromSearch = firstXmlValue(searchInner, searchTags)
+  if (looksLikePlaceName(fromSearch)) return fromSearch
+  return fromReport ?? fromSearch
+}
+
+function pickCode(searchInner: string, reportInner: string, reportTags: string[], searchTags: string[]): string | null {
+  return firstXmlValue(reportInner, reportTags) ?? firstXmlValue(searchInner, searchTags)
+}
+
 function toPreview(searchInner: string, reportInner: string): GusPreview | null {
   const blob = `${searchInner}\n${reportInner}`
   const legalName = xmlTag(searchInner, 'Nazwa')
   const nip = (xmlTag(searchInner, 'Nip') ?? xmlTag(reportInner, 'praw_nip') ?? xmlTag(reportInner, 'fiz_nip') ?? '').replace(/\D/g, '')
   if (!legalName || nip.length !== 10) return null
 
-  const street = firstXmlValue(blob, [
-    'Ulica',
-    'praw_adSiedzUlica_Nazwa',
-    'fiz_adSiedzUlica_Nazwa',
-    'lokpraw_adSiedzUlica_Nazwa',
-    'lokfiz_adSiedzUlica_Nazwa',
-    'praw_adKorUlica_Nazwa',
-    'fiz_adKorUlica_Nazwa',
-  ])
-  const buildingNumber = firstXmlValue(blob, [
-    'NrNieruchomosci',
-    'praw_adSiedzNumerNieruchomosci',
-    'fiz_adSiedzNumerNieruchomosci',
-    'lokpraw_adSiedzNumerNieruchomosci',
-    'lokfiz_adSiedzNumerNieruchomosci',
-  ])
-  const apartmentNumber = firstXmlValue(blob, [
-    'NrLokalu',
-    'praw_adSiedzNumerLokalu',
-    'fiz_adSiedzNumerLokalu',
-    'lokpraw_adSiedzNumerLokalu',
-    'lokfiz_adSiedzNumerLokalu',
-  ])
-  const city = firstXmlValue(blob, [
-    'Miejscowosc',
-    'praw_adSiedzMiejscowosc_Nazwa',
-    'fiz_adSiedzMiejscowosc_Nazwa',
-    'lokpraw_adSiedzMiejscowosc_Nazwa',
-    'lokfiz_adSiedzMiejscowosc_Nazwa',
-    'MiejscowoscPoczty',
-    'praw_adSiedzMiejscowoscPoczty_Nazwa',
-    'fiz_adSiedzMiejscowoscPoczty_Nazwa',
-  ])
+  const street = pickNamed(
+    searchInner,
+    reportInner,
+    [
+      'praw_adSiedzUlica_Nazwa',
+      'fiz_adSiedzUlica_Nazwa',
+      'lokpraw_adSiedzUlica_Nazwa',
+      'lokfiz_adSiedzUlica_Nazwa',
+      'praw_adKorUlica_Nazwa',
+      'fiz_adKorUlica_Nazwa',
+    ],
+    ['Ulica'],
+  )
+  const buildingNumber = pickCode(
+    searchInner,
+    reportInner,
+    [
+      'praw_adSiedzNumerNieruchomosci',
+      'fiz_adSiedzNumerNieruchomosci',
+      'lokpraw_adSiedzNumerNieruchomosci',
+      'lokfiz_adSiedzNumerNieruchomosci',
+    ],
+    ['NrNieruchomosci'],
+  )
+  const apartmentNumber = pickCode(
+    searchInner,
+    reportInner,
+    [
+      'praw_adSiedzNumerLokalu',
+      'fiz_adSiedzNumerLokalu',
+      'lokpraw_adSiedzNumerLokalu',
+      'lokfiz_adSiedzNumerLokalu',
+    ],
+    ['NrLokalu'],
+  )
+  const city = pickNamed(
+    searchInner,
+    reportInner,
+    [
+      'praw_adSiedzMiejscowosc_Nazwa',
+      'fiz_adSiedzMiejscowosc_Nazwa',
+      'lokpraw_adSiedzMiejscowosc_Nazwa',
+      'lokfiz_adSiedzMiejscowosc_Nazwa',
+      'praw_adSiedzMiejscowoscPoczty_Nazwa',
+      'fiz_adSiedzMiejscowoscPoczty_Nazwa',
+    ],
+    ['Miejscowosc', 'MiejscowoscPoczty'],
+  )
   const postalCode = formatPostal(
-    firstXmlValue(blob, [
-      'KodPocztowy',
-      'praw_adSiedzKodPocztowy',
-      'fiz_adSiedzKodPocztowy',
-      'lokpraw_adSiedzKodPocztowy',
-      'lokfiz_adSiedzKodPocztowy',
-    ]),
+    pickCode(
+      searchInner,
+      reportInner,
+      ['praw_adSiedzKodPocztowy', 'fiz_adSiedzKodPocztowy', 'lokpraw_adSiedzKodPocztowy', 'lokfiz_adSiedzKodPocztowy'],
+      ['KodPocztowy'],
+    ),
   )
   const seatFullAddress = [street, buildingNumber, apartmentNumber, postalCode, city]
     .filter(Boolean)
@@ -291,6 +351,9 @@ export async function fetchGusByNip(nip: string): Promise<{ preview: GusPreview 
     )
 
     const searchInner = unwrapBirResult(searchXml, 'DaneSzukajPodmiotyResult')
+    if (xmlTag(searchInner, 'ErrorCode')) {
+      return { preview: null, suggestedKind: 'company' }
+    }
     const regon = xmlTag(searchInner, 'Regon')
     const typ = xmlTag(searchInner, 'Typ')
     const silos = xmlTag(searchInner, 'SilosID')
