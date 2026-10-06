@@ -25,7 +25,7 @@ export const SubscriptionStatusSchema = z.enum([
 ]);
 
 // Pricing Plans
-export const CreatePricingPlanSchema = z.object({
+const PricingPlanObjectSchema = z.object({
   module: AppModuleSchema,
   display_name: z.string().min(1).max(200),
   description: z.string().optional(),
@@ -39,7 +39,9 @@ export const CreatePricingPlanSchema = z.object({
   terms_conditions: z.string().optional(),
   available_from: z.string().datetime().optional(),
   available_until: z.string().datetime().optional()
-}).refine(
+});
+
+export const CreatePricingPlanSchema = PricingPlanObjectSchema.refine(
   (data) => {
     // Unit-based plans must have price_per_unit and min_price
     if (data.is_unit_based) {
@@ -66,7 +68,7 @@ export const CreatePricingPlanSchema = z.object({
   }
 );
 
-export const UpdatePricingPlanSchema = CreatePricingPlanSchema.partial();
+export const UpdatePricingPlanSchema = PricingPlanObjectSchema.partial();
 
 // Calculate Price
 export const CalculatePriceSchema = z.object({

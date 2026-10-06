@@ -336,28 +336,15 @@ CREATE POLICY pricing_plans_select
   ON public.module_pricing_plans
   FOR SELECT
   TO authenticated
-  USING (is_active = true);
+  USING (is_active = true OR public.is_platform_admin());
 
 DROP POLICY IF EXISTS pricing_plans_write ON public.module_pricing_plans;
 CREATE POLICY pricing_plans_write
   ON public.module_pricing_plans
   FOR ALL
   TO authenticated
-  USING (
-    -- Only service owner can manage plans (to be implemented: check owner role)
-    EXISTS (
-      SELECT 1 FROM public.memberships m
-      WHERE m.user_id = auth.uid() 
-        AND m.role IN ('owner', 'wlasciciel', 'super_admin')
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.memberships m
-      WHERE m.user_id = auth.uid() 
-        AND m.role IN ('owner', 'wlasciciel', 'super_admin')
-    )
-  );
+  USING (public.is_platform_admin())
+  WITH CHECK (public.is_platform_admin());
 
 -- Subscriptions: Purchaser org members can view their subscriptions
 DROP POLICY IF EXISTS module_subscriptions_select ON public.module_subscriptions;
@@ -512,7 +499,7 @@ CREATE TRIGGER payment_intents_updated_at
 -- 9. GRANTS
 -- ---------------------------------------------------------------------------
 
-GRANT SELECT ON public.module_pricing_plans TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.module_pricing_plans TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.module_subscriptions TO authenticated;
 GRANT SELECT ON public.module_access_grants TO authenticated;
 GRANT SELECT ON public.subscription_events TO authenticated;

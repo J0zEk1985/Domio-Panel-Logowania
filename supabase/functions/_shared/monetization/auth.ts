@@ -110,14 +110,13 @@ export async function requireServiceOwner(
   userId: string
 ): Promise<boolean | Response> {
   const { data, error } = await supabase
-    .from('memberships')
-    .select('role')
-    .eq('user_id', userId)
-    .in('role', ['owner', 'wlasciciel', 'super_admin'])
-    .single();
+    .from('profiles')
+    .select('platform_role')
+    .eq('id', userId)
+    .maybeSingle();
 
-  if (error || !data) {
-    return forbiddenError('You must be a service owner to perform this action');
+  if (error || data?.platform_role !== 'admin') {
+    return forbiddenError('You must be a platform admin to perform this action');
   }
 
   return true;

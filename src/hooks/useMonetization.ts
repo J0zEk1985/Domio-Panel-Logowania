@@ -51,22 +51,43 @@ class MonetizationApiClient {
         return { data: null, error: 'Brak autoryzacji' }
       }
 
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
+          apikey: anonKey,
         },
         body: body ? JSON.stringify(body) : undefined,
       })
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: response.statusText }))
-        return { data: null, error: errorData.error || `HTTP ${response.status}` }
+      const payload = await response.json().catch(() => null)
+      const errorMessage = (value: unknown): string => {
+        if (!value || typeof value !== 'object') return `HTTP ${response.status}`
+        const record = value as { error?: unknown; msg?: unknown }
+        if (typeof record.error === 'string') return record.error
+        if (record.error && typeof record.error === 'object' && 'message' in record.error) {
+          const message = (record.error as { message?: unknown }).message
+          if (typeof message === 'string') return message
+        }
+        if (typeof record.msg === 'string') return record.msg
+        return `HTTP ${response.status}`
       }
 
-      const data = await response.json()
-      return { data, error: null }
+      if (!response.ok) {
+        return { data: null, error: errorMessage(payload) }
+      }
+
+      if (payload && typeof payload === 'object' && 'success' in payload) {
+        const envelope = payload as { success: boolean; data?: T; error?: unknown }
+        if (!envelope.success) {
+          return { data: null, error: errorMessage(envelope) }
+        }
+        return { data: (envelope.data ?? null) as T | null, error: null }
+      }
+
+      return { data: payload as T, error: null }
     } catch (err) {
       console.error(`[MonetizationAPI] ${functionName} error:`, err)
       return {
@@ -90,7 +111,7 @@ class MonetizationApiClient {
   }
 
   async getPricingPlan(id: string): Promise<{ data: PricingPlan | null; error: string | null }> {
-    return this.callFunction<PricingPlan>('pricing-plans', { query: { id } })
+    return this.callFunction<PricingPlan>(`pricing-plans/${id}`)
   }
 
   async createPricingPlan(
@@ -106,16 +127,15 @@ class MonetizationApiClient {
     id: string,
     input: Partial<CreatePricingPlanInput>
   ): Promise<{ data: PricingPlan | null; error: string | null }> {
-    return this.callFunction<PricingPlan>('pricing-plans', {
+    return this.callFunction<PricingPlan>(`pricing-plans/${id}`, {
       method: 'PUT',
-      body: { ...input, id },
+      body: input,
     })
   }
 
   async deletePricingPlan(id: string): Promise<{ data: void | null; error: string | null }> {
-    return this.callFunction('pricing-plans', {
+    return this.callFunction(`pricing-plans/${id}`, {
       method: 'DELETE',
-      query: { id },
     })
   }
 
@@ -126,15 +146,10 @@ class MonetizationApiClient {
     billing_interval: BillingInterval
     unit_count?: number
   }): Promise<{ data: CalculatePriceResponse | null; error: string | null }> {
-    const query: Record<string, string> = {
-      plan_id: params.plan_id,
-      billing_interval: params.billing_interval,
-    }
-    if (params.unit_count !== undefined) {
-      query.unit_count = String(params.unit_count)
-    }
-
-    return this.callFunction<CalculatePriceResponse>('calculate-price', { query })
+    return this.callFunction<CalculatePriceResponse>('calculate-price', {
+      method: 'POST',
+      body: params,
+    })
   }
 
   // ========== SUBSCRIPTIONS ==========
@@ -157,7 +172,7 @@ class MonetizationApiClient {
   async getSubscription(
     id: string
   ): Promise<{ data: ModuleSubscription | null; error: string | null }> {
-    return this.callFunction<ModuleSubscription>('subscriptions', { query: { id } })
+    return this.callFunction<ModuleSubscription>(`subscriptions/${id}`)
   }
 
   async purchaseSubscription(
@@ -172,9 +187,9 @@ class MonetizationApiClient {
   async cancelSubscription(
     id: string
   ): Promise<{ data: ModuleSubscription | null; error: string | null }> {
-    return this.callFunction<ModuleSubscription>('subscriptions', {
+    return this.callFunction<ModuleSubscription>(`subscriptions/${id}/cancel`, {
       method: 'POST',
-      body: { id, action: 'cancel' },
+      body: {},
     })
   }
 
@@ -182,9 +197,9 @@ class MonetizationApiClient {
     id: string,
     billing_interval: BillingInterval
   ): Promise<{ data: ModuleSubscription | null; error: string | null }> {
-    return this.callFunction<ModuleSubscription>('subscriptions', {
+    return this.callFunction<ModuleSubscription>(`subscriptions/${id}/renew`, {
       method: 'POST',
-      body: { id, action: 'renew', billing_interval },
+      body: { billing_interval },
     })
   }
 
@@ -203,15 +218,10 @@ class MonetizationApiClient {
   async checkAccess(
     input: CheckAccessInput
   ): Promise<{ data: CheckAccessResult | null; error: string | null }> {
-    const query: Record<string, string> = {
-      org_id: input.org_id,
-      module: input.module,
-    }
-    if (input.community_id) {
-      query.community_id = input.community_id
-    }
-
-    return this.callFunction<CheckAccessResult>('check-access', { query })
+    return this.callFunction<CheckAccessResult>('check-access', {
+      method: 'POST',
+      body: input,
+    })
   }
 
   // ========== TRIAL GRANTS ==========
@@ -252,7 +262,8 @@ export function usePricingPlans(module?: AppModule, isActive?: boolean) {
     if (result.error) {
       setError(result.error)
     } else {
-      setPlans(result.data ?? [])
+      const payload = result.data as PricingPlan[] | { plans?: PricingPlan[] } | null
+      setPlans(Array.isArray(payload) ? payload : payload?.plans ?? [])
     }
     setLoading(false)
   }, [module, isActive])
@@ -315,7 +326,8 @@ export function useSubscriptions(filters?: {
     if (result.error) {
       setError(result.error)
     } else {
-      setSubscriptions(result.data ?? [])
+      const payload = result.data as ModuleSubscription[] | { subscriptions?: ModuleSubscription[] } | null
+      setSubscriptions(Array.isArray(payload) ? payload : payload?.subscriptions ?? [])
     }
     setLoading(false)
   }, [filters?.org_id, filters?.community_id, filters?.module, filters?.status])
