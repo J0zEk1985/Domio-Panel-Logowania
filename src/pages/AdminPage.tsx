@@ -19,6 +19,7 @@ import { countPlatformVerificationAlerts } from '../lib/legalEntityAdminApi'
 import { Navbar } from '../components/landing/Navbar'
 import { Footer } from '../components/landing/Footer'
 import PricingAdminTab from '../components/admin/PricingAdminTab'
+import MonetizationAdminTab from '../components/admin/MonetizationAdminTab'
 import LegalAdminTab from '../components/admin/LegalAdminTab'
 import UsersAndOrgsTab from '../components/admin/UsersAndOrgsTab'
 import SubscriptionsAdminTab from '../components/admin/SubscriptionsAdminTab'
@@ -41,7 +42,7 @@ function pendingVerificationCopy(count: number): string {
   return `${count} pozycji czeka na obsługę`
 }
 
-type AdminTab = 'dashboard' | 'users' | 'subscriptions' | 'pricing' | 'partner-offers' | 'legal' | 'settings' | 'entity-verification'
+type AdminTab = 'dashboard' | 'users' | 'subscriptions' | 'pricing' | 'partner-offers' | 'legal' | 'settings' | 'entity-verification' | 'monetization'
 
 const sidebarNav: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Pulpit', icon: LayoutDashboard },
@@ -49,6 +50,7 @@ const sidebarNav: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[
   { id: 'users', label: 'Użytkownicy i Firmy', icon: Users },
   { id: 'subscriptions', label: 'Globalne subskrypcje', icon: CreditCard },
   { id: 'pricing', label: 'Cennik i Promocje', icon: Tag },
+  { id: 'monetization', label: 'Plany modułów', icon: DollarSign },
   { id: 'partner-offers', label: 'Oferty Partnerskie', icon: Handshake },
   { id: 'legal', label: 'Dokumenty prawne', icon: FileText },
   { id: 'settings', label: 'Ustawienia', icon: Settings },
@@ -271,6 +273,8 @@ export default function AdminPage() {
             {activeTab === 'subscriptions' && <SubscriptionsAdminTab />}
 
             {activeTab === 'pricing' && <PricingAdminTab />}
+
+            {activeTab === 'monetization' && <MonetizationAdminTab />}
 
             {activeTab === 'partner-offers' && <PartnerOffersAdminTab />}
 

@@ -5,6 +5,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   Building2,
   Car,
+  CreditCard,
   Home,
   LayoutGrid,
   ShieldCheck,
@@ -232,28 +233,45 @@ export default function DashboardPage() {
             )}
           </motion.div>
 
-          {billingOrgId ? (
-            <div className="mb-12">
+          <div className="grid gap-4 md:grid-cols-2 mb-12">
+            {billingOrgId ? (
               <OrgCompanyCard orgId={billingOrgId} canManage={canManageOrgProfile} />
-            </div>
-          ) : (
-            <section className="mb-12 rounded-2xl border border-border bg-card p-5 space-y-3">
+            ) : (
+              <section className="rounded-2xl border border-border bg-card p-5 space-y-3">
+                <h2 className="font-display text-lg font-semibold flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-primary" aria-hidden />
+                  Dane firmy
+                </h2>
+                <p className="text-sm text-muted-foreground max-w-2xl">
+                  Dane firmy (nazwa, NIP, adres) uzupełnisz przy pierwszym zakupie planu albo wcześniej w ustawieniach
+                  firmy.
+                </p>
+                <Link
+                  to="/firma"
+                  className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-muted/60"
+                >
+                  Uzupełnij dane firmy
+                </Link>
+              </section>
+            )}
+            
+            {/* Module Subscriptions Card */}
+            <section className="rounded-2xl border border-border bg-card p-5 space-y-3">
               <h2 className="font-display text-lg font-semibold flex items-center gap-2">
-                <Building2 className="h-5 w-5 text-primary" aria-hidden />
-                Dane firmy
+                <CreditCard className="h-5 w-5 text-primary" aria-hidden />
+                Subskrypcje modułów
               </h2>
               <p className="text-sm text-muted-foreground max-w-2xl">
-                Dane firmy (nazwa, NIP, adres) uzupełnisz przy pierwszym zakupie planu albo wcześniej w ustawieniach
-                firmy.
+                Zarządzaj dostępem do modułów DOMIO Home, Usterki Deweloperskie i innych.
               </p>
               <Link
-                to="/firma"
+                to="/subscriptions"
                 className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-muted/60"
               >
-                Uzupełnij dane firmy
+                Otwórz sklep
               </Link>
             </section>
-          )}
+          </div>
 
           {!loading && extraModules.length > 0 && (
             <motion.div

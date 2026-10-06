@@ -62,7 +62,7 @@ function unwrapList(parsed, keys = []) {
 const ENUMS = [
   ["community_post_status", "active|completed|cancelled|deleted"],
   ["community_post_type", "offer|request|event|general"],
-  ["company_category", "contractor|insurer|utility|other"],
+  ["company_category", "contractor|insurer|other"],
   ["cooperation_link_status", "active|paused"],
   ["domio_module", "admin|cleaning|maintenance"],
   ["eboard_msg_status", "published|pending_moderation|archived"],

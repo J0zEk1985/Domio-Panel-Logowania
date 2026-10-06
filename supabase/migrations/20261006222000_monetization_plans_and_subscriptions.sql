@@ -54,7 +54,7 @@ END $$;
 -- 2. PRICING PLANS (Service Owner Configuration)
 -- ---------------------------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS public.pricing_plans (
+CREATE TABLE IF NOT EXISTS public.module_pricing_plans (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   
   -- Module identification
@@ -104,19 +104,19 @@ CREATE TABLE IF NOT EXISTS public.pricing_plans (
     CHECK (jsonb_typeof(features) = 'array')
 );
 
-CREATE INDEX idx_pricing_plans_module ON public.pricing_plans(module) WHERE is_active = true;
-CREATE INDEX idx_pricing_plans_active ON public.pricing_plans(is_active, available_from, available_until);
+CREATE INDEX idx_pricing_plans_module ON public.module_pricing_plans(module) WHERE is_active = true;
+CREATE INDEX idx_pricing_plans_active ON public.module_pricing_plans(is_active, available_from, available_until);
 
-COMMENT ON TABLE public.pricing_plans IS 
+COMMENT ON TABLE public.module_pricing_plans IS 
   'Service Owner pricing configuration. Unit-based plans (home) calculate price dynamically. Flat plans have fixed monthly/yearly rates.';
 
-COMMENT ON COLUMN public.pricing_plans.is_global IS 
+COMMENT ON COLUMN public.module_pricing_plans.is_global IS 
   'If true, subscription applies to entire org and all its communities (developer_warranty). If false, subscription is per-community (home).';
 
-COMMENT ON COLUMN public.pricing_plans.price_per_unit IS 
+COMMENT ON COLUMN public.module_pricing_plans.price_per_unit IS 
   'Cost per residential unit (excluding technical rooms). Used when is_unit_based = true.';
 
-COMMENT ON COLUMN public.pricing_plans.min_price IS 
+COMMENT ON COLUMN public.module_pricing_plans.min_price IS 
   'Minimum charge regardless of unit count. Example: 2 PLN/unit but minimum 99 PLN.';
 
 -- ---------------------------------------------------------------------------
@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS public.module_subscriptions (
   invoice_entity_community_id uuid REFERENCES public.communities(id) ON DELETE SET NULL,
   
   -- Plan reference
-  plan_id uuid NOT NULL REFERENCES public.pricing_plans(id) ON DELETE RESTRICT,
+  plan_id uuid NOT NULL REFERENCES public.module_pricing_plans(id) ON DELETE RESTRICT,
   module public.app_module NOT NULL,
   
   -- Status
@@ -165,11 +165,6 @@ CREATE TABLE IF NOT EXISTS public.module_subscriptions (
   updated_at timestamptz NOT NULL DEFAULT now(),
   
   -- Constraints
-  CONSTRAINT module_subscriptions_global_no_community
-    CHECK (
-      (beneficiary_community_id IS NULL) = 
-      (SELECT is_global FROM public.pricing_plans WHERE id = plan_id)
-    ),
   CONSTRAINT module_subscriptions_blocked_requires_reason
     CHECK (
       status != 'blocked_pending_payment' 
@@ -282,7 +277,7 @@ CREATE TABLE IF NOT EXISTS public.subscription_payment_intents (
   -- Purchase details
   purchaser_org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   beneficiary_community_id uuid REFERENCES public.communities(id) ON DELETE CASCADE,
-  plan_id uuid NOT NULL REFERENCES public.pricing_plans(id) ON DELETE RESTRICT,
+  plan_id uuid NOT NULL REFERENCES public.module_pricing_plans(id) ON DELETE RESTRICT,
   
   -- Invoice data
   invoice_entity_community_id uuid REFERENCES public.communities(id) ON DELETE SET NULL,
@@ -329,23 +324,23 @@ COMMENT ON TABLE public.subscription_payment_intents IS
 -- 7. RLS POLICIES (Security Layer)
 -- ---------------------------------------------------------------------------
 
-ALTER TABLE public.pricing_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.module_pricing_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.module_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.module_access_grants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subscription_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subscription_payment_intents ENABLE ROW LEVEL SECURITY;
 
 -- Pricing Plans: Service Owner (Super Admin) only for write, authenticated read for active plans
-DROP POLICY IF EXISTS pricing_plans_select ON public.pricing_plans;
+DROP POLICY IF EXISTS pricing_plans_select ON public.module_pricing_plans;
 CREATE POLICY pricing_plans_select
-  ON public.pricing_plans
+  ON public.module_pricing_plans
   FOR SELECT
   TO authenticated
   USING (is_active = true);
 
-DROP POLICY IF EXISTS pricing_plans_write ON public.pricing_plans;
+DROP POLICY IF EXISTS pricing_plans_write ON public.module_pricing_plans;
 CREATE POLICY pricing_plans_write
-  ON public.pricing_plans
+  ON public.module_pricing_plans
   FOR ALL
   TO authenticated
   USING (
@@ -454,9 +449,44 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS pricing_plans_updated_at ON public.pricing_plans;
+CREATE OR REPLACE FUNCTION public.enforce_module_subscription_plan_scope()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_is_global boolean;
+BEGIN
+  SELECT is_global INTO v_is_global
+  FROM public.module_pricing_plans
+  WHERE id = NEW.plan_id;
+
+  IF v_is_global IS NULL THEN
+    RAISE EXCEPTION 'Unknown pricing plan %', NEW.plan_id;
+  END IF;
+
+  IF v_is_global AND NEW.beneficiary_community_id IS NOT NULL THEN
+    RAISE EXCEPTION 'Global plan cannot be bound to a single community';
+  END IF;
+
+  IF NOT v_is_global AND NEW.beneficiary_community_id IS NULL THEN
+    RAISE EXCEPTION 'Community plan requires beneficiary_community_id';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS module_subscriptions_plan_scope ON public.module_subscriptions;
+CREATE TRIGGER module_subscriptions_plan_scope
+  BEFORE INSERT OR UPDATE OF plan_id, beneficiary_community_id
+  ON public.module_subscriptions
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_module_subscription_plan_scope();
+
+DROP TRIGGER IF EXISTS pricing_plans_updated_at ON public.module_pricing_plans;
 CREATE TRIGGER pricing_plans_updated_at
-  BEFORE UPDATE ON public.pricing_plans
+  BEFORE UPDATE ON public.module_pricing_plans
   FOR EACH ROW
   EXECUTE FUNCTION public.trigger_set_updated_at();
 
@@ -482,13 +512,13 @@ CREATE TRIGGER payment_intents_updated_at
 -- 9. GRANTS
 -- ---------------------------------------------------------------------------
 
-GRANT SELECT ON public.pricing_plans TO authenticated;
+GRANT SELECT ON public.module_pricing_plans TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.module_subscriptions TO authenticated;
 GRANT SELECT ON public.module_access_grants TO authenticated;
 GRANT SELECT ON public.subscription_events TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.subscription_payment_intents TO authenticated;
 
-REVOKE ALL ON public.pricing_plans FROM anon;
+REVOKE ALL ON public.module_pricing_plans FROM anon;
 REVOKE ALL ON public.module_subscriptions FROM anon;
 REVOKE ALL ON public.module_access_grants FROM anon;
 REVOKE ALL ON public.subscription_events FROM anon;

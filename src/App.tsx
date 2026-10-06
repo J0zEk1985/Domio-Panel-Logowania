@@ -10,6 +10,7 @@ import SignupConfirmedPage from './pages/SignupConfirmedPage'
 import SignupSentPage from './pages/SignupSentPage'
 import DashboardPage from './pages/DashboardPage'
 import CompanySettingsPage from './pages/CompanySettingsPage'
+import SubscriptionsPage from './pages/SubscriptionsPage'
 import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
 import CookiesPage from './pages/CookiesPage'
@@ -241,6 +242,10 @@ function App() {
       <Route
         path="/firma"
         element={session ? <LegalConsentGate><CompanySettingsPage /></LegalConsentGate> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/subscriptions"
+        element={session ? <LegalConsentGate><SubscriptionsPage /></LegalConsentGate> : <Navigate to="/login" replace />}
       />
       <Route
         path="/admin"

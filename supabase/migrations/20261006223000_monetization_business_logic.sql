@@ -48,7 +48,7 @@ SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
 DECLARE
-  v_plan public.pricing_plans%ROWTYPE;
+  v_plan public.module_pricing_plans%ROWTYPE;
   v_calculated numeric;
 BEGIN
   IF p_unit_count IS NULL OR p_unit_count < 0 THEN
@@ -56,7 +56,7 @@ BEGIN
   END IF;
 
   SELECT * INTO v_plan
-  FROM public.pricing_plans
+  FROM public.module_pricing_plans
   WHERE id = p_plan_id;
 
   IF NOT FOUND THEN
@@ -286,7 +286,7 @@ SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
 DECLARE
-  v_plan public.pricing_plans%ROWTYPE;
+  v_plan public.module_pricing_plans%ROWTYPE;
 BEGIN
   -- Only when subscription becomes active
   IF NEW.status != 'active' THEN
@@ -300,7 +300,7 @@ BEGIN
 
   -- Get plan details
   SELECT * INTO v_plan
-  FROM public.pricing_plans
+  FROM public.module_pricing_plans
   WHERE id = NEW.plan_id;
 
   IF NOT FOUND THEN

@@ -4977,7 +4977,7 @@ export type Database = {
     Enums: {
       community_post_status: "active" | "completed" | "cancelled" | "deleted"
       community_post_type: "offer" | "request" | "event" | "general"
-      company_category: "contractor" | "insurer" | "utility" | "other"
+      company_category: "contractor" | "insurer" | "other"
       eboard_msg_status: "published" | "pending_moderation" | "archived"
       eboard_msg_type: "official" | "advertisement" | "resident"
       fleet_role: "admin" | "driver"
@@ -5185,7 +5185,7 @@ export const Constants = {
     Enums: {
       community_post_status: ["active", "completed", "cancelled", "deleted"],
       community_post_type: ["offer", "request", "event", "general"],
-      company_category: ["contractor", "insurer", "utility", "other"],
+      company_category: ["contractor", "insurer", "other"],
       eboard_msg_status: ["published", "pending_moderation", "archived"],
       eboard_msg_type: ["official", "advertisement", "resident"],
       fleet_role: ["admin", "driver"],

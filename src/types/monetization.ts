@@ -79,6 +79,7 @@ export interface CreatePricingPlanInput {
   min_price?: number
   price_monthly?: number
   price_yearly?: number
+  is_active?: boolean
   features?: string[]
   terms_conditions?: string
   available_from?: string
