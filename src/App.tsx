@@ -12,6 +12,7 @@ import DashboardPage from './pages/DashboardPage'
 import CompanySettingsPage from './pages/CompanySettingsPage'
 import SubscriptionsPage from './pages/SubscriptionsPage'
 import TermsPage from './pages/TermsPage'
+import PlanTermsPage from './pages/PlanTermsPage'
 import PrivacyPage from './pages/PrivacyPage'
 import CookiesPage from './pages/CookiesPage'
 import MarketingPage from './pages/MarketingPage'
@@ -258,6 +259,18 @@ function App() {
         }
       />
       <Route path="/regulamin" element={<TermsPage />} />
+      <Route
+        path="/regulamin-uslugi/:planId"
+        element={
+          session ? (
+            <LegalConsentGate>
+              <PlanTermsPage />
+            </LegalConsentGate>
+          ) : (
+            <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`} replace />
+          )
+        }
+      />
       <Route path="/polityka-prywatnosci" element={<PrivacyPage />} />
       <Route path="/polityka-cookies" element={<CookiesPage />} />
       <Route path="/zgody-marketingowe" element={<MarketingPage />} />

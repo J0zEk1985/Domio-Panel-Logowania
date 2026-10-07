@@ -21,8 +21,10 @@ const tabs: { id: SubTab; label: string; icon: typeof ShoppingCart }[] = [
 ]
 
 export default function SubscriptionsPage() {
-  const [activeTab, setActiveTab] = useState<SubTab>('store')
   const [searchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState<SubTab>(
+    searchParams.get('view') === 'mine' ? 'my-subscriptions' : 'store',
+  )
   const focus = searchParams.get('focus') === 'developer_warranty' ? 'developer_warranty' : 'home'
   const pageTitle = focus === 'home' ? 'DOMIO Home' : 'Usterki deweloperskie'
   const pageDescription =

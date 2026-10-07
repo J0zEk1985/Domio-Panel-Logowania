@@ -11,6 +11,7 @@ import { ShoppingCart, Building2, AlertCircle, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '../../lib/supabase'
 import { fetchMyBillingOrgId } from '../../lib/orgBilling'
+import { isOpenGlobalModuleSubscription } from '../../lib/moduleSubscriptionOwnership'
 import { usePricingPlans, usePriceCalculation, useSubscriptions } from '../../hooks/useMonetization'
 import type {
   BillingInterval,
@@ -45,13 +46,16 @@ export default function SubscriptionStoreView({ moduleFilter }: Props) {
   const [promo, setPromo] = useState<PromoPreview | null>(null)
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [orgResolved, setOrgResolved] = useState(false)
+  const [ownershipChecked, setOwnershipChecked] = useState(false)
 
   const [communities, setCommunities] = useState<CommunityWithUnits[]>([])
   const [loadingCommunities, setLoadingCommunities] = useState(true)
 
   const { plans, loading: loadingPlans, fetchPlans } = usePricingPlans(moduleFilter as AppModule, true)
   const { calculatePrice, calculating } = usePriceCalculation()
-  const { purchaseSubscription } = useSubscriptions()
+  const { subscriptions, fetchSubscriptions, purchaseSubscription } = useSubscriptions({
+    module: moduleFilter,
+  })
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId)
   const selectedCommunity = communities.find((c) => c.id === selectedCommunityId)
@@ -81,6 +85,24 @@ export default function SubscriptionStoreView({ moduleFilter }: Props) {
     setTermsAccepted(false)
     setSelectedCommunityId(null)
   }, [selectedPlanId])
+
+  useEffect(() => {
+    if (!orgResolved) return
+    if (!selectedOrgId) {
+      setOwnershipChecked(true)
+      return
+    }
+
+    let cancelled = false
+    setOwnershipChecked(false)
+    void fetchSubscriptions().finally(() => {
+      if (!cancelled) setOwnershipChecked(true)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [orgResolved, selectedOrgId, fetchSubscriptions])
 
   useEffect(() => {
     if (!selectedOrgId) return
@@ -156,7 +178,16 @@ export default function SubscriptionStoreView({ moduleFilter }: Props) {
     void calculate()
   }, [selectedPlan, selectedCommunity, billingInterval, calculatePrice])
 
+  const activeGlobalSubscription = subscriptions.find((row) =>
+    isOpenGlobalModuleSubscription(row, moduleFilter, selectedOrgId),
+  )
+
   const handlePurchase = async () => {
+    if (activeGlobalSubscription) {
+      toast.error('Ta usługa jest już aktywna dla całej organizacji.')
+      return
+    }
+
     if (!selectedOrgId || !selectedPlanId || !billingInterval) {
       toast.error('Wybierz plan i okres rozliczeniowy')
       return
@@ -220,8 +251,27 @@ export default function SubscriptionStoreView({ moduleFilter }: Props) {
         </h2>
       </div>
 
-      {loadingPlans ? (
+      {loadingPlans || !ownershipChecked ? (
         <div className="bento-card p-8 text-center text-muted-foreground">Ładowanie planów...</div>
+      ) : activeGlobalSubscription ? (
+        <div className="bento-card p-6 space-y-4">
+          <div className="flex items-start gap-3">
+            <Check className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+            <div>
+              <h3 className="font-semibold">Usługa jest już aktywna dla całej organizacji</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                {MODULE_DISPLAY_NAMES[moduleFilter]} obejmuje wszystkie wspólnoty. Nie możesz kupić tej usługi
+                ponownie, dopóki subskrypcja jest aktywna.
+              </p>
+            </div>
+          </div>
+          <Link
+            to={`/subscriptions?focus=${moduleFilter}&view=mine`}
+            className="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-medium hover:bg-muted/60"
+          >
+            Zobacz subskrypcję
+          </Link>
+        </div>
       ) : availablePlans.length === 0 ? (
         <div className="bento-card p-8 text-center text-muted-foreground">
           Brak dostępnych planów cenowych. Skontaktuj się z administratorem.
@@ -382,15 +432,6 @@ export default function SubscriptionStoreView({ moduleFilter }: Props) {
                 </select>
               </div>
 
-              {selectedPlan.terms_conditions ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-muted-foreground">Regulamin planu</p>
-                  <div className="max-h-40 overflow-y-auto rounded-md border border-border bg-muted/40 p-3 text-sm whitespace-pre-wrap">
-                    {selectedPlan.terms_conditions}
-                  </div>
-                </div>
-              ) : null}
-
               <div className="flex items-start gap-3 text-sm">
                 <input
                   id="subscription-terms-accept"
@@ -402,16 +443,18 @@ export default function SubscriptionStoreView({ moduleFilter }: Props) {
                 <p className="leading-relaxed">
                   <label htmlFor="subscription-terms-accept">Akceptuję </label>
                   <Link
-                    to="/regulamin"
+                    to={
+                      moduleFilter === 'developer_warranty' || selectedPlan.terms_conditions
+                        ? `/regulamin-uslugi/${selectedPlan.id}`
+                        : '/regulamin'
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary underline"
                   >
                     regulamin
                   </Link>
-                  <label htmlFor="subscription-terms-accept">
-                    {selectedPlan.terms_conditions ? ' oraz warunki tego planu' : ''}.
-                  </label>
+                  <label htmlFor="subscription-terms-accept">.</label>
                 </p>
               </div>
 

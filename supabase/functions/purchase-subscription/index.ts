@@ -106,6 +106,29 @@ async function handlePurchaseSubscription(req: Request): Promise<Response> {
       return internalError(`Failed to fetch plan: ${planError.message}`);
     }
 
+    if (plan.is_global) {
+      const { data: existingGlobal, error: existingError } = await supabase
+        .from('module_subscriptions')
+        .select('id')
+        .eq('purchaser_org_id', purchaser_org_id)
+        .eq('module', plan.module)
+        .is('beneficiary_community_id', null)
+        .in('status', ['active', 'blocked_pending_payment', 'suspended'])
+        .limit(1);
+
+      if (existingError) {
+        return internalError(`Failed to check existing subscription: ${existingError.message}`);
+      }
+
+      if (existingGlobal && existingGlobal.length > 0) {
+        return errorResponse(
+          'ALREADY_SUBSCRIBED',
+          'Ta usługa jest już aktywna dla całej organizacji. Nie możesz kupić jej ponownie.',
+          409
+        );
+      }
+    }
+
     // Calculate price
     let unitCount: number | null = null;
     let calculatedAmount: number;
