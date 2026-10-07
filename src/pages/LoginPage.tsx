@@ -1,7 +1,7 @@
 import { useState, FormEvent, useEffect, useRef } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { navigateToHref, resolveAuthLanding, resolvePostLoginTarget, shouldForcePasswordChange } from '../lib/postLoginRedirect'
+import { navigateToHref, resolveAuthLanding, resolvePostLoginTarget, shouldForcePasswordChange, homeResidentDashboardUrl, isHomeAccount } from '../lib/postLoginRedirect'
 import { CookieConsentSettingsButton } from '../components/cookie-consent/CookieConsentRoot'
 import { getCookieDomain } from '../lib/cookieConsent'
 
@@ -136,6 +136,11 @@ export default function LoginPage() {
             .select('is_first_login, account_type, fleet_role')
             .eq('id', userId)
             .maybeSingle()
+          if (isHomeAccount(profile?.account_type)) {
+            lastRedirectedUserIdRef.current = userId
+            window.location.replace(homeResidentDashboardUrl())
+            return
+          }
           const landing = resolveAuthLanding(shouldForcePasswordChange(profile), returnToParam)
 
           lastRedirectedUserIdRef.current = userId
@@ -195,6 +200,10 @@ export default function LoginPage() {
         .eq('id', userId)
         .maybeSingle()
       const accountType = (profile?.account_type ?? '').toString().toLowerCase()
+      if (isHomeAccount(accountType)) {
+        window.location.replace(homeResidentDashboardUrl())
+        return
+      }
       if (accountType === 'simplified') {
         const { data: membershipRows } = await supabase
           .from('memberships')

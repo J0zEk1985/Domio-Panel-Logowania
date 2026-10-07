@@ -20,6 +20,7 @@ $pairs = @(
   @{ Name = "record-legal-consent"; Src = "d:\projekty\Domio-Panel-Logowania\supabase\functions\record-legal-consent"; VerifyJwt = $false },
   @{ Name = "lookup-legal-entity"; Src = "d:\projekty\Domio-Panel-Logowania\supabase\functions\lookup-legal-entity"; VerifyJwt = $true },
   @{ Name = "create-worker"; Src = "d:\projekty\Domio-Panel-Logowania\supabase\functions\create-worker"; VerifyJwt = $false },
+  @{ Name = "activate-home-resident"; Src = "d:\projekty\Domio-Panel-Logowania\supabase\functions\activate-home-resident"; VerifyJwt = $false },
   @{ Name = "generate-sop-tasks"; Src = "d:\projekty\Domio-Cleaning\supabase\functions\generate-sop-tasks"; VerifyJwt = $false },
   @{ Name = "create-user"; Src = "d:\projekty\Obsluga-floty-samochodow\supabase\functions\create-user"; VerifyJwt = $false },
   @{ Name = "delete-user"; Src = "d:\projekty\Obsluga-floty-samochodow\supabase\functions\delete-user"; VerifyJwt = $false },

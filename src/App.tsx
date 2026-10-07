@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { Toaster } from 'sonner'
 import { supabase } from './lib/supabase'
-import { buildChangePasswordPath, shouldForcePasswordChange } from './lib/postLoginRedirect'
+import { buildChangePasswordPath, shouldForcePasswordChange, homeResidentDashboardUrl, isHomeAccount } from './lib/postLoginRedirect'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
 import SignupConfirmedPage from './pages/SignupConfirmedPage'
@@ -101,6 +101,14 @@ function App() {
 
         if (profileError) {
           console.error('[App] Błąd pobierania profilu:', profileError)
+          return
+        }
+
+        if (isHomeAccount(profile?.account_type)) {
+          const path = window.location.pathname
+          if (path === '/dashboard' || path === '/login') {
+            window.location.replace(homeResidentDashboardUrl())
+          }
           return
         }
 

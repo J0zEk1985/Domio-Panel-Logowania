@@ -54,6 +54,18 @@ export function shouldForcePasswordChange(
   return false;
 }
 
+const DEFAULT_HOME_APP_URL = "https://home.domio.com.pl";
+
+export function isHomeAccount(accountType: string | null | undefined): boolean {
+  return (accountType ?? "").trim().toLowerCase() === "home";
+}
+
+export function homeResidentDashboardUrl(): string {
+  const fromEnv = (import.meta.env.VITE_HOME_URL ?? "").trim();
+  const base = (fromEnv || DEFAULT_HOME_APP_URL).replace(/\/$/, "");
+  return `${base}/dashboard`;
+}
+
 export function resolveAuthLanding(
   isFirstLogin: boolean,
   returnToParam: string | null

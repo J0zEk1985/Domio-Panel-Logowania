@@ -400,6 +400,9 @@ verify_jwt = false
 [functions.record-legal-consent]
 verify_jwt = false
 
+[functions.activate-home-resident]
+verify_jwt = false
+
 [functions.verify-announcement]
 verify_jwt = true
 
