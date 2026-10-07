@@ -620,7 +620,7 @@ CREATE OR REPLACE FUNCTION public.activate_developer_access(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path TO 'public'
+SET search_path TO 'public', 'extensions'
 AS $$
 DECLARE
   v_access_id uuid;
@@ -676,7 +676,7 @@ CREATE OR REPLACE FUNCTION public.developer_portal_login(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path TO 'public'
+SET search_path TO 'public', 'extensions'
 AS $$
 DECLARE
   v_access public.developer_accesses%ROWTYPE;
@@ -734,7 +734,7 @@ RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
-SET search_path TO 'public'
+SET search_path TO 'public', 'extensions'
 AS $$
 DECLARE
   v_access public.developer_accesses%ROWTYPE;

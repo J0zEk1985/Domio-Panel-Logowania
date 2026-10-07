@@ -15,7 +15,7 @@ CREATE OR REPLACE FUNCTION public.developer_update_warranty_issue_status(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path TO 'public'
+SET search_path TO 'public', 'extensions'
 AS $$
 DECLARE
   v_access public.developer_accesses%ROWTYPE;
@@ -104,7 +104,7 @@ CREATE OR REPLACE FUNCTION public.developer_add_warranty_issue_comment(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path TO 'public'
+SET search_path TO 'public', 'extensions'
 AS $$
 DECLARE
   v_access public.developer_accesses%ROWTYPE;

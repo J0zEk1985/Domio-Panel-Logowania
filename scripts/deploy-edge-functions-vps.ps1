@@ -24,7 +24,8 @@ $pairs = @(
   @{ Name = "create-user"; Src = "d:\projekty\Obsluga-floty-samochodow\supabase\functions\create-user"; VerifyJwt = $false },
   @{ Name = "delete-user"; Src = "d:\projekty\Obsluga-floty-samochodow\supabase\functions\delete-user"; VerifyJwt = $false },
   @{ Name = "send-web-push"; Src = "d:\projekty\Domio-Serwis\supabase\functions\send-web-push"; VerifyJwt = $true },
-  @{ Name = "triage-ai-logic"; Src = "d:\projekty\Domio-Administracja\supabase\functions\triage-ai-logic"; VerifyJwt = $true }
+  @{ Name = "triage-ai-logic"; Src = "d:\projekty\Domio-Administracja\supabase\functions\triage-ai-logic"; VerifyJwt = $true },
+  @{ Name = "lodz-waste-schedule"; Src = "d:\projekty\Domio-Administracja\supabase\functions\lodz-waste-schedule"; VerifyJwt = $true }
 )
 
 Write-Host "Źródła lokalne:"
