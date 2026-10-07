@@ -11,6 +11,7 @@ type Props = {
   planSummary: string | null
   onOpen: () => void
   onManagePlan?: () => void
+  managePlanLabel?: string
 }
 
 export function DashboardModuleCard({
@@ -23,6 +24,7 @@ export function DashboardModuleCard({
   planSummary,
   onOpen,
   onManagePlan,
+  managePlanLabel = 'Plan i rozliczenia',
 }: Props) {
   return (
     <div className="bento-card text-left">
@@ -51,7 +53,7 @@ export function DashboardModuleCard({
             onClick={onManagePlan}
             className="inline-flex text-sm font-medium text-muted-foreground hover:text-foreground"
           >
-            Plan i rozliczenia
+            {managePlanLabel}
           </button>
         )}
       </div>

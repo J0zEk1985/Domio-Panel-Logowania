@@ -5,7 +5,6 @@ import type { LucideIcon } from 'lucide-react'
 import {
   Building2,
   Car,
-  CreditCard,
   Home,
   LayoutGrid,
   ShieldCheck,
@@ -21,6 +20,7 @@ import { DashboardModuleCard } from '../components/dashboard/DashboardModuleCard
 import { ModulePlanDialog } from '../components/dashboard/ModulePlanDialog'
 import { OrgInboundMailboxesCard } from '../components/dashboard/OrgInboundMailboxesCard'
 import { OrgCompanyCard } from '../components/dashboard/OrgCompanyCard'
+import { AdditionalServicesSection } from '../components/dashboard/AdditionalServicesSection'
 import {
   applicationMatchesModuleSlug,
   catalogModuleForApplication,
@@ -122,6 +122,9 @@ export default function DashboardPage() {
   )
 
   const planSummaryFor = (app: Application): string | null => {
+    if (catalogModuleForApplication(app)?.slug === 'home') {
+      return 'Licencja osobno dla każdej wspólnoty.'
+    }
     if (app.is_free) return 'Plan: bezpłatny'
     const sub = subsByAppId.get(app.id) ?? null
     const plans = plansByAppId.get(app.id) ?? []
@@ -208,6 +211,7 @@ export default function DashboardPage() {
                   const catalog = catalogModuleForApplication(app)
                   const Icon = iconForApplication(app)
                   const tier: 'free' | 'paid' = app.is_free ? 'free' : 'paid'
+                  const isHome = catalog?.slug === 'home'
                   const canOpenPlan = Boolean(billingOrgId) && !app.is_free
                   return (
                     <motion.div
@@ -224,7 +228,14 @@ export default function DashboardPage() {
                         badgeClass={statusBadgeClass[tier]}
                         planSummary={planSummaryFor(app)}
                         onOpen={() => handleAppClick(app)}
-                        onManagePlan={canOpenPlan ? () => setPlanDialogApp(app) : undefined}
+                        onManagePlan={
+                          isHome && billingOrgId
+                            ? () => navigate('/subscriptions?focus=home')
+                            : canOpenPlan
+                              ? () => setPlanDialogApp(app)
+                              : undefined
+                        }
+                        managePlanLabel={isHome ? 'Wybierz wspólnotę' : undefined}
                       />
                     </motion.div>
                   )
@@ -254,24 +265,9 @@ export default function DashboardPage() {
                 </Link>
               </section>
             )}
-            
-            {/* Module Subscriptions Card */}
-            <section className="rounded-2xl border border-border bg-card p-5 space-y-3">
-              <h2 className="font-display text-lg font-semibold flex items-center gap-2">
-                <CreditCard className="h-5 w-5 text-primary" aria-hidden />
-                Subskrypcje modułów
-              </h2>
-              <p className="text-sm text-muted-foreground max-w-2xl">
-                Zarządzaj dostępem do modułów DOMIO Home, Usterki Deweloperskie i innych.
-              </p>
-              <Link
-                to="/subscriptions"
-                className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-muted/60"
-              >
-                Otwórz sklep
-              </Link>
-            </section>
           </div>
+
+          <AdditionalServicesSection />
 
           {!loading && extraModules.length > 0 && (
             <motion.div
@@ -304,10 +300,10 @@ export default function DashboardPage() {
                           <p className="text-sm font-medium text-foreground mb-3">{priceHint}</p>
                           <div className="flex flex-wrap gap-2">
                             <Link
-                              to={`/module/${mod.slug}#cennik`}
+                              to={mod.slug === 'home' ? '/subscriptions?focus=home' : `/module/${mod.slug}#cennik`}
                               className="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-medium hover:bg-muted/60"
                             >
-                              Zobacz plany
+                              {mod.slug === 'home' ? 'Wybierz wspólnotę' : 'Zobacz plany'}
                             </Link>
                           </div>
                         </div>

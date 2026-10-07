@@ -84,7 +84,8 @@ export const PurchaseSubscriptionSchema = z.object({
   beneficiary_community_id: z.string().uuid().optional(),
   billing_interval: BillingIntervalSchema,
   payment_method: z.string().optional(),
-  invoice_entity_community_id: z.string().uuid().optional()
+  invoice_entity_community_id: z.string().uuid().optional(),
+  promo_code: z.string().trim().min(1).max(50).optional(),
 });
 
 // Upgrade Subscription

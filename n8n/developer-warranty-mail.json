@@ -1,0 +1,250 @@
+[
+  {
+    "name": "DOMIO — maile gwarancji dewelopera",
+    "active": false,
+    "versionId": "c4a1e7b2-6d3f-4a18-9c55-2f0b8e71d4a6",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "developer-warranty-mail",
+          "responseMode": "onReceived",
+          "options": {}
+        },
+        "id": "wh-dev-warranty-mail",
+        "name": "Webhook natychmiastowy",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [0, 0],
+        "webhookId": "developer-warranty-mail"
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "minutes",
+                "minutesInterval": 1
+              }
+            ]
+          }
+        },
+        "id": "sched-dev-warranty-1",
+        "name": "Co minutę",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [0, 220]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://db.j0zek.pl/rest/v1/rpc/claim_integration_event_jobs",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "{\"p_limit\": 20}",
+          "options": {}
+        },
+        "id": "http-claim-events",
+        "name": "Zajmij pending",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [320, 120],
+        "credentials": {
+          "supabaseApi": {
+            "id": "lRfxUrXRR61ltkFK",
+            "name": "Supabase account (db.j0zek.pl)"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const raw = items[0].json;\nconst payload = Array.isArray(raw) ? raw : (raw.body ?? raw);\nconst list = Array.isArray(payload) ? payload : (payload ? [payload] : []);\nreturn list\n  .map((row) => {\n    const rec = row && typeof row === 'object' && !Array.isArray(row) ? row : {};\n    return { json: rec };\n  })\n  .filter((item) => item.json && item.json.dispatch_id && item.json.to_email && item.json.subject && item.json.html);"
+        },
+        "id": "code-split-events",
+        "name": "Rozdziel joby",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [560, 120]
+      },
+      {
+        "parameters": {
+          "jsCode": "const rec = items[0].json || {};\nreturn [{ json: rec }];"
+        },
+        "id": "code-keep-mail",
+        "name": "Pola maila",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [780, 120]
+      },
+      {
+        "parameters": {
+          "fromEmail": "biuro@domio.com.pl",
+          "toEmail": "={{ $json.to_email }}",
+          "subject": "={{ $json.subject }}",
+          "html": "={{ $json.html }}",
+          "options": {}
+        },
+        "id": "email-dev-warranty",
+        "name": "Wyślij e-mail",
+        "type": "n8n-nodes-base.emailSend",
+        "typeVersion": 2.1,
+        "position": [1000, 120],
+        "continueOnFail": true,
+        "credentials": {
+          "smtp": {
+            "id": "NXXwH4iO4OwfSILk",
+            "name": "DOMIO OVH SMTP firmy"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const meta = $('Pola maila').item.json || {};\nconst sent = items[0].json || {};\nconst err = sent.error?.message || sent.errorMessage || sent.error || '';\nconst failed = Boolean(sent.error || sent.errorMessage);\nreturn [{\n  json: {\n    dispatch_id: meta.dispatch_id,\n    failed,\n    error: String(err),\n    messageId: sent.messageId || null\n  }\n}];"
+        },
+        "id": "code-mail-result",
+        "name": "Wynik wysyłki",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [1220, 120]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "send-ok",
+                "leftValue": "={{ $json.failed }}",
+                "rightValue": false,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        },
+        "id": "if-mail-sent",
+        "name": "Czy wysłano",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [1440, 120]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://db.j0zek.pl/rest/v1/rpc/mark_integration_event_sent",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ p_dispatch_id: $json.dispatch_id, p_message_id: $json.messageId }) }}",
+          "options": {}
+        },
+        "id": "http-mark-event-sent",
+        "name": "Oznacz jako wysłane",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [1680, 20],
+        "credentials": {
+          "supabaseApi": {
+            "id": "lRfxUrXRR61ltkFK",
+            "name": "Supabase account (db.j0zek.pl)"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://db.j0zek.pl/rest/v1/rpc/mark_integration_event_failed",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ p_dispatch_id: $json.dispatch_id, p_error: $json.error || 'SMTP send failed' }) }}",
+          "options": {}
+        },
+        "id": "http-mark-event-failed",
+        "name": "Oznacz błąd wysyłki",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [1680, 240],
+        "credentials": {
+          "supabaseApi": {
+            "id": "lRfxUrXRR61ltkFK",
+            "name": "Supabase account (db.j0zek.pl)"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Webhook natychmiastowy": {
+        "main": [[{ "node": "Zajmij pending", "type": "main", "index": 0 }]]
+      },
+      "Co minutę": {
+        "main": [[{ "node": "Zajmij pending", "type": "main", "index": 0 }]]
+      },
+      "Zajmij pending": {
+        "main": [[{ "node": "Rozdziel joby", "type": "main", "index": 0 }]]
+      },
+      "Rozdziel joby": {
+        "main": [[{ "node": "Pola maila", "type": "main", "index": 0 }]]
+      },
+      "Pola maila": {
+        "main": [[{ "node": "Wyślij e-mail", "type": "main", "index": 0 }]]
+      },
+      "Wyślij e-mail": {
+        "main": [[{ "node": "Wynik wysyłki", "type": "main", "index": 0 }]]
+      },
+      "Wynik wysyłki": {
+        "main": [[{ "node": "Czy wysłano", "type": "main", "index": 0 }]]
+      },
+      "Czy wysłano": {
+        "main": [
+          [{ "node": "Oznacz jako wysłane", "type": "main", "index": 0 }],
+          [{ "node": "Oznacz błąd wysyłki", "type": "main", "index": 0 }]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "timezone": "Europe/Warsaw",
+      "callerPolicy": "workflowsFromSameOwner"
+    }
+  }
+]

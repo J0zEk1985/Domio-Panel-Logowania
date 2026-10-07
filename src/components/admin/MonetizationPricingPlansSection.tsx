@@ -2,7 +2,8 @@
  * MonetizationPricingPlansSection
  * 
  * Service Owner / SuperAdmin panel for managing module pricing plans
- * Handles both unit-based (home) and flat-rate (developer_warranty) plans
+ * Handles unit-based (home) and flat-rate (developer_warranty) plans.
+ * Other applications are priced in Cennik i Promocje.
  */
 
 import { useState, useEffect } from 'react'
@@ -47,14 +48,13 @@ const emptyForm = (): PlanFormData => ({
   terms_conditions: '',
 })
 
+/** Only Home and developer warranty are priced here. Other apps use Cennik i Promocje. */
 const MODULE_OPTIONS: { value: AppModule; label: string }[] = [
   { value: 'home', label: 'DOMIO Home' },
   { value: 'developer_warranty', label: 'Usterki Deweloperskie' },
-  { value: 'admin', label: 'Administracja' },
-  { value: 'cleaning', label: 'Cleaning' },
-  { value: 'maintenance', label: 'Serwis' },
-  { value: 'fleet', label: 'Flota' },
 ]
+
+const MODULE_PLAN_MODULES = new Set<AppModule>(MODULE_OPTIONS.map((opt) => opt.value))
 
 export default function MonetizationPricingPlansSection() {
   const { plans, loading, error, fetchPlans, createPlan, updatePlan, deletePlan } = usePricingPlans()
@@ -215,6 +215,8 @@ export default function MonetizationPricingPlansSection() {
     if (price == null) return '—'
     return `${price.toFixed(2)} zł`
   }
+
+  const visiblePlans = plans.filter((plan) => MODULE_PLAN_MODULES.has(plan.module))
 
   return (
     <section aria-labelledby="monetization-pricing-heading">
@@ -436,7 +438,7 @@ export default function MonetizationPricingPlansSection() {
       )}
 
       <div className="bento-card overflow-x-auto p-0">
-        {loading && plans.length === 0 ? (
+        {loading && visiblePlans.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground">Ładowanie...</div>
         ) : (
           <table className="w-full text-sm">
@@ -451,7 +453,7 @@ export default function MonetizationPricingPlansSection() {
               </tr>
             </thead>
             <tbody>
-              {plans.map((plan) => (
+              {visiblePlans.map((plan) => (
                 <tr key={plan.id} className="border-b border-border/40 last:border-0">
                   <td className="p-4 font-medium">{MODULE_DISPLAY_NAMES[plan.module]}</td>
                   <td className="p-4">
@@ -525,7 +527,7 @@ export default function MonetizationPricingPlansSection() {
             </tbody>
           </table>
         )}
-        {!loading && plans.length === 0 && (
+        {!loading && visiblePlans.length === 0 && (
           <div className="p-8 text-center text-muted-foreground">
             Brak planów. Dodaj pierwszy plan lub sprawdź uprawnienia.
           </div>

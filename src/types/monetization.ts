@@ -303,6 +303,7 @@ export interface PurchaseSubscriptionRequest {
   billing_interval: BillingInterval
   payment_method?: string
   invoice_entity_community_id?: string
+  promo_code?: string
 }
 
 export interface PurchaseSubscriptionResponse {

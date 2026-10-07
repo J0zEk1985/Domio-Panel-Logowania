@@ -6,15 +6,20 @@
  */
 
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { ShoppingCart, Building2, AlertCircle, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '../../lib/supabase'
+import { fetchMyBillingOrgId } from '../../lib/orgBilling'
 import { usePricingPlans, usePriceCalculation, useSubscriptions } from '../../hooks/useMonetization'
 import type {
   BillingInterval,
   PurchaseSubscriptionRequest,
 } from '../../types/monetization'
 import { MODULE_DISPLAY_NAMES, BILLING_INTERVAL_LABELS } from '../../types/monetization'
+import { PromoCodeField, applyPromoDiscount } from './PromoCodeField'
+import type { PromoPreview } from '../../lib/promoCodes'
+import type { AppModule } from '../../types/monetization'
 
 interface Community {
   id: string
@@ -26,18 +31,25 @@ interface CommunityWithUnits extends Community {
   residential_unit_count: number
 }
 
-export default function SubscriptionStoreView() {
+type Props = {
+  moduleFilter: 'home' | 'developer_warranty'
+}
+
+export default function SubscriptionStoreView({ moduleFilter }: Props) {
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null)
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null)
   const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null)
   const [billingInterval, setBillingInterval] = useState<BillingInterval>('monthly')
   const [calculatedAmount, setCalculatedAmount] = useState<number | null>(null)
   const [paymentMethod, setPaymentMethod] = useState('transfer')
+  const [promo, setPromo] = useState<PromoPreview | null>(null)
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const [orgResolved, setOrgResolved] = useState(false)
 
   const [communities, setCommunities] = useState<CommunityWithUnits[]>([])
-  const [loadingCommunities, setLoadingCommunities] = useState(false)
+  const [loadingCommunities, setLoadingCommunities] = useState(true)
 
-  const { plans, loading: loadingPlans, fetchPlans } = usePricingPlans(undefined, true)
+  const { plans, loading: loadingPlans, fetchPlans } = usePricingPlans(moduleFilter as AppModule, true)
   const { calculatePrice, calculating } = usePriceCalculation()
   const { purchaseSubscription } = useSubscriptions()
 
@@ -45,31 +57,30 @@ export default function SubscriptionStoreView() {
   const selectedCommunity = communities.find((c) => c.id === selectedCommunityId)
 
   useEffect(() => {
+    setSelectedPlanId(null)
+    setPromo(null)
+    setCalculatedAmount(null)
+  }, [moduleFilter])
+
+  useEffect(() => {
     void fetchPlans()
   }, [fetchPlans])
 
   useEffect(() => {
     const loadUserOrg = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: memberships } = await supabase
-        .from('memberships')
-        .select('organization_id, role')
-        .eq('user_id', user.id)
-        .in('role', ['admin', 'owner'])
-        .limit(1)
-        .single()
-
-      if (memberships?.organization_id) {
-        setSelectedOrgId(memberships.organization_id)
-      }
+      const orgId = await fetchMyBillingOrgId()
+      setSelectedOrgId(orgId)
+      setOrgResolved(true)
+      if (!orgId) setLoadingCommunities(false)
     }
 
     void loadUserOrg()
   }, [])
+
+  useEffect(() => {
+    setTermsAccepted(false)
+    setSelectedCommunityId(null)
+  }, [selectedPlanId])
 
   useEffect(() => {
     if (!selectedOrgId) return
@@ -79,7 +90,8 @@ export default function SubscriptionStoreView() {
       const { data, error } = await supabase
         .from('communities')
         .select('id, name')
-        .eq('organization_id', selectedOrgId)
+        .eq('org_id', selectedOrgId)
+        .eq('status', 'active')
         .order('name')
 
       if (error) {
@@ -160,10 +172,16 @@ export default function SubscriptionStoreView() {
       return
     }
 
+    if (!termsAccepted) {
+      toast.error('Zaakceptuj regulamin, aby kontynuować zakup.')
+      return
+    }
+
     const request: PurchaseSubscriptionRequest = {
       plan_id: selectedPlanId,
       billing_interval: billingInterval,
       payment_method: paymentMethod,
+      promo_code: promo?.code,
     }
 
     if (selectedCommunityId) {
@@ -178,6 +196,7 @@ export default function SubscriptionStoreView() {
       setSelectedPlanId(null)
       setSelectedCommunityId(null)
       setCalculatedAmount(null)
+      setPromo(null)
     } else {
       toast.error(result.error ?? 'Nie udało się zakupić subskrypcji')
     }
@@ -187,13 +206,18 @@ export default function SubscriptionStoreView() {
     return `${price.toFixed(2)} zł`
   }
 
-  const availablePlans = plans.filter((p) => p.is_active)
+  const payableAmount =
+    calculatedAmount == null ? null : applyPromoDiscount(calculatedAmount, promo)
+
+  const availablePlans = plans.filter((p) => p.is_active && p.module === moduleFilter)
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <ShoppingCart className="h-6 w-6 text-primary" />
-        <h2 className="font-display text-2xl font-semibold">Sklep z subskrypcjami</h2>
+        <h2 className="font-display text-2xl font-semibold">
+          {moduleFilter === 'home' ? 'Subskrypcja DOMIO Home' : 'Usługa dodatkowa'}
+        </h2>
       </div>
 
       {loadingPlans ? (
@@ -280,8 +304,15 @@ export default function SubscriptionStoreView() {
                   <label className="block text-sm font-medium text-muted-foreground">
                     Wybierz wspólnotę
                   </label>
-                  {loadingCommunities ? (
+                  {!orgResolved || loadingCommunities ? (
                     <div className="text-sm text-muted-foreground">Ładowanie wspólnot...</div>
+                  ) : !selectedOrgId ? (
+                    <div className="flex items-start gap-2 bg-muted/50 p-3 rounded-md text-sm">
+                      <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5" />
+                      <span className="text-muted-foreground">
+                        Nie znaleziono organizacji, dla której możesz kupić moduł.
+                      </span>
+                    </div>
                   ) : communities.length === 0 ? (
                     <div className="flex items-start gap-2 bg-muted/50 p-3 rounded-md text-sm">
                       <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5" />
@@ -313,6 +344,9 @@ export default function SubscriptionStoreView() {
                 <div className="flex gap-2">
                   {(['monthly', 'yearly'] as BillingInterval[])
                     .filter((interval) => {
+                      if (selectedPlan.is_unit_based) {
+                        return interval === 'monthly' || selectedPlan.price_yearly != null
+                      }
                       if (interval === 'monthly') return selectedPlan.price_monthly != null
                       if (interval === 'yearly') return selectedPlan.price_yearly != null
                       return false
@@ -348,12 +382,54 @@ export default function SubscriptionStoreView() {
                 </select>
               </div>
 
-              {calculatedAmount != null && (
+              {selectedPlan.terms_conditions ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">Regulamin planu</p>
+                  <div className="max-h-40 overflow-y-auto rounded-md border border-border bg-muted/40 p-3 text-sm whitespace-pre-wrap">
+                    {selectedPlan.terms_conditions}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="flex items-start gap-3 text-sm">
+                <input
+                  id="subscription-terms-accept"
+                  type="checkbox"
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-input accent-primary"
+                />
+                <p className="leading-relaxed">
+                  <label htmlFor="subscription-terms-accept">Akceptuję </label>
+                  <Link
+                    to="/regulamin"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary underline"
+                  >
+                    regulamin
+                  </Link>
+                  <label htmlFor="subscription-terms-accept">
+                    {selectedPlan.terms_conditions ? ' oraz warunki tego planu' : ''}.
+                  </label>
+                </p>
+              </div>
+
+              <PromoCodeField
+                billingInterval={billingInterval}
+                promo={promo}
+                onChange={setPromo}
+              />
+
+              {payableAmount != null && (
                 <div className="bg-primary/10 border border-primary/30 rounded-lg p-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Kwota do zapłaty:</span>
-                    <span className="text-2xl font-bold text-primary">{formatPrice(calculatedAmount)}</span>
+                    <span className="text-2xl font-bold text-primary">{formatPrice(payableAmount)}</span>
                   </div>
+                  {promo && calculatedAmount != null && payableAmount !== calculatedAmount ? (
+                    <p className="text-xs text-muted-foreground mt-1 line-through">{formatPrice(calculatedAmount)}</p>
+                  ) : null}
                   {selectedPlan.is_unit_based && selectedCommunity && (
                     <p className="text-xs text-muted-foreground mt-2">
                       {selectedCommunity.residential_unit_count} lokali × {formatPrice(selectedPlan.price_per_unit!)} ={' '}
@@ -368,7 +444,8 @@ export default function SubscriptionStoreView() {
                 onClick={() => void handlePurchase()}
                 disabled={
                   calculating ||
-                  calculatedAmount == null ||
+                  payableAmount == null ||
+                  !termsAccepted ||
                   (selectedPlan.is_unit_based && !selectedCommunityId)
                 }
                 className="w-full rounded-md bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"

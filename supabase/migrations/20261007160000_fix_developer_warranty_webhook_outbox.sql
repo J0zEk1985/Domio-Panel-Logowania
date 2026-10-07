@@ -1,10 +1,10 @@
 BEGIN;
 
--- =============================================================================
--- Developer Warranty: Webhook notifications for n8n
--- Events go to public.integration_events (outbox). public.webhooks stores
--- destination URLs and has no payload/status columns.
--- =============================================================================
+-- The warranty notify triggers inserted into public.webhooks (url, secret, headers),
+-- which is a destination registry and has no payload/status columns.
+-- That rolled back developer access creation with:
+--   column "payload" of relation "webhooks" does not exist
+-- Queue the same events in an outbox n8n can poll.
 
 CREATE TABLE IF NOT EXISTS public.integration_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -25,27 +25,28 @@ CREATE INDEX IF NOT EXISTS idx_integration_events_pending
   ON public.integration_events (created_at)
   WHERE status = 'pending';
 
+COMMENT ON TABLE public.integration_events IS
+  'Outbound integration outbox. n8n polls rows with status = pending.';
+
 ALTER TABLE public.integration_events ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON TABLE public.integration_events FROM PUBLIC, anon, authenticated;
 GRANT SELECT, UPDATE ON TABLE public.integration_events TO service_role;
 
--- Function to notify about developer access creation (for n8n email)
 CREATE OR REPLACE FUNCTION private.notify_developer_access_created()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_community public.communities%ROWTYPE;
   v_webhook_payload jsonb;
 BEGIN
-  -- Get community details
   SELECT * INTO v_community
   FROM public.communities
   WHERE id = NEW.community_id;
-  
-  -- Build webhook payload
+
   v_webhook_payload := jsonb_build_object(
     'event', 'developer_access_created',
     'timestamp', now(),
@@ -62,50 +63,39 @@ BEGIN
       )
     )
   );
-  
+
   BEGIN
     INSERT INTO public.integration_events (org_id, event_type, payload, status)
     VALUES (NEW.org_id, 'developer_warranty.access_created', v_webhook_payload, 'pending');
   EXCEPTION WHEN OTHERS THEN
     RAISE WARNING 'developer access event enqueue failed: %', SQLERRM;
   END;
-  
+
   RETURN NEW;
 END;
 $$;
 
--- Trigger to notify when developer access is created
-CREATE TRIGGER trg_notify_developer_access_created
-  AFTER INSERT ON public.developer_accesses
-  FOR EACH ROW
-  EXECUTE FUNCTION private.notify_developer_access_created();
-
--- Function to notify about issue status changes
 CREATE OR REPLACE FUNCTION private.notify_warranty_issue_status_changed()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_community public.communities%ROWTYPE;
   v_developer_access public.developer_accesses%ROWTYPE;
   v_webhook_payload jsonb;
 BEGIN
-  -- Only notify if status actually changed and it's published
   IF OLD.status IS DISTINCT FROM NEW.status AND NEW.status != 'draft' THEN
-    
-    -- Get community details
     SELECT * INTO v_community
     FROM public.communities
     WHERE id = NEW.community_id;
-    
-    -- Get developer access
+
     SELECT * INTO v_developer_access
     FROM public.developer_accesses
     WHERE community_id = NEW.community_id
       AND deactivated_at IS NULL;
-    
-    -- Build webhook payload
+
     v_webhook_payload := jsonb_build_object(
       'event', 'warranty_issue_status_changed',
       'timestamp', now(),
@@ -123,32 +113,24 @@ BEGIN
         )
       )
     );
-    
+
     BEGIN
       INSERT INTO public.integration_events (org_id, event_type, payload, status)
       VALUES (NEW.org_id, 'developer_warranty.status_changed', v_webhook_payload, 'pending');
     EXCEPTION WHEN OTHERS THEN
       RAISE WARNING 'warranty status event enqueue failed: %', SQLERRM;
     END;
-    
   END IF;
-  
+
   RETURN NEW;
 END;
 $$;
 
--- Trigger to notify when issue status changes
-CREATE TRIGGER trg_notify_warranty_issue_status_changed
-  AFTER UPDATE ON public.developer_warranty_issues
-  FOR EACH ROW
-  WHEN (OLD.status IS DISTINCT FROM NEW.status)
-  EXECUTE FUNCTION private.notify_warranty_issue_status_changed();
-
--- Function to notify about new comments
 CREATE OR REPLACE FUNCTION private.notify_warranty_issue_comment_added()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_issue public.developer_warranty_issues%ROWTYPE;
@@ -157,34 +139,26 @@ DECLARE
   v_webhook_payload jsonb;
   v_notify_email text;
 BEGIN
-  -- Get issue details
   SELECT * INTO v_issue
   FROM public.developer_warranty_issues
   WHERE id = NEW.issue_id;
-  
-  -- Get community details
+
   SELECT * INTO v_community
   FROM public.communities
   WHERE id = v_issue.community_id;
-  
-  -- Get developer access
+
   SELECT * INTO v_developer_access
   FROM public.developer_accesses
   WHERE community_id = v_issue.community_id
     AND deactivated_at IS NULL;
-  
-  -- Determine who to notify based on comment author
+
   IF NEW.author_type = 'admin' THEN
-    -- Admin commented -> notify developer
     v_notify_email := v_developer_access.developer_email;
   ELSIF NEW.author_type = 'developer' THEN
-    -- Developer commented -> notify admin (org support email or default)
     v_notify_email := v_community.board_email;
   END IF;
-  
-  -- Only send if we have an email to notify
+
   IF v_notify_email IS NOT NULL THEN
-    -- Build webhook payload
     v_webhook_payload := jsonb_build_object(
       'event', 'warranty_issue_comment_added',
       'timestamp', now(),
@@ -203,7 +177,7 @@ BEGIN
         )
       )
     );
-    
+
     BEGIN
       INSERT INTO public.integration_events (org_id, event_type, payload, status)
       VALUES (v_issue.org_id, 'developer_warranty.comment_added', v_webhook_payload, 'pending');
@@ -211,15 +185,9 @@ BEGIN
       RAISE WARNING 'warranty comment event enqueue failed: %', SQLERRM;
     END;
   END IF;
-  
+
   RETURN NEW;
 END;
 $$;
-
--- Trigger to notify when comment is added
-CREATE TRIGGER trg_notify_warranty_issue_comment_added
-  AFTER INSERT ON public.developer_warranty_issue_comments
-  FOR EACH ROW
-  EXECUTE FUNCTION private.notify_warranty_issue_comment_added();
 
 COMMIT;

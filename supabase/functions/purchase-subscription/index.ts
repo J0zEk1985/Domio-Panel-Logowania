@@ -160,6 +160,56 @@ async function handlePurchaseSubscription(req: Request): Promise<Response> {
       }
     }
 
+    let promoCode: string | null = null;
+    if (purchaseData.promo_code) {
+      const { data: preview, error: promoError } = await supabase.rpc('preview_promo_code', {
+        p_code: purchaseData.promo_code,
+        p_billing_interval: purchaseData.billing_interval,
+      });
+
+      if (promoError) {
+        return internalError(`Failed to check promo code: ${promoError.message}`);
+      }
+
+      const promo = (preview ?? {}) as {
+        ok?: boolean;
+        error?: string;
+        code?: string;
+        discount_percent?: number | null;
+        discount_amount?: number | null;
+      };
+
+      if (!promo.ok) {
+        const promoMessages: Record<string, string> = {
+          EMPTY: 'Wpisz kod promocyjny.',
+          EXPIRED: 'Ten kod promocyjny wygasł.',
+          LIMIT: 'Ten kod promocyjny został już wykorzystany.',
+          INTERVAL_NOT_ALLOWED: 'Ten kod promocyjny nie może być użyty dla wybranego okresu rozliczenia.',
+        };
+        return errorResponse(
+          promo.error ?? 'INVALID',
+          promoMessages[promo.error ?? ''] ?? 'Nieprawidłowy kod promocyjny.',
+          400,
+        );
+      }
+
+      const listPrice = calculatedAmount;
+      const percent = promo.discount_percent == null ? null : Number(promo.discount_percent);
+      const amountOff = promo.discount_amount == null ? null : Number(promo.discount_amount);
+      if (percent != null && Number.isFinite(percent)) {
+        calculatedAmount *= 1 - percent / 100;
+      }
+      if (amountOff != null && Number.isFinite(amountOff)) {
+        calculatedAmount -= amountOff;
+      }
+      calculatedAmount = Math.max(0, Math.round(calculatedAmount * 100) / 100);
+      promoCode = promo.code ?? purchaseData.promo_code;
+
+      if (calculatedAmount !== listPrice) {
+        console.info('[purchase-subscription] promo applied', promoCode, listPrice, calculatedAmount);
+      }
+    }
+
     // Get invoice entity data
     let invoiceEntityName = null;
     let invoiceEntityNip = null;
@@ -233,7 +283,8 @@ async function handlePurchaseSubscription(req: Request): Promise<Response> {
           payment_intent_id: paymentIntent.id,
           payment_method: purchaseData.payment_method || 'manual',
           purchased_by: user.id,
-          purchased_at: new Date().toISOString()
+          purchased_at: new Date().toISOString(),
+          promo_code: promoCode,
         }
       })
       .select()
@@ -241,6 +292,16 @@ async function handlePurchaseSubscription(req: Request): Promise<Response> {
 
     if (subscriptionError) {
       return internalError(`Failed to create subscription: ${subscriptionError.message}`);
+    }
+
+    if (promoCode) {
+      const { data: redeemed, error: redeemError } = await supabase.rpc('redeem_promo_code', {
+        p_code: promoCode,
+        p_billing_interval: purchaseData.billing_interval,
+      });
+      if (redeemError || !(redeemed as { ok?: boolean } | null)?.ok) {
+        console.error('[purchase-subscription] redeem_promo_code:', redeemError ?? redeemed);
+      }
     }
 
     // Update payment intent with subscription_id

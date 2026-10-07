@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react'
 import { CreditCard, AlertTriangle, Calendar, CheckCircle2, XCircle, Clock } from 'lucide-react'
 import { toast } from 'sonner'
-import { supabase } from '../../lib/supabase'
+import { fetchMyBillingOrgId } from '../../lib/orgBilling'
 import { useSubscriptions } from '../../hooks/useMonetization'
 import type { ModuleSubscription, BillingInterval } from '../../types/monetization'
 import {
@@ -28,22 +28,8 @@ export default function MySubscriptionsView() {
 
   useEffect(() => {
     const loadUserOrg = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: memberships } = await supabase
-        .from('memberships')
-        .select('organization_id, role')
-        .eq('user_id', user.id)
-        .in('role', ['admin', 'owner'])
-        .limit(1)
-        .single()
-
-      if (memberships?.organization_id) {
-        setSelectedOrgId(memberships.organization_id)
-      }
+      const orgId = await fetchMyBillingOrgId()
+      setSelectedOrgId(orgId)
     }
 
     void loadUserOrg()

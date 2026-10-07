@@ -46,12 +46,12 @@ WHERE lower(name) IN ('panel zarządzania', 'domio administracja')
      'https://adm.domio.com.pl'
    );
 
--- Reuse the unused free placeholder as Home (resident app).
+-- Reuse the unused free placeholder as Home (resident app). Home is paid.
 UPDATE public.applications
 SET
   name = 'Domio Home',
   domain_url = 'https://home.domio.com.pl',
-  is_free = true,
+  is_free = false,
   is_active = true
 WHERE lower(name) IN ('portal ogólny', 'domio home')
    OR domain_url IN (

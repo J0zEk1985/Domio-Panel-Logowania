@@ -7,7 +7,7 @@ VALUES
   ('ea68af49-245a-4d50-8848-2ab74b37c340', 'Domio Administracja', 'https://adm.domio.com.pl', NULL, false, true, '2026-01-08 23:03:56.889305+00'),
   ('606969b9-86f9-437d-b14c-1db4bd38e5a2', 'Domio Cleaning', 'https://cleaning.domio.com.pl', NULL, false, true, '2026-01-14 21:37:31.333034+00'),
   ('43dc07eb-978d-4a78-9e0a-125a0dc6e48a', 'Domio Flota', 'https://flota.domio.com.pl', NULL, false, true, '2026-01-24 17:02:39.265083+00'),
-  ('3c0dfc11-2517-45b3-9981-4f338c4f54fc', 'Domio Home', 'https://home.domio.com.pl', NULL, true, true, '2026-01-08 23:03:56.889305+00'),
+  ('3c0dfc11-2517-45b3-9981-4f338c4f54fc', 'Domio Home', 'https://home.domio.com.pl', NULL, false, true, '2026-01-08 23:03:56.889305+00'),
   ('8a33af18-04d8-4398-85ff-3535ef77ce01', 'Domio Serwis', 'https://serwis.domio.com.pl', NULL, false, true, '2026-09-09 23:28:50.223131+00')
 ON CONFLICT (id) DO UPDATE
 SET

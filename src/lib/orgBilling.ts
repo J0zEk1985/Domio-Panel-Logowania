@@ -199,6 +199,31 @@ type BillingOrgInvoiceRow = {
   listed_in_provider_directory: boolean | null
 }
 
+/** Organization the signed-in user can bill against (owner, admin, or coordinator). */
+export async function fetchMyBillingOrgId(): Promise<string | null> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (userError) {
+    console.error('[orgBilling] billing org user:', userError)
+    return null
+  }
+  if (!user) return null
+
+  const { data, error } = await supabase
+    .from('memberships')
+    .select('role, org_id')
+    .eq('user_id', user.id)
+
+  if (error) {
+    console.error('[orgBilling] billing org memberships:', error)
+    return null
+  }
+
+  return pickBillingMembership(data ?? [])?.org_id ?? null
+}
+
 export async function fetchMyBillingInvoicePrefill(): Promise<BillingInvoicePrefill> {
   const {
     data: { user },
