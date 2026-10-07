@@ -144,7 +144,6 @@ export default function UsersAndOrgsTab({ initialUserId, initialSubTab }: Props)
         .from('organizations')
         .select('id, name, nip, city, created_at')
         .order(key, { ascending })
-        .limit(10)
 
       const term = debouncedSearch.trim()
       if (term) {
@@ -193,7 +192,7 @@ export default function UsersAndOrgsTab({ initialUserId, initialSubTab }: Props)
         }
         query = query.in('id', allowedIds)
       }
-      query = query.order(key, { ascending }).limit(10)
+      query = query.order(key, { ascending })
 
       const { data, error } = await query
       if (error) {
@@ -282,8 +281,8 @@ export default function UsersAndOrgsTab({ initialUserId, initialSubTab }: Props)
       <div>
         <h2 className="font-display text-xl font-semibold mb-1">Użytkownicy i firmy</h2>
         <p className="text-muted-foreground text-sm">
-          Przeglądaj organizacje i profile użytkowników (max. 10 wyników na listę). Użyj wyszukiwania, filtra modułów i
-          nagłówków kolumn do sortowania.
+          Przeglądaj organizacje i profile użytkowników. Użyj wyszukiwania, filtra modułów i nagłówków kolumn do
+          sortowania.
         </p>
       </div>
 

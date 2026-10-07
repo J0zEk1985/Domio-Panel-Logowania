@@ -34,7 +34,10 @@ export type OrganizationOption = {
 
 export type CleaningLocationRow = {
   id: string
-  city: string | null
+  name: string | null
   address: string | null
+  /** Derived from the address. cleaning_locations has no city column. */
+  city: string | null
+  orgName: string | null
 }
 

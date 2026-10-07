@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Edit, Image, Plus, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { inputClass } from './pricingAdminUtils'
+import OfferLocationPicker from './partner-offers/OfferLocationPicker'
 import type { ActionType, BillingModel, CleaningLocationRow, PartnerOfferRow, VendorPartnerRow } from './partnerOffersTypes'
 
 type OfferFormState = {
@@ -87,22 +88,6 @@ export default function PartnerOffersSubTab({
     [partners],
   )
 
-  const locationsByCity = useMemo(() => {
-    const grouped = locations.reduce<Record<string, CleaningLocationRow[]>>((acc, location) => {
-      const city = location.city?.trim() || 'Inne'
-      if (!acc[city]) acc[city] = []
-      acc[city].push(location)
-      return acc
-    }, {})
-
-    return Object.entries(grouped)
-      .sort(([cityA], [cityB]) => cityA.localeCompare(cityB, 'pl-PL'))
-      .map(([city, cityLocations]) => ({
-        city,
-        locations: cityLocations.sort((a, b) => (a.address ?? '').localeCompare(b.address ?? '', 'pl-PL')),
-      }))
-  }, [locations])
-
   const activeOffers = useMemo(() => offers.filter((offer) => offer.is_active).length, [offers])
 
   const openCreateDialog = () => {
@@ -137,18 +122,6 @@ export default function PartnerOffersSubTab({
     setEditingOfferId(null)
     setForm(emptyForm)
     setFormError(null)
-  }
-
-  const toggleLocation = (locationId: string) => {
-    setForm((prev) => {
-      const exists = prev.targetLocations.includes(locationId)
-      return {
-        ...prev,
-        targetLocations: exists
-          ? prev.targetLocations.filter((id) => id !== locationId)
-          : [...prev.targetLocations, locationId],
-      }
-    })
   }
 
   const saveOffer = async () => {
@@ -461,34 +434,11 @@ export default function PartnerOffersSubTab({
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <h4 className="font-medium">Targetowanie lokalizacji (opcjonalnie)</h4>
-                <p className="text-xs text-muted-foreground">
-                  Brak zaznaczonych lokalizacji oznacza ofertę globalną.
-                </p>
-                <div className="rounded-xl border border-border p-3 max-h-[200px] overflow-y-auto space-y-3">
-                  {locationsByCity.length === 0 && (
-                    <div className="text-sm text-muted-foreground">Brak lokalizacji do wyboru.</div>
-                  )}
-                  {locationsByCity.map((group) => (
-                    <div key={group.city} className="space-y-2">
-                      <div className="text-sm font-semibold">{group.city}</div>
-                      <div className="space-y-1.5">
-                        {group.locations.map((location) => (
-                          <label key={location.id} className="flex items-start gap-2 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={form.targetLocations.includes(location.id)}
-                              onChange={() => toggleLocation(location.id)}
-                            />
-                            <span>{location.address?.trim() || 'Brak adresu'}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <OfferLocationPicker
+                locations={locations}
+                selectedIds={form.targetLocations}
+                onChange={(targetLocations) => setForm((prev) => ({ ...prev, targetLocations }))}
+              />
 
               <label className="inline-flex items-center gap-2 text-sm">
                 <input

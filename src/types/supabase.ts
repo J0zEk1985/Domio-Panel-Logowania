@@ -3020,6 +3020,7 @@ export type Database = {
           id: string
           location_id: string
           org_id: string
+          resident_building_issue_scope: "resident_reports" | "all_open"
           show_cleaning_status: boolean
           show_service_tracker: boolean
           updated_at: string
@@ -3031,6 +3032,7 @@ export type Database = {
           id?: string
           location_id: string
           org_id: string
+          resident_building_issue_scope?: "resident_reports" | "all_open"
           show_cleaning_status?: boolean
           show_service_tracker?: boolean
           updated_at?: string
@@ -3042,6 +3044,7 @@ export type Database = {
           id?: string
           location_id?: string
           org_id?: string
+          resident_building_issue_scope?: "resident_reports" | "all_open"
           show_cleaning_status?: boolean
           show_service_tracker?: boolean
           updated_at?: string
@@ -5024,6 +5027,7 @@ export type Database = {
         | "resolved"
         | "rejected"
         | "cancelled"
+      resident_building_issue_scope: "resident_reports" | "all_open"
       policy_scope_enum: "maj─ůtkowe" | "oc_ogolne" | "oc_zarzadu"
       priority_level: "low" | "medium" | "high" | "emergency"
       property_contract_type:
@@ -5235,6 +5239,7 @@ export const Constants = {
         "rejected",
         "cancelled",
       ],
+      resident_building_issue_scope: ["resident_reports", "all_open"],
       policy_scope_enum: ["maj─ůtkowe", "oc_ogolne", "oc_zarzadu"],
       priority_level: ["low", "medium", "high", "emergency"],
       property_contract_type: [

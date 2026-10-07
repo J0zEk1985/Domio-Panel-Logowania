@@ -130,7 +130,9 @@ export default function VendorPartnersSubTab({ vendors, organizations, loading, 
           <h2 id="vendor-catalog-heading" className="font-display text-xl font-semibold">
             Katalog firm partnerskich
           </h2>
-          <p className="text-sm text-muted-foreground">Zarządzaj partnerami używanymi przy tworzeniu ofert.</p>
+          <p className="text-sm text-muted-foreground">
+            Katalog zawiera firmy właściciela platformy oraz firmy partnerskie dodane w tym panelu.
+          </p>
         </div>
         <button
           type="button"
@@ -221,7 +223,7 @@ export default function VendorPartnersSubTab({ vendors, organizations, loading, 
               )}
 
               <label className="block space-y-1.5 text-sm">
-                <span className="text-muted-foreground">Organizacja</span>
+                <span className="text-muted-foreground">Organizacja właściciela platformy</span>
                 <select
                   className={inputClass}
                   value={form.orgId}

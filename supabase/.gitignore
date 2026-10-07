@@ -7,3 +7,5 @@
 .env.local
 .env.*.local
 .env
+functions/**/.typesafe_api_key
+functions/**/typesafe_api_key.txt

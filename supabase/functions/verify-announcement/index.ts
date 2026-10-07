@@ -84,7 +84,7 @@ function parseBody(raw: unknown): PublishBody | null {
 }
 
 async function classify(title: string, content: string): Promise<AnnouncementDecision> {
-  const apiKey = Deno.env.get('TYPESAFE_API_KEY')
+  const apiKey = Deno.env.get('TYPESAFE_API_KEY')?.trim()
   if (!apiKey) {
     console.error('[verify-announcement] TYPESAFE_API_KEY is not set')
     return heldDecision('jev_unavailable')
@@ -129,12 +129,20 @@ Deno.serve(async (req) => {
       return json(cors, 500, { error: 'Server misconfiguration' })
     }
 
+    const accessToken = authHeader.slice('Bearer '.length).trim()
+    if (!accessToken) return json(cors, 401, { error: 'Unauthorized' })
+
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
       auth: { persistSession: false, autoRefreshToken: false },
     })
-    const { data: userData, error: userError } = await userClient.auth.getUser()
-    if (userError || !userData.user) return json(cors, 401, { error: 'Unauthorized' })
+    // getUser() without a JWT reads only the local session. This client has none,
+    // so the caller token must be passed explicitly or every request returns 401.
+    const { data: userData, error: userError } = await userClient.auth.getUser(accessToken)
+    if (userError || !userData.user) {
+      console.error('[verify-announcement] auth', userError?.message ?? 'missing user')
+      return json(cors, 401, { error: 'Unauthorized' })
+    }
 
     let raw: unknown
     try {

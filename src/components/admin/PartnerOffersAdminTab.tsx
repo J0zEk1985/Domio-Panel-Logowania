@@ -3,7 +3,16 @@ import { supabase } from '../../lib/supabase'
 import PartnerOffersSubTab from './PartnerOffersSubTab'
 import VendorPartnersSubTab from './VendorPartnersSubTab'
 import ReportsSubTab from './partner-offers/ReportsSubTab'
+import { cityFromAddress } from '../../lib/addressCity'
+import { platformOwnerOrganizations, platformPartnerVendorFilter } from '../../lib/platformPartnerCatalog'
 import type { CleaningLocationRow, OrganizationOption, PartnerOfferRow, VendorPartnerRow } from './partnerOffersTypes'
+
+type LocationQueryRow = {
+  id: string
+  name: string | null
+  address: string | null
+  org_id: string
+}
 
 type AdminPartnerOffersTab = 'offers' | 'vendors' | 'reports'
 
@@ -20,20 +29,17 @@ export default function PartnerOffersAdminTab() {
   const loadAll = useCallback(async () => {
     setLoadError(null)
     try {
-      const [offersRes, partnersRes, orgsRes, interactionsRes, locationsRes] = await Promise.all([
+      const [offersRes, adminsRes, orgsRes, interactionsRes, locationsRes] = await Promise.all([
         supabase
           .from('partner_offers')
           .select(
             'id, title, description, vendor_id, billing_model, action_type, action_value, is_active, target_locations, icon_emoji, bg_color, image_url, promote_on_board',
           )
           .order('title'),
-        supabase
-          .from('vendor_partners')
-          .select('id, org_id, name, service_type, contact_email, contact_phone, status')
-          .order('name'),
-        supabase.from('organizations').select('id, name').order('name'),
+        supabase.from('profiles').select('id').eq('platform_role', 'admin'),
+        supabase.from('organizations').select('id, name, owner_id').order('name'),
         supabase.from('offer_interactions').select('*', { count: 'exact', head: true }),
-        supabase.from('cleaning_locations').select('id, city, address').order('city').order('address'),
+        supabase.from('cleaning_locations').select('id, name, address, org_id').order('address'),
       ])
 
       if (offersRes.error) {
@@ -44,20 +50,38 @@ export default function PartnerOffersAdminTab() {
         setOffers((offersRes.data as PartnerOfferRow[] | null) ?? [])
       }
 
-      if (partnersRes.error) {
-        console.error('[PartnerOffersAdminTab] vendor_partners:', partnersRes.error)
-        setLoadError((prev) => prev ?? 'Nie udało się pobrać listy partnerów.')
-        setPartners([])
-      } else {
-        setPartners((partnersRes.data as VendorPartnerRow[] | null) ?? [])
+      const ownerIds = adminsRes.error
+        ? []
+        : ((adminsRes.data as { id: string }[] | null) ?? []).map((row) => row.id)
+      if (adminsRes.error) {
+        console.error('[PartnerOffersAdminTab] platform owners:', adminsRes.error)
+        setLoadError((prev) => prev ?? 'Nie udało się ustalić organizacji właściciela platformy.')
       }
+
+      const allOrganizations =
+        (orgsRes.data as { id: string; name: string; owner_id: string | null }[] | null) ?? []
+      const platformOrganizations = platformOwnerOrganizations(allOrganizations, ownerIds)
 
       if (orgsRes.error) {
         console.error('[PartnerOffersAdminTab] organizations:', orgsRes.error)
         setLoadError((prev) => prev ?? 'Nie udało się pobrać listy organizacji.')
         setOrganizations([])
       } else {
-        setOrganizations((orgsRes.data as OrganizationOption[] | null) ?? [])
+        setOrganizations(platformOrganizations.map(({ id, name }) => ({ id, name })))
+      }
+
+      const partnersRes = await supabase
+        .from('vendor_partners')
+        .select('id, org_id, name, service_type, contact_email, contact_phone, status')
+        .or(platformPartnerVendorFilter(platformOrganizations.map((org) => org.id)))
+        .order('name')
+
+      if (partnersRes.error) {
+        console.error('[PartnerOffersAdminTab] vendor_partners:', partnersRes.error)
+        setLoadError((prev) => prev ?? 'Nie udało się pobrać listy partnerów.')
+        setPartners([])
+      } else {
+        setPartners((partnersRes.data as VendorPartnerRow[] | null) ?? [])
       }
 
       if (interactionsRes.error) {
@@ -73,7 +97,17 @@ export default function PartnerOffersAdminTab() {
         setLoadError((prev) => prev ?? 'Nie udało się pobrać lokalizacji.')
         setLocations([])
       } else {
-        setLocations((locationsRes.data as CleaningLocationRow[] | null) ?? [])
+        const orgNameById = new Map(allOrganizations.map((org) => [org.id, org.name]))
+        const rows = (locationsRes.data as LocationQueryRow[] | null) ?? []
+        setLocations(
+          rows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            address: row.address,
+            city: cityFromAddress(row.address),
+            orgName: orgNameById.get(row.org_id) ?? null,
+          })),
+        )
       }
     } catch (e) {
       console.error('[PartnerOffersAdminTab] loadAll:', e)
