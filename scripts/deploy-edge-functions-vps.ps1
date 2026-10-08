@@ -21,6 +21,7 @@ $pairs = @(
   @{ Name = "lookup-legal-entity"; Src = "d:\projekty\Domio-Panel-Logowania\supabase\functions\lookup-legal-entity"; VerifyJwt = $true },
   @{ Name = "create-worker"; Src = "d:\projekty\Domio-Panel-Logowania\supabase\functions\create-worker"; VerifyJwt = $false },
   @{ Name = "activate-home-resident"; Src = "d:\projekty\Domio-Panel-Logowania\supabase\functions\activate-home-resident"; VerifyJwt = $false },
+  @{ Name = "verify-comment"; Src = "d:\projekty\Domio-Panel-Logowania\supabase\functions\verify-comment"; VerifyJwt = $true },
   @{ Name = "generate-sop-tasks"; Src = "d:\projekty\Domio-Cleaning\supabase\functions\generate-sop-tasks"; VerifyJwt = $false },
   @{ Name = "create-user"; Src = "d:\projekty\Obsluga-floty-samochodow\supabase\functions\create-user"; VerifyJwt = $false },
   @{ Name = "delete-user"; Src = "d:\projekty\Obsluga-floty-samochodow\supabase\functions\delete-user"; VerifyJwt = $false },
@@ -36,7 +37,8 @@ foreach ($p in $pairs) {
 }
 
 Write-Host ""
-Write-Host "Komendy do wykonania (scp + restart). Funkcja wipe-storage-test-phase jest tylko na Cloud — nie kopiujemy jej."
+Write-Host "Wspólny moduł klasyfikatora komentarzy (import ../_shared/jevComment.ts):"
+Write-Host "scp `"d:\projekty\Domio-Panel-Logowania\supabase\functions\_shared\jevComment.ts`" $($env:VPS_SSH):$($env:VPS_FUNCTIONS_DIR)/_shared/jevComment.ts"
 Write-Host ""
 
 foreach ($p in $pairs) {
@@ -54,6 +56,7 @@ Write-Host "  CONSENT_IP_SALT"
 Write-Host "  WEB_PUSH_VAPID_PUBLIC_KEY, WEB_PUSH_VAPID_PRIVATE_KEY, WEB_PUSH_VAPID_SUBJECT"
 Write-Host "  SOP_CRON_SECRET (nagłówek x-domio-cron-secret w cron.job)"
 Write-Host "  GEMINI_API_KEY (triage-ai-logic)"
+Write-Host "  TYPESAFE_API_KEY (verify-announcement, verify-comment)"
 Write-Host ""
 Write-Host "Po skopiowaniu zrestartuj functions i sprawdź:"
 Write-Host "  curl -i https://db.j0zek.pl/functions/v1/send-web-push"

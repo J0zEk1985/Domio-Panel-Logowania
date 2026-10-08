@@ -48,27 +48,34 @@ function json(cors: Record<string, string>, status: number, body: unknown) {
 }
 
 type PublishBody = {
-  mode: 'preview' | 'publish'
+  mode: 'preview' | 'publish' | 'update'
   title: string
   content: string
   postType: 'request' | 'event' | 'general' | 'offer'
   isFree: boolean
   price: number | null
   locationId: string
+  postId: string | null
 }
 
 function parseBody(raw: unknown): PublishBody | null {
   if (!raw || typeof raw !== 'object') return null
   const row = raw as Record<string, unknown>
-  const mode = row.mode === 'publish' ? 'publish' : row.mode === 'preview' ? 'preview' : null
+  const mode = row.mode === 'publish' ? 'publish' : row.mode === 'update' ? 'update' : row.mode === 'preview' ? 'preview' : null
   const title = typeof row.title === 'string' ? row.title.trim() : ''
   const content = typeof row.content === 'string' ? row.content.trim() : ''
   const postType = typeof row.post_type === 'string' ? row.post_type : ''
   const locationId = typeof row.location_id === 'string' ? row.location_id.trim() : ''
+  const postId = typeof row.post_id === 'string' ? row.post_id.trim() : ''
   const isFree = row.is_free === true
   const priceRaw = row.price
   const price = typeof priceRaw === 'number' && Number.isFinite(priceRaw) ? priceRaw : null
-  if (!mode || !POST_TYPES.has(postType) || !UUID_RE.test(locationId)) return null
+  if (!mode || !POST_TYPES.has(postType)) return null
+  if (mode === 'update') {
+    if (!UUID_RE.test(postId)) return null
+  } else if (!UUID_RE.test(locationId)) {
+    return null
+  }
   if (title.length < 1 || title.length > 150) return null
   if (content.length < 1 || content.length > 4000) return null
   if (postType === 'offer' && !isFree && (price === null || price < 0)) return null
@@ -80,6 +87,7 @@ function parseBody(raw: unknown): PublishBody | null {
     isFree: postType === 'offer' ? isFree : false,
     price: postType === 'offer' && !isFree ? price : null,
     locationId,
+    postId: mode === 'update' ? postId : null,
   }
 }
 
@@ -154,46 +162,93 @@ Deno.serve(async (req) => {
     const body = parseBody(raw)
     if (!body) return json(cors, 400, { error: 'Invalid announcement payload' })
 
+    const admin = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+
+    let locationId = body.locationId
+    let orgId: string | null = null
+    if (body.mode === 'update' && body.postId) {
+      const { data: existing, error: existingError } = await admin
+        .from('community_board')
+        .select('id, author_id, location_id, org_id, status')
+        .eq('id', body.postId)
+        .maybeSingle()
+      if (existingError || !existing) {
+        console.error('[verify-announcement] post lookup', existingError?.message ?? 'missing')
+        return json(cors, 404, { error: 'Not found' })
+      }
+      if (existing.author_id !== userData.user.id) {
+        console.error('[verify-announcement] post owner mismatch')
+        return json(cors, 403, { error: 'Forbidden' })
+      }
+      if (existing.status !== 'active' && existing.status !== 'pending_review') {
+        console.error('[verify-announcement] post not editable', existing.status)
+        return json(cors, 409, { error: 'Listing can no longer be edited' })
+      }
+      locationId = existing.location_id
+      orgId = existing.org_id
+    }
+
     const { data: allowed, error: accessError } = await userClient.rpc('has_active_location_access', {
-      target_location_id: body.locationId,
+      target_location_id: locationId,
     })
     if (accessError || allowed !== true) {
       console.error('[verify-announcement] location access', accessError?.message ?? 'denied')
       return json(cors, 403, { error: 'Forbidden' })
     }
 
-    const { data: location, error: locationError } = await userClient
-      .from('cleaning_locations')
-      .select('id, org_id')
-      .eq('id', body.locationId)
-      .maybeSingle()
-    if (locationError || !location?.org_id) {
-      console.error('[verify-announcement] location lookup', locationError?.message ?? 'missing')
-      return json(cors, 403, { error: 'Forbidden' })
+    if (!orgId) {
+      const { data: location, error: locationError } = await userClient
+        .from('cleaning_locations')
+        .select('id, org_id')
+        .eq('id', locationId)
+        .maybeSingle()
+      if (locationError || !location?.org_id) {
+        console.error('[verify-announcement] location lookup', locationError?.message ?? 'missing')
+        return json(cors, 403, { error: 'Forbidden' })
+      }
+      orgId = location.org_id
     }
 
     const decision = await classify(body.title, body.content)
     if (body.mode === 'preview' || decision.outcome === 'blocked') {
-      return json(cors, 200, { decision, post_id: null })
+      return json(cors, 200, { decision, post_id: body.postId })
     }
 
     const status = decision.outcome === 'ready' ? 'active' : 'pending_review'
-    const admin = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    })
+    const fields = {
+      title: body.title,
+      content: body.content,
+      post_type: body.postType,
+      status,
+      is_free: body.isFree,
+      price: body.price,
+      moderation_hold: decision.hold,
+    }
+
+    if (body.mode === 'update' && body.postId) {
+      const { data: updated, error: updateError } = await admin
+        .from('community_board')
+        .update(fields)
+        .eq('id', body.postId)
+        .eq('author_id', userData.user.id)
+        .select('id')
+        .single()
+      if (updateError || !updated) {
+        console.error('[verify-announcement] update', updateError?.message ?? 'empty')
+        return json(cors, 500, { error: 'Update failed' })
+      }
+      return json(cors, 200, { decision, post_id: updated.id })
+    }
+
     const { data: inserted, error: insertError } = await admin
       .from('community_board')
       .insert({
-        org_id: location.org_id,
-        location_id: body.locationId,
+        org_id: orgId,
+        location_id: locationId,
         author_id: userData.user.id,
-        title: body.title,
-        content: body.content,
-        post_type: body.postType,
-        status,
-        is_free: body.isFree,
-        price: body.price,
-        moderation_hold: decision.hold,
+        ...fields,
       })
       .select('id')
       .single()
