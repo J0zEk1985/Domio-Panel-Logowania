@@ -337,36 +337,11 @@ export class PurchaseService {
     request: PurchaseSubscriptionRequest,
     purchaserOrgId: string
   ): Promise<PurchaseSubscriptionResponse> {
-    try {
-      // 1. Utwórz payment intent
-      const intent = await this.createPaymentIntent({
-        purchaser_org_id: purchaserOrgId,
-        beneficiary_community_id: request.beneficiary_community_id,
-        plan_id: request.plan_id,
-        billing_interval: request.billing_interval,
-        payment_method: request.payment_method,
-        invoice_entity_community_id: request.invoice_entity_community_id
-      });
-
-      // 2. Automatycznie potwierdź płatność (dla testów/integracji)
-      // W produkcji: czekaj na webhook z payment gateway
-      const completedIntent = await this.updatePaymentIntentStatus(
-        intent.id,
-        'completed',
-        request.payment_method
-      );
-
-      // 3. Finalizuj zakup
-      const subscription = await this.completePurchase(completedIntent.id);
-
-      return {
-        payment_intent: completedIntent,
-        subscription,
-        message: 'Subskrypcja została pomyślnie zakupiona'
-      };
-    } catch (error: any) {
-      throw new Error(`Purchase failed: ${error.message}`);
-    }
+    void request;
+    void purchaserOrgId;
+    throw new Error(
+      'Płatność online nie jest jeszcze dostępna. Plan można aktywować tylko kodem rabatowym 100%.'
+    );
   }
 
   // =========================================================================

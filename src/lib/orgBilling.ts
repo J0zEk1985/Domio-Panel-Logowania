@@ -305,12 +305,14 @@ export async function activateOrgSubscriptionPlan(input: {
   appId: string
   planId: string
   billingInterval: BillingInterval
+  promoCode: string
 }): Promise<OrgSubscriptionView> {
   const { data, error } = await supabase.rpc('activate_org_subscription_plan', {
     p_org_id: input.orgId,
     p_app_id: input.appId,
     p_plan_id: input.planId,
     p_billing_interval: input.billingInterval,
+    p_promo_code: input.promoCode.trim(),
   })
   if (error) {
     console.error('[orgBilling] activate_org_subscription_plan:', error)

@@ -4147,6 +4147,7 @@ export type Database = {
           p_app_id: string
           p_plan_id: string
           p_billing_interval: string
+          p_promo_code?: string
         }
         Returns: Database["public"]["Tables"]["org_subscriptions"]["Row"]
       }

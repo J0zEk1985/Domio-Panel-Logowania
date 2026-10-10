@@ -71,6 +71,13 @@ export async function redeemPromoCode(code: string, billingInterval?: string): P
   return mapPromoResult(data, 'Nie udało się zastosować kodu promocyjnego.')
 }
 
+export const PAYMENT_NOT_LIVE_MESSAGE =
+  'Płatność online nie jest jeszcze dostępna. Plan można aktywować tylko kodem rabatowym 100%.'
+
+export function isFullPercentPromo(promo: PromoPreview | null): boolean {
+  return promo != null && promo.discountPercent != null && promo.discountPercent >= 100
+}
+
 export function applyPromoDiscount(basePrice: number, promo: PromoPreview | null): number {
   let next = Number(basePrice) || 0
   if (promo?.discountPercent != null) {

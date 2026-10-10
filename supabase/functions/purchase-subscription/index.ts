@@ -184,6 +184,7 @@ async function handlePurchaseSubscription(req: Request): Promise<Response> {
     }
 
     let promoCode: string | null = null;
+    let discountPercent: number | null = null;
     if (purchaseData.promo_code) {
       const { data: preview, error: promoError } = await supabase.rpc('preview_promo_code', {
         p_code: purchaseData.promo_code,
@@ -218,6 +219,7 @@ async function handlePurchaseSubscription(req: Request): Promise<Response> {
 
       const listPrice = calculatedAmount;
       const percent = promo.discount_percent == null ? null : Number(promo.discount_percent);
+      discountPercent = percent != null && Number.isFinite(percent) ? percent : null;
       const amountOff = promo.discount_amount == null ? null : Number(promo.discount_amount);
       if (percent != null && Number.isFinite(percent)) {
         calculatedAmount *= 1 - percent / 100;
@@ -231,6 +233,14 @@ async function handlePurchaseSubscription(req: Request): Promise<Response> {
       if (calculatedAmount !== listPrice) {
         console.info('[purchase-subscription] promo applied', promoCode, listPrice, calculatedAmount);
       }
+    }
+
+    if (discountPercent == null || discountPercent < 100) {
+      return errorResponse(
+        'PAYMENT_UNAVAILABLE',
+        'Płatność online nie jest jeszcze dostępna. Plan można aktywować tylko kodem rabatowym 100%.',
+        403,
+      );
     }
 
     // Get invoice entity data

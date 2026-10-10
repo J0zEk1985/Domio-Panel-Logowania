@@ -18,6 +18,8 @@ import {
   type PricingPlanView,
 } from '../../lib/pricingDisplay'
 import { ExtraUsersStepper } from './ExtraUsersStepper'
+import { PromoCodeField } from '../organization/PromoCodeField'
+import { isFullPercentPromo, PAYMENT_NOT_LIVE_MESSAGE, type PromoPreview } from '../../lib/promoCodes'
 
 type Props = {
   appName: string
@@ -65,6 +67,7 @@ export function ModulePlanDialog({
   const [selectedPlanId, setSelectedPlanId] = useState(purchasePlans[0]?.id ?? '')
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [promo, setPromo] = useState<PromoPreview | null>(null)
   const savedExtraUsers = subscription?.extra_users ?? 0
   const [draftExtraUsers, setDraftExtraUsers] = useState(savedExtraUsers)
 
@@ -76,17 +79,27 @@ export function ModulePlanDialog({
     () => purchasePlans.find((plan) => plan.id === selectedPlanId) ?? purchasePlans[0] ?? null,
     [purchasePlans, selectedPlanId],
   )
+  const interval: BillingInterval = yearly ? 'yearly' : 'monthly'
+  const complimentary = isFullPercentPromo(promo)
+
+  useEffect(() => {
+    setPromo(null)
+  }, [yearly])
 
   const activate = async () => {
     if (!selected) return
+    if (!complimentary || !promo?.code) {
+      toast.error(PAYMENT_NOT_LIVE_MESSAGE)
+      return
+    }
     setBusy(true)
     try {
-      const interval: BillingInterval = yearly ? 'yearly' : 'monthly'
       const next = await activateOrgSubscriptionPlan({
         orgId,
         appId,
         planId: selected.id,
         billingInterval: interval,
+        promoCode: promo.code,
       })
       toast.success(active ? 'Plan został zmieniony.' : 'Plan został aktywowany.')
       onChanged(next)
@@ -257,16 +270,25 @@ export function ModulePlanDialog({
                 })}
               </div>
               {selected && <PlanFeatureList plan={selected} />}
-              <p className="text-xs text-muted-foreground">
-                Aktywacja przypisuje plan do organizacji. Płatność online nie jest pobierana w tym kroku.
-              </p>
+              <PromoCodeField
+                billingInterval={interval}
+                disabled={busy}
+                promo={promo}
+                onChange={setPromo}
+              />
+              <p className="text-xs text-muted-foreground">{PAYMENT_NOT_LIVE_MESSAGE}</p>
+              {promo && !complimentary ? (
+                <p className="text-xs text-muted-foreground">
+                  Ten kod nie pokrywa całej kwoty. Do aktywacji potrzebny jest rabat 100%.
+                </p>
+              ) : null}
               <button
                 type="button"
-                disabled={busy || !selected}
+                disabled={busy || !selected || !complimentary}
                 onClick={() => void activate()}
                 className="w-full rounded-md px-4 py-3 text-sm font-medium gradient-brand text-primary-foreground disabled:opacity-50"
               >
-                {busy ? 'Zapisywanie…' : active ? 'Zmień na większy plan' : 'Aktywuj plan'}
+                {busy ? 'Zapisywanie…' : complimentary ? 'Aktywuj plan kodem 100%' : 'Płatność online niedostępna'}
               </button>
             </section>
           )}

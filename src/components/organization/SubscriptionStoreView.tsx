@@ -19,7 +19,7 @@ import type {
 } from '../../types/monetization'
 import { MODULE_DISPLAY_NAMES, BILLING_INTERVAL_LABELS } from '../../types/monetization'
 import { PromoCodeField, applyPromoDiscount } from './PromoCodeField'
-import type { PromoPreview } from '../../lib/promoCodes'
+import { isFullPercentPromo, PAYMENT_NOT_LIVE_MESSAGE, type PromoPreview } from '../../lib/promoCodes'
 import type { AppModule } from '../../types/monetization'
 
 interface Community {
@@ -208,6 +208,11 @@ export default function SubscriptionStoreView({ moduleFilter }: Props) {
       return
     }
 
+    if (!isFullPercentPromo(promo) || !promo?.code) {
+      toast.error(PAYMENT_NOT_LIVE_MESSAGE)
+      return
+    }
+
     const request: PurchaseSubscriptionRequest = {
       plan_id: selectedPlanId,
       billing_interval: billingInterval,
@@ -239,6 +244,7 @@ export default function SubscriptionStoreView({ moduleFilter }: Props) {
 
   const payableAmount =
     calculatedAmount == null ? null : applyPromoDiscount(calculatedAmount, promo)
+  const complimentary = isFullPercentPromo(promo)
 
   const availablePlans = plans.filter((p) => p.is_active && p.module === moduleFilter)
 
@@ -483,17 +489,29 @@ export default function SubscriptionStoreView({ moduleFilter }: Props) {
                 </div>
               )}
 
+              <p className="text-xs text-muted-foreground">{PAYMENT_NOT_LIVE_MESSAGE}</p>
+              {promo && !complimentary ? (
+                <p className="text-xs text-muted-foreground">
+                  Ten kod nie pokrywa całej kwoty. Do aktywacji potrzebny jest rabat 100%.
+                </p>
+              ) : null}
+
               <button
                 onClick={() => void handlePurchase()}
                 disabled={
                   calculating ||
                   payableAmount == null ||
                   !termsAccepted ||
+                  !complimentary ||
                   (selectedPlan.is_unit_based && !selectedCommunityId)
                 }
                 className="w-full rounded-md bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {calculating ? 'Obliczanie...' : 'Zakup subskrypcję'}
+                {calculating
+                  ? 'Obliczanie...'
+                  : complimentary
+                    ? 'Aktywuj plan kodem 100%'
+                    : 'Płatność online niedostępna'}
               </button>
             </div>
           )}

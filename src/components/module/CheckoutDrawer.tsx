@@ -9,8 +9,9 @@ import {
 } from '../../lib/orgBilling'
 import {
   applyPromoDiscount,
+  isFullPercentPromo,
+  PAYMENT_NOT_LIVE_MESSAGE,
   previewPromoCode,
-  redeemPromoCode,
   type PromoPreview,
 } from '../../lib/promoCodes'
 import { formatMoneyPln } from '../../lib/pricingDisplay'
@@ -106,6 +107,7 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
   const payable = useMemo(() => applyPromoDiscount(basePrice, promo), [basePrice, promo])
   const interval: BillingInterval = yearly ? 'yearly' : 'monthly'
   const cycleLabel = yearly ? 'Rocznie' : 'Miesięcznie'
+  const complimentary = isFullPercentPromo(promo)
 
   const applyCode = async () => {
     setPromoError(null)
@@ -131,6 +133,11 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
     const nipDigits = nip.replace(/\D/g, '')
     if (nipDigits && !/^\d{10}$/.test(nipDigits)) {
       toast.error('NIP musi składać się z 10 cyfr.')
+      return
+    }
+
+    if (!complimentary || !promo?.code) {
+      toast.error(PAYMENT_NOT_LIVE_MESSAGE)
       return
     }
 
@@ -165,14 +172,8 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
         appId: plan.appId,
         planId: plan.id,
         billingInterval: interval,
+        promoCode: promo.code,
       })
-      if (promo?.code) {
-        try {
-          await redeemPromoCode(promo.code, interval)
-        } catch (promoErr) {
-          console.error('[CheckoutDrawer] redeem after activate:', promoErr)
-        }
-      }
       setSuccess(true)
     } catch (err) {
       console.error('[CheckoutDrawer] confirm:', err)
@@ -278,7 +279,7 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
                           name="checkout-payment"
                           className="accent-primary"
                           checked={checked}
-                          disabled={busy}
+                          disabled
                           onChange={() => setPaymentMethod(method.value)}
                         />
                         <Icon className="h-4 w-4 text-muted-foreground" />
@@ -288,7 +289,7 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
                   })}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Bramka płatności online zostanie podłączona w kolejnym kroku. Teraz plan przypisujemy do Twojej firmy.
+                  {PAYMENT_NOT_LIVE_MESSAGE}
                 </p>
               </fieldset>
 
@@ -355,18 +356,29 @@ export function CheckoutDrawer({ open, onClose, moduleName, plan, yearly, onPurc
                   </button>
                 </div>
                 {promoError ? <p className="text-xs text-destructive">{promoError}</p> : null}
+                {promo && !complimentary ? (
+                  <p className="text-xs text-muted-foreground">
+                    Ten kod nie pokrywa całej kwoty. Do aktywacji potrzebny jest rabat 100%.
+                  </p>
+                ) : null}
               </div>
 
-                  <button
-                    type="button"
-                    disabled={busy || prefillLoading}
-                    onClick={() => void confirmPay()}
+              <button
+                type="button"
+                disabled={busy || prefillLoading || !complimentary}
+                onClick={() => void confirmPay()}
                 className="w-full rounded-md px-4 py-3 text-sm font-medium gradient-brand text-primary-foreground disabled:opacity-50 inline-flex items-center justify-center gap-2"
               >
                 <Lock className="h-4 w-4" />
-                {busy ? 'Przetwarzanie…' : `Potwierdź i zapłać · ${formatMoneyPln(payable)}`}
+                {busy
+                  ? 'Przetwarzanie…'
+                  : complimentary
+                    ? 'Aktywuj plan kodem 100%'
+                    : 'Płatność online niedostępna'}
               </button>
-              <p className="text-xs text-center text-muted-foreground">Płatność jest bezpieczna i szyfrowana SSL.</p>
+              <p className="text-xs text-center text-muted-foreground">
+                Metody płatności pozostają wyłączone do czasu uruchomienia bramki.
+              </p>
             </>
           )}
         </div>
